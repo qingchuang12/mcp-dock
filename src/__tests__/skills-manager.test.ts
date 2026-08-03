@@ -3,17 +3,16 @@
  * 覆盖: URL 解析、Skill 发现、安装/卸载/更新、文件列表获取、本地详情
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import {DiscoveredSkill, SkillsManager, SkillSourceMeta} from '../main/skills-manager';
 
 // Mock electron 的 config-manager 依赖
 vi.mock('../main/config-manager', () => ({
-  SKILL_SUPPORTED_CLIENTS: ['cursor', 'claude-code', 'gemini-cli', 'codex-cli', 'opencode', 'agent-skills'],
+  SKILL_SUPPORTED_CLIENTS: ['cursor', 'claude-code', 'gemini-cli', 'codex-cli', 'opencode', 'agent-skills', 'codebuddy', 'workbuddy', 'qoder'],
 }));
-
-import { SkillsManager, SkillSourceMeta, DiscoveredSkill } from '../main/skills-manager';
 
 let manager: SkillsManager;
 let testDir: string;

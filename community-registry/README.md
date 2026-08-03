@@ -1,6 +1,6 @@
-# MCP Dock Community Registry
+# AI-Tools Community Registry
 
-Welcome to the MCP Dock Community Registry! This directory contains community-contributed MCP Servers and AI Agent Skills.
+Welcome to the AI-Tools Community Registry! This directory contains community-contributed MCP Servers and AI Agent Skills.
 
 ## How to Contribute
 
@@ -63,7 +63,7 @@ Your PR will fail if the JSON doesn't conform to the schema.
 - Review existing entries for examples
 - Open an issue if you have questions
 
-Thank you for contributing to MCP Dock! 🎉
+Thank you for contributing to AI-Tools! 🎉
 
 ---
 

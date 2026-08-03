@@ -3,14 +3,15 @@
  * 交互式调试 MCP Server
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
-import { useElectronAPI } from '../lib/electron';
-import { useStore } from '../store/useStore';
-import { Light as SyntaxHighlighter } from 'react-syntax-highlighter';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useTranslation} from 'react-i18next';
+import {useSearchParams} from 'react-router-dom';
+import {useElectronAPI} from '../lib/electron';
+import {useIsMac} from '../lib/useIsMac';
+import {useStore} from '../store/useStore';
+import {Light as SyntaxHighlighter} from 'react-syntax-highlighter';
 import json from 'react-syntax-highlighter/dist/esm/languages/hljs/json';
-import { atomOneDark } from 'react-syntax-highlighter/dist/esm/styles/hljs';
+import {atomOneDark} from 'react-syntax-highlighter/dist/esm/styles/hljs';
 
 // 注册 JSON 语言
 SyntaxHighlighter.registerLanguage('json', json);
@@ -54,6 +55,7 @@ type ActiveTab = 'tools' | 'resources' | 'prompts';
 export default function Inspector() {
   const { t } = useTranslation();
   const api = useElectronAPI();
+  const isMac = useIsMac();
   const [searchParams] = useSearchParams();
   const { inspectorState, setInspectorState } = useStore();
   
@@ -78,7 +80,7 @@ export default function Inspector() {
   // 连接状态
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [serverInfo, setServerInfo] = useState<{ name?: string; version?: string } | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [, setErrorMessage] = useState<string>('');
   const [logs, setLogs] = useState<string[]>([]);
   
   // 配置 - 优先使用 URL 参数，否则使用 store 中保存的状态
@@ -373,10 +375,10 @@ export default function Inspector() {
 
   return (
     <div className="flex flex-col h-full bg-[#1c1c1e]">
-      {/* 顶部控制栏 */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#3a3a3c]">
-        <div className="flex items-center gap-3">
-          <h1 className="text-[15px] font-semibold text-white">
+      {/* 顶部控制栏（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
+      <div className={`flex items-center justify-between px-4 h-12 drag-region border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl ${isMac ? 'pl-20' : ''}`}>
+        <div className="flex items-center gap-3 no-drag">
+          <h1 className="text-[14px] font-semibold text-white tracking-tight">
             {t('inspector.title') || 'MCP Inspector'}
           </h1>
           
@@ -402,7 +404,7 @@ export default function Inspector() {
         <button
           onClick={handleConnect}
           disabled={status === 'connecting'}
-          className={`px-4 py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
+          className={`px-4 py-1.5 rounded-lg text-[13px] font-medium transition-colors no-drag ${
             status === 'connected'
               ? 'bg-[#ff3b30] text-white hover:bg-[#ff3b30]/80'
               : 'bg-[#0a84ff] text-white hover:bg-[#0a84ff]/80'

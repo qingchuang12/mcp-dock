@@ -1,6 +1,6 @@
-# MCP Dock 社区注册表
+# AI-Tools 社区注册表
 
-欢迎来到 MCP Dock 社区注册表！本目录包含社区贡献的 MCP Server 和 AI Agent Skills 配置。
+欢迎来到 AI-Tools 社区注册表！本目录包含社区贡献的 MCP Server 和 AI Agent Skills 配置。
 
 ## 如何贡献
 
@@ -63,4 +63,4 @@
 - 参考现有的配置示例
 - 如有疑问请提交 Issue
 
-感谢你为 MCP Dock 做出贡献！🎉
+感谢你为 AI-Tools 做出贡献！🎉

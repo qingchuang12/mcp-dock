@@ -35,7 +35,22 @@
     "refreshSuccess": "Data refreshed",
     "refreshFailed": "Failed to refresh data",
     "communityEditionDesc": "Registry browsing is not available in the Community Edition. You can still add MCP servers manually from the Library page.",
-    "goToLibrary": "Go to Library"
+    "goToLibrary": "Go to Library",
+    "mcpPlatform": "Platform",
+    "pageSize": "Per page",
+    "items": ""
+  },
+  "mcpCategory": {
+    "developer-tools": "Developer Tools",
+    "ai-media": "AI Media",
+    "skill-management": "Skill Management",
+    "cloud-devops": "Cloud DevOps",
+    "frontend-development": "Frontend Development",
+    "code-quality-testing": "Code Quality Testing",
+    "marketing-seo": "Marketing SEO",
+    "ai-automation": "AI Automation",
+    "doc-processing": "Document Processing",
+    "browser-automation": "Browser Automation"
   },
   "detail": {
     "about": "About",
@@ -105,7 +120,14 @@
     "dockerRequiredDesc": "This server runs in a Docker container. Please ensure Docker Desktop is installed and running.",
     "mcpbNotSupported": "MCPB Format Not Supported",
     "mcpbNotSupportedDesc": "MCP Bundle (.mcpb) format requires manual download and configuration. Please click the link below to download and follow the instructions to install manually.",
-    "inspect": "Inspect"
+    "inspect": "Inspect",
+    "verified": "Verified",
+    "hosted": "Hosted",
+    "views": "views",
+    "publisher": "Publisher",
+    "viewSource": "View Source",
+    "envRequired": "Please fill in the required environment variable",
+    "noInstallConfig": "No install configuration available"
   },
   "installed": {
     "title": "Installed Servers",
@@ -118,6 +140,10 @@
     "remove": "Remove",
     "removeAll": "Remove All",
     "confirmRemove": "Are you sure you want to remove this server?",
+    "uninstallTitle": "Uninstall Server",
+    "uninstallHint": "Select the clients to uninstall this server from:",
+    "selectAll": "Select All",
+    "confirmUninstall": "Confirm Uninstall",
     "configPath": "Config Path",
     "servers": "servers",
     "notInstalled": "Not installed",
@@ -129,7 +155,16 @@
     "noMoreClients": "This server is already installed in all available clients.",
     "all": "All",
     "external": "External",
-    "inspect": "Inspect"
+    "inspect": "Inspect",
+    "select": "Select",
+    "cancelSelect": "Cancel",
+    "batchSync": "Sync ({{count}})",
+    "batchSyncTitle": "Sync Servers to Other Clients",
+    "batchSyncHint": "Select the clients to sync {{count}} servers to:",
+    "syncing": "Syncing...",
+    "serversSynced": "Synced {{count}} servers to clients",
+    "serversSyncFailed": "{{count}} servers failed to sync",
+    "syncError": "Sync failed"
   },
   "inspector": {
     "title": "MCP Inspector",
@@ -227,7 +262,7 @@
     "editPath": "Edit config path",
     "uninstalledClients": "More clients not installed",
     "about": "About",
-    "aboutDesc": "MCP Dock v1.0.0",
+    "aboutDesc": "AI-Tools v1.0.0",
     "openSource": "Open Source on GitHub",
     "contribute": "Contribute MCP/Skill",
     "refreshed": "Settings refreshed",
@@ -260,13 +295,43 @@
     "noSkills": "No skills installed",
     "noSkillsHint": "Visit the store to discover and install skills",
     "confirmRemoveSkill": "Are you sure you want to remove this skill?",
+    "uninstallTitle": "Uninstall Skill",
+    "uninstallHint": "Select the clients to uninstall this skill from:",
     "update": "Update",
     "updateAll": "Update All",
     "manual": "Manual",
+      "createCustomSkill": "New Custom Skill",
+      "editSkill": "Edit Skill",
+      "create": "Create",
+    "name": "Name",
+    "description": "Description",
+      "skillNameRequired": "Please enter a skill name",
+      "skillClientRequired": "Please select at least one target client",
+      "discardTitle": "Discard changes?",
+      "discardHint": "You have edited content but not saved it. Closing will lose these changes.",
+      "keepEditing": "Keep editing",
+      "discardChanges": "Discard",
+    "skillSaveFailed": "Failed to save",
+    "skillNamePlaceholder": "my-custom-skill",
+    "skillNameHint": "Only letters, digits, dots, hyphens and underscores are allowed; used as the directory name",
+    "skillDescPlaceholder": "Describe what this skill does in one sentence",
+    "skillBodyPlaceholder": "Describe the skill's purpose, usage and examples...",
+    "content": "Content",
+    "targetClients": "Target clients",
     "skillUpdated": "Skill updated successfully",
     "skillUpdateFailed": "Failed to update skill",
     "allSkillsUpdated": "All skills updated",
-    "allSkillsUpdateFailed": "Failed to update skills"
+    "allSkillsUpdateFailed": "Failed to update skills",
+    "select": "Select",
+    "cancelSelect": "Cancel",
+    "batchSync": "Sync ({{count}})",
+    "syncTitle": "Sync Skill to Other Clients",
+    "syncHint": "Select the clients to sync {{count}} skill(s) to:",
+    "sync": "Sync",
+    "syncing": "Syncing...",
+    "skillsSynced": "Synced {{count}} skill(s) to clients",
+    "skillsSyncFailed": "{{count}} skill(s) failed to sync",
+    "syncError": "Sync failed"
   },
   "skill": {
     "author": "Author",
@@ -279,7 +344,8 @@
     "installTitle": "Install Skill",
     "selectClients": "Select clients to install this skill to:",
     "noClientsSupport": "No installed clients support Skills",
-    "confirmUninstall": "Are you sure you want to uninstall this skill from all clients?"
+    "confirmUninstall": "Are you sure you want to uninstall this skill from all clients?",
+    "noInstallableContent": "This source does not provide installable Skill content (no SKILL.md download channel). Preview only."
   },
   "importSkill": {
     "title": "Import Skill",
@@ -311,6 +377,21 @@
     "security": "Security",
     "content-writing": "Content & Writing",
     "productivity": "Productivity",
-    "design": "Design"
+    "design": "Design",
+    "skillsmp": {
+      "all": "All",
+      "architecture-patterns": "Architecture Patterns",
+      "coding": "Coding",
+      "testing": "Testing",
+      "devops": "DevOps",
+      "data-analytics": "Data & Analytics",
+      "security": "Security",
+      "content-writing": "Content & Writing",
+      "design": "Design",
+      "productivity": "Productivity",
+      "agents": "Agents",
+      "mcp-integration": "MCP Integration",
+      "rag": "RAG"
+    }
   }
 }

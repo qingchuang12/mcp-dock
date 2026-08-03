@@ -36,18 +36,9 @@ export interface DiffResult {
   backup: any;
 }
 
-export type ClientType = 'cursor' | 'vscode' | 'claude-code' | 'gemini-cli' | 'codex-cli' | 'windsurf' | 'zed' | 'trae' | 'trae-cn' | 'kiro' | 'opencode' | 'jetbrains' | 'antigravity' | 'openclaw';
-export type SkillClientType = 'cursor' | 'claude-code' | 'gemini-cli' | 'codex-cli' | 'opencode' | 'agent-skills';
-
-export interface ClientInfo {
-  id: ClientType;
-  name: string;
-  installed: boolean;
-  configPath: string;
-  configExists: boolean;
-  supportsSkills: boolean;
-  skillsPath?: string;
-}
+// 客户端类型统一从主进程 config-manager 引入，避免多端重复定义导致类型不兼容
+import type { ClientType, SkillClientType, ClientInfo } from '../main/config-manager';
+export type { ClientType, SkillClientType, ClientInfo };
 
 // Skills 相关类型
 export interface SkillSourceMeta {
@@ -75,6 +66,22 @@ export interface SkillInstallResult {
   error?: string;
 }
 
+export interface SkillSyncResult {
+  success: SkillClientType[];
+  failed: SkillClientType[];
+  errors: Record<string, string>;
+}
+
+export interface SkillBatchSyncResult {
+  synced: number;
+  failed: number;
+  details: Array<{
+    name: string;
+    success: SkillClientType[];
+    failed: SkillClientType[];
+  }>;
+}
+
 export interface DiscoveredSkill {
   name: string;
   path: string;
@@ -87,6 +94,7 @@ export interface DiscoveredSkill {
     owner: string;
     repo: string;
   };
+  downloadUrl?: string;
 }
 
 export interface ImportParseResult {
@@ -135,6 +143,7 @@ declare const api: {
     uninstallServer: (serverId: string, clients: ClientType[]) => Promise<InstallResult>;
     updateServer: (serverId: string, serverConfig: McpServerConfig, client?: ClientType) => Promise<void>;
     syncServer: (serverId: string, sourceClient: ClientType, targetClients: ClientType[]) => Promise<InstallResult>;
+    syncServersBatch: (items: { serverId: string; config: McpServerConfig }[], targetClients: ClientType[]) => Promise<{ synced: number; failed: number; details: { serverId: string; success: ClientType[]; failed: ClientType[] }[] }>;
   };
   env: {
     checkRuntime: (runtime: 'node' | 'python') => Promise<RuntimeInfo>;
@@ -166,6 +175,9 @@ declare const api: {
     isInstalled: (skillId: string) => Promise<boolean>;
     parseImportUrl: (url: string) => Promise<ImportParseResult>;
     installFromDiscovered: (skill: DiscoveredSkill, clients: SkillClientType[]) => Promise<SkillInstallResult>;
+    getRemoteDetail: (githubPath: string) => Promise<{ success: boolean; skill: DiscoveredSkill | null; error: string | null }>;
+    sync: (skillName: string, sourceClient: SkillClientType, targetClients: SkillClientType[]) => Promise<SkillSyncResult>;
+    syncBatch: (items: Array<{ name: string; sourceClient: SkillClientType }>, targetClients: SkillClientType[]) => Promise<SkillBatchSyncResult>;
   };
   mcp: {
     connect: (sessionId: string, config: { command: string; args?: string[]; env?: Record<string, string> }) => Promise<{ success: boolean; serverInfo?: { name?: string; version?: string }; error?: string }>;

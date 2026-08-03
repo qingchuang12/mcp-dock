@@ -3,7 +3,17 @@
  * 安全地暴露主进程 API 给渲染进程
  */
 
-import { contextBridge, ipcRenderer } from 'electron';
+import {contextBridge, ipcRenderer} from 'electron';
+import type {TokenMeta, TokenScope} from '../main/secret-store';
+import type {ApiConnection} from '../main/connections-store';
+import type {
+    PlatformSearchPage,
+    PlatformServerDetail,
+    PlatformServerSearchPage,
+    PlatformSkillListItem
+} from '../main/platform-skill-resolver';
+// 客户端类型统一从主进程 config-manager 引入，避免多端重复定义导致类型不兼容
+import type {ClientInfo, ClientType, SkillClientType} from '../main/config-manager';
 
 // 类型定义
 export interface McpServerConfig {
@@ -40,18 +50,7 @@ export interface DiffResult {
   backup: any;
 }
 
-export type ClientType = 'cursor' | 'vscode' | 'claude-code' | 'gemini-cli' | 'codex-cli' | 'windsurf' | 'zed' | 'trae' | 'trae-cn' | 'kiro' | 'opencode' | 'jetbrains' | 'antigravity' | 'openclaw';
-export type SkillClientType = 'cursor' | 'claude-code' | 'gemini-cli' | 'codex-cli' | 'opencode' | 'agent-skills';
-
-export interface ClientInfo {
-  id: ClientType;
-  name: string;
-  installed: boolean;
-  configPath: string;
-  configExists: boolean;
-  supportsSkills: boolean;
-  skillsPath?: string;
-}
+export type { ClientType, SkillClientType, ClientInfo };
 
 // Skills 相关类型
 export interface SkillSourceMeta {
@@ -79,6 +78,34 @@ export interface SkillInstallResult {
   error?: string;
 }
 
+export interface CustomSkillInput {
+  name: string;
+  description: string;
+  body: string;
+}
+
+export interface CreateCustomSkillResult {
+  success: boolean;
+  error?: string;
+  skillName?: string;
+}
+
+export interface SkillSyncResult {
+  success: SkillClientType[];
+  failed: SkillClientType[];
+  errors: Record<string, string>;
+}
+
+export interface SkillBatchSyncResult {
+  synced: number;
+  failed: number;
+  details: Array<{
+    name: string;
+    success: SkillClientType[];
+    failed: SkillClientType[];
+  }>;
+}
+
 export interface DiscoveredSkill {
   name: string;
   path: string;
@@ -91,6 +118,7 @@ export interface DiscoveredSkill {
     owner: string;
     repo: string;
   };
+  downloadUrl?: string;
 }
 
 export interface LocalSkillDetail {
@@ -193,6 +221,8 @@ const api = {
       ipcRenderer.invoke('config:update-server', serverId, serverConfig, client),
     syncServer: (serverId: string, sourceClient: ClientType, targetClients: ClientType[]): Promise<InstallResult> =>
       ipcRenderer.invoke('config:sync-server', serverId, sourceClient, targetClients),
+    syncServersBatch: (items: { serverId: string; config: McpServerConfig }[], targetClients: ClientType[]): Promise<{ synced: number; failed: number; details: { serverId: string; success: ClientType[]; failed: ClientType[] }[] }> =>
+      ipcRenderer.invoke('config:sync-servers-batch', items, targetClients),
   },
 
   // 环境检测
@@ -253,10 +283,78 @@ const api = {
       ipcRenderer.invoke('skills:is-installed', skillId),
     parseImportUrl: (url: string): Promise<ImportParseResult> =>
       ipcRenderer.invoke('skills:parse-import-url', url),
+    resolvePlatformUrl: (url: string): Promise<ImportParseResult> =>
+      ipcRenderer.invoke('skills:resolve-platform-url', url),
     installFromDiscovered: (skill: DiscoveredSkill, clients: SkillClientType[]): Promise<SkillInstallResult> =>
       ipcRenderer.invoke('skills:install-from-discovered', skill, clients),
+    createCustom: (input: CustomSkillInput, clients: SkillClientType[]): Promise<CreateCustomSkillResult> =>
+      ipcRenderer.invoke('skills:create-custom', input, clients),
+    updateCustom: (originalName: string, input: CustomSkillInput, clients: SkillClientType[]): Promise<CreateCustomSkillResult> =>
+      ipcRenderer.invoke('skills:update-custom', originalName, input, clients),
+    readSkillMd: (skillName: string, client: SkillClientType): Promise<{ name: string; description: string; body: string } | null> =>
+      ipcRenderer.invoke('skills:read-skill-md', skillName, client),
     getLocalDetail: (skillId: string): Promise<LocalSkillDetail | null> =>
       ipcRenderer.invoke('skills:get-local-detail', skillId),
+    getRemoteDetail: (githubPath: string): Promise<{ success: boolean; skill: DiscoveredSkill | null; error: string | null }> =>
+      ipcRenderer.invoke('skills:get-remote-detail', githubPath),
+    sync: (skillName: string, sourceClient: SkillClientType, targetClients: SkillClientType[]): Promise<SkillSyncResult> =>
+      ipcRenderer.invoke('skills:sync', skillName, sourceClient, targetClients),
+    syncBatch: (items: Array<{ name: string; sourceClient: SkillClientType }>, targetClients: SkillClientType[]): Promise<SkillBatchSyncResult> =>
+      ipcRenderer.invoke('skills:sync-batch', items, targetClients),
+  },
+
+  // API 令牌管理
+  apiTokens: {
+    list: (): Promise<TokenMeta[]> =>
+      ipcRenderer.invoke('api-tokens:list'),
+    create: (name: string, scopes: TokenScope[], expiresAt: number | null): Promise<TokenMeta> =>
+      ipcRenderer.invoke('api-tokens:create', name, scopes, expiresAt),
+    import: (rawKey: string, name: string, platform?: string, expiresAt?: number | null): Promise<TokenMeta> =>
+      ipcRenderer.invoke('api-tokens:import', rawKey, name, platform, expiresAt),
+    reveal: (id: string): Promise<string | null> =>
+      ipcRenderer.invoke('api-tokens:reveal', id),
+    revoke: (id: string): Promise<TokenMeta | null> =>
+      ipcRenderer.invoke('api-tokens:revoke', id),
+    restore: (id: string): Promise<TokenMeta | null> =>
+      ipcRenderer.invoke('api-tokens:restore', id),
+    delete: (id: string): Promise<void> =>
+      ipcRenderer.invoke('api-tokens:delete', id),
+  },
+
+  // API 直连管理
+  apiConnections: {
+    list: (kind?: 'mcp' | 'skill'): Promise<ApiConnection[]> =>
+      ipcRenderer.invoke('api-connections:list', kind),
+    create: (conn: Omit<ApiConnection, 'id' | 'createdAt' | 'status' | 'lastCheckedAt'>): Promise<ApiConnection> =>
+      ipcRenderer.invoke('api-connections:create', conn),
+    update: (conn: ApiConnection): Promise<ApiConnection> =>
+      ipcRenderer.invoke('api-connections:update', conn),
+    delete: (id: string): Promise<void> =>
+      ipcRenderer.invoke('api-connections:delete', id),
+    verify: (id: string): Promise<ApiConnection> =>
+      ipcRenderer.invoke('api-connections:verify', id),
+    export: (id?: string): Promise<string> =>
+      ipcRenderer.invoke('api-connections:export', id),
+    searchPlatform: (connectionId: string, query: string, page: number, pageSize?: number, category?: string): Promise<PlatformSkillListItem[]> =>
+      ipcRenderer.invoke('api-connections:search-platform', connectionId, query, page, pageSize, category),
+    searchPlatformPaged: (connectionId: string, query: string, page: number, pageSize?: number, category?: string): Promise<PlatformSearchPage> =>
+      ipcRenderer.invoke('api-connections:search-platform-paged', connectionId, query, page, pageSize, category),
+    searchPlatformServersPaged: (connectionId: string, query: string, page: number, pageSize?: number, category?: string): Promise<PlatformServerSearchPage> =>
+      ipcRenderer.invoke('api-connections:search-servers-paged', connectionId, query, page, pageSize, category),
+    getServerDetail: (connectionId: string, serverId: string): Promise<PlatformServerDetail> =>
+      ipcRenderer.invoke('api-connections:get-server-detail', connectionId, serverId),
+    searchDiagnostics: (connectionId: string): Promise<any> =>
+      ipcRenderer.invoke('api-connections:search-diagnostics', connectionId),
+    resolveSkill: (connectionId: string, sourceUrl: string): Promise<any> =>
+      ipcRenderer.invoke('api-connections:resolve-skill', connectionId, sourceUrl),
+    setDefault: (id: string): Promise<ApiConnection> =>
+      ipcRenderer.invoke('api-connections:set-default', id),
+    setEnabled: (id: string, enabled: boolean): Promise<ApiConnection> =>
+      ipcRenderer.invoke('api-connections:set-enabled', id, enabled),
+    restoreBuiltinMcp: (): Promise<ApiConnection[]> =>
+      ipcRenderer.invoke('api-connections:restore-builtin-mcp'),
+    restoreBuiltinSkill: (): Promise<ApiConnection[]> =>
+      ipcRenderer.invoke('api-connections:restore-builtin-skill'),
   },
 
   // MCP Inspector

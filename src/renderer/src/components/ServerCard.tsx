@@ -4,21 +4,24 @@
  * 紧凑高度设计
  */
 
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
-import type { ServerListItem, DataSource, OfficialListItem } from '../api/registry';
-import { isSmitheryListItem, isOfficialListItem } from '../api/registry';
-import { DownloadIcon, VerifiedIcon, ClockIcon } from './Icons';
+import {useState} from 'react';
+import {useNavigate} from 'react-router-dom';
+import {useTranslation} from 'react-i18next';
+import type {DataSource, ServerListItem} from '../api/registry';
+import {isOfficialListItem, isSmitheryListItem} from '../api/registry';
+import {ClockIcon, DownloadIcon, VerifiedIcon} from './Icons';
 
 interface ServerCardProps {
   server: ServerListItem;
   dataSource: DataSource;
   isInstalled?: boolean;
+  /** 平台源（如 ModelScope）连接 ID，用于跳转到平台详情页 */
+  platformConnId?: string | null;
 }
 
 // 格式化数字
-function formatNumber(count: number): string {
+function formatNumber(count?: number | null): string {
+  if (count == null || isNaN(count)) return '';
   if (count >= 1000000) {
     return `${(count / 1000000).toFixed(1)}M`;
   }
@@ -66,7 +69,7 @@ function ServerIcon({ server }: { server: ServerListItem }) {
   const [avatarError, setAvatarError] = useState(false);
   
   // 获取仓库 URL (仅 Official 数据源)
-  const repoUrl = isOfficialListItem(server) ? (server as OfficialListItem).repository?.url : null;
+  const repoUrl = isOfficialListItem(server) ? (server as any).repository?.url : null;
   const githubUsername = extractGitHubUsername(repoUrl);
   
   // 首字母图标
@@ -113,11 +116,16 @@ function ServerIcon({ server }: { server: ServerListItem }) {
   );
 }
 
-export default function ServerCard({ server, dataSource, isInstalled }: ServerCardProps) {
+export default function ServerCard({ server, dataSource, isInstalled, platformConnId }: ServerCardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
   const handleClick = () => {
+    // 平台源（如 ModelScope）走独立的详情页路由，附带连接 ID
+    if (server.source === 'platform' && platformConnId) {
+      navigate(`/detail/platform/${encodeURIComponent(server.id)}?conn=${encodeURIComponent(platformConnId)}`);
+      return;
+    }
     navigate(`/detail/${dataSource}/${encodeURIComponent(server.id)}`);
   };
 
@@ -162,7 +170,7 @@ export default function ServerCard({ server, dataSource, isInstalled }: ServerCa
           // Official 数据源
           <>
             <div className="flex items-center gap-2 text-[10px] text-[#636366]">
-              <span className="font-mono">v{server.version}</span>
+              <span className="font-mono">v{(server as any).version}</span>
               {(server as any).author && (
                 <span>@{(server as any).author}</span>
               )}
@@ -189,10 +197,12 @@ export default function ServerCard({ server, dataSource, isInstalled }: ServerCa
         ) : isSmitheryListItem(server) ? (
           // Smithery 数据源
           <>
-            <span className="text-[10px] text-[#636366] flex items-center gap-1">
-              <DownloadIcon className="w-3 h-3" />
-              {formatNumber(server.downloads)}
-            </span>
+            {typeof server.downloads === 'number' && server.downloads > 0 && (
+              <span className="text-[10px] text-[#636366] flex items-center gap-1">
+                <DownloadIcon className="w-3 h-3" />
+                {formatNumber(server.downloads)}
+              </span>
+            )}
             {server.verified && (
               <VerifiedIcon className="w-3.5 h-3.5 text-[#0a84ff]" />
             )}

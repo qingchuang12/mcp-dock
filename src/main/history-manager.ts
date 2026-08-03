@@ -6,7 +6,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import { ConfigManager, ClientType, SkillClientType, SKILL_SUPPORTED_CLIENTS } from './config-manager';
+import {ClientType, ConfigManager, SKILL_SUPPORTED_CLIENTS, SkillClientType} from './config-manager';
 
 export interface BackupInfo {
   timestamp: string;
@@ -79,6 +79,9 @@ export class HistoryManager {
       'codex-cli': path.join(home, '.codex', 'skills'),
       opencode: path.join(home, '.config', 'opencode', 'skills'),
       'agent-skills': path.join(home, '.agents', 'skills'),
+      codebuddy: path.join(home, '.codebuddy', 'skills'),
+      workbuddy: path.join(home, '.workbuddy', 'skills'),
+      qoder: path.join(home, '.qoder', 'skills'),
     };
     
     const skillsPath = skillsPaths[client];
@@ -112,7 +115,7 @@ export class HistoryManager {
     try {
       await this.ensureBackupDir();
 
-      const clients: ClientType[] = ['cursor', 'claude-code', 'gemini-cli', 'codex-cli', 'windsurf', 'zed', 'trae', 'opencode'];
+      const clients: ClientType[] = ['cursor', 'claude-code', 'gemini-cli', 'codex-cli', 'windsurf', 'zed', 'trae', 'opencode', 'codebuddy', 'workbuddy', 'qoder'];
       const backupData: BackupData = {
         timestamp: new Date().toISOString(),
         clients: {},

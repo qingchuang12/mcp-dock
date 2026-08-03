@@ -1,4 +1,4 @@
-# MCP Dock
+# AI-Tools
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/OldJii/mcp-dock/main/assets/icon.png" width="128" height="128" alt="MCP Dock">
@@ -100,7 +100,7 @@ brew upgrade --cask mcp-dock
 
 ## Data Sources
 
-MCP Dock supports two data sources:
+AI-Tools supports two data sources:
 
 - **Official** - MCP Official Registry with verified servers
 - **Smithery** - Smithery.ai community with community-contributed servers
@@ -145,7 +145,7 @@ Internet is required for loading the MCP list. Installed MCP configurations are 
 
 ## Source Code
 
-This repository includes the full source code of MCP Dock (Community Edition). You can build, modify, and contribute to the project.
+This repository includes the full source code of AI-Tools (Community Edition). You can build, modify, and contribute to the project.
 
 ### Tech Stack
 

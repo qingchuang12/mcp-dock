@@ -3,9 +3,9 @@
  * 全局状态管理
  */
 
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import type { ServerListItem, DataSource, SkillListItem, ResourceType } from '../api/registry';
+import {create} from 'zustand';
+import {persist} from 'zustand/middleware';
+import type {DataSource, ResourceType, ServerListItem, SkillListItem} from '../api/registry';
 
 // Inspector 配置状态
 interface InspectorState {
@@ -31,6 +31,7 @@ interface StoreState {
   currentPage: number;
   pageSize: number;
   setCurrentPage: (page: number) => void;
+  setPageSize: (size: number) => void;
   
   // 服务器列表缓存 (按数据源分开)
   serverLists: Record<DataSource, ServerListItem[]>;
@@ -52,6 +53,14 @@ interface StoreState {
   addInstalledSkillId: (id: string) => void;
   removeInstalledSkillId: (id: string) => void;
   
+  // MCP 平台源直连连接 ID（从详情返回时需保留）
+  mcpConnId: string | null;
+  setMcpConnId: (id: string | null) => void;
+
+  // Skills 源选择（从详情返回时需保留）
+  selectedSkillSourceId: string | null;
+  setSelectedSkillSourceId: (id: string | null) => void;
+
   // Inspector 状态
   inspectorState: InspectorState;
   setInspectorState: (state: Partial<InspectorState>) => void;
@@ -94,6 +103,7 @@ export const useStore = create<StoreState>()(
       currentPage: 1,
       pageSize: 20,
       setCurrentPage: (page) => set({ currentPage: page }),
+      setPageSize: (size) => set({ pageSize: size, currentPage: 1 }),
       
       // 服务器列表 (按数据源分开)
       serverLists: {
@@ -139,6 +149,14 @@ export const useStore = create<StoreState>()(
         return { installedSkillIds: newSet };
       }),
       
+      // MCP 平台源直连连接 ID
+      mcpConnId: null,
+      setMcpConnId: (id) => set({ mcpConnId: id }),
+
+      // Skills 源选择
+      selectedSkillSourceId: null,
+      setSelectedSkillSourceId: (id) => set({ selectedSkillSourceId: id }),
+
       // Inspector 状态
       inspectorState: {
         command: 'npx',
@@ -168,6 +186,8 @@ export const useStore = create<StoreState>()(
         dataSource: state.dataSource,
         resourceType: state.resourceType,
         pageSize: state.pageSize,
+        mcpConnId: state.mcpConnId,
+        selectedSkillSourceId: state.selectedSkillSourceId,
       }),
       // 合并恢复的状态时验证值的有效性
       merge: (persistedState, currentState) => {

@@ -3,10 +3,10 @@
  * 支持左侧菜单宽度可拖拽调整
  */
 
-import { ReactNode, useState, useEffect, useCallback, useRef } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
-import { useElectronAPI } from '../lib/electron';
+import {ReactNode, useCallback, useEffect, useRef, useState} from 'react';
+import {NavLink, useLocation} from 'react-router-dom';
+import {useTranslation} from 'react-i18next';
+import {useElectronAPI} from '../lib/electron';
 
 interface LayoutProps {
   children: ReactNode;
@@ -134,8 +134,8 @@ export default function Layout({ children }: LayoutProps) {
         style={{ width: sidebarWidth }}
         className="flex-shrink-0 bg-[#2c2c2e] flex flex-col border-r border-[#3a3a3c] relative"
       >
-        {/* 顶部拖拽区域 - 支持窗口拖动 */}
-        <div className="h-[52px] drag-region flex-shrink-0" />
+        {/* 顶部拖拽区域 - 支持窗口拖动（mac 交通灯占位，更紧凑） */}
+        <div className="h-9 drag-region flex-shrink-0" />
 
         {/* 导航菜单 */}
         <nav className="flex-1 py-2 overflow-y-auto">
@@ -194,12 +194,9 @@ export default function Layout({ children }: LayoutProps) {
         />
       </aside>
 
-      {/* 主内容区域 - 移除顶部白条 */}
+      {/* 主内容区域 */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* 顶部拖拽区域 - 只保留拖拽功能，无视觉元素 */}
-        <div className="h-[52px] drag-region flex-shrink-0" />
-        
-        {/* 内容区域 */}
+        {/* 内容区域（标题栏由各页面头部自绘，含拖拽区，避免窗口与内容间多余空白） */}
         <div className="flex-1 overflow-hidden">
           {children}
         </div>

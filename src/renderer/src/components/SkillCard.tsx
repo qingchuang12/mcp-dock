@@ -4,15 +4,19 @@
  * 紧凑高度设计，与 ServerCard 一致
  */
 
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
-import type { SkillListItem } from '../api/registry';
-import { StarIcon, ClockIcon } from './Icons';
+import {useState} from 'react';
+import {useNavigate} from 'react-router-dom';
+import {useTranslation} from 'react-i18next';
+import type {SkillListItem} from '../api/registry';
+import {ClockIcon, StarIcon} from './Icons';
 
 interface SkillCardProps {
   skill: SkillListItem;
   isInstalled?: boolean;
+  /** 来自 API 直连来源时的连接 ID，用于详情页走 resolveSkill 安装链路 */
+  connectionId?: string;
+  /** 直连来源的源 URL，配合 connectionId 用于详情页解析与安装 */
+  sourceUrl?: string;
 }
 
 // 格式化数字
@@ -93,12 +97,28 @@ function SkillIcon({ skill }: { skill: SkillListItem }) {
   );
 }
 
-export default function SkillCard({ skill, isInstalled }: SkillCardProps) {
+export default function SkillCard({ skill, isInstalled, connectionId, sourceUrl }: SkillCardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
   const handleClick = () => {
-    navigate(`/skill/${encodeURIComponent(skill.id)}`);
+    const params = new URLSearchParams();
+    if (connectionId) params.set('conn', connectionId);
+    if (sourceUrl) params.set('src', sourceUrl);
+    // 携带列表项元数据，便于详情页在无法解析源（如 SPA 站点 SkillHub/ClawHub）时
+    // 仍能打开预览页并展示与列表一致的信息，而不是硬报错。
+    const meta = {
+      id: skill.id,
+      name: skill.name,
+      description: skill.description,
+      author: skill.author,
+      categoryId: skill.categoryId,
+      stars: skill.stars ?? 0,
+      sourceUrl: sourceUrl ?? null,
+    };
+    params.set('meta', encodeURIComponent(JSON.stringify(meta)));
+    const q = params.toString() ? `?${params.toString()}` : '';
+    navigate(`/skill/${encodeURIComponent(skill.id)}${q}`);
   };
 
   const { bg, text } = getCategoryColor(skill.categoryId);

@@ -1,4 +1,4 @@
-# MCP Dock
+# AI-Tools
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/OldJii/mcp-dock/main/assets/icon.png" width="128" height="128" alt="MCP Dock">
@@ -100,7 +100,7 @@ brew upgrade --cask mcp-dock
 
 ## 数据源
 
-MCP Dock 支持两个数据源：
+AI-Tools 支持两个数据源：
 
 - **Official** - MCP 官方注册表，包含经过验证的 MCP Server
 - **Smithery** - Smithery.ai 社区，包含社区贡献的 MCP Server

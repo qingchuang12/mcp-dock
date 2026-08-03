@@ -6,7 +6,8 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import { SkillClientType, SKILL_SUPPORTED_CLIENTS } from './config-manager';
+import {execFile} from 'child_process';
+import {SKILL_SUPPORTED_CLIENTS, SkillClientType} from './config-manager';
 
 // GitHub 仓库中发现的 Skill 信息
 export interface DiscoveredSkill {
@@ -21,6 +22,8 @@ export interface DiscoveredSkill {
     owner: string;
     repo: string;
   };
+  /** 非 GitHub 源的 zip 下载直链（如 ModelScope 的 /skills/<owner>/<slug>/archive/zip/master）；存在时安装走 zip 解压通道 */
+  downloadUrl?: string;
 }
 
 // Import 解析结果
@@ -58,6 +61,24 @@ export interface SkillInstallResult {
   error?: string;
 }
 
+// 单个 Skill 同步到其他客户端的结果
+export interface SkillSyncResult {
+  success: SkillClientType[];
+  failed: SkillClientType[];
+  errors: Record<string, string>;
+}
+
+// 批量同步多个 Skill 的结果
+export interface SkillBatchSyncResult {
+  synced: number;
+  failed: number;
+  details: Array<{
+    name: string;
+    success: SkillClientType[];
+    failed: SkillClientType[];
+  }>;
+}
+
 // 用户设置
 interface SkillsSettings {
   customSkillsPaths?: Partial<Record<SkillClientType, string>>;
@@ -70,7 +91,6 @@ export class SkillsManager {
 
   constructor() {
     const home = os.homedir();
-    const platform = process.platform;
 
     this.settingsPath = path.join(home, '.mcp-dock', 'settings.json');
 
@@ -82,6 +102,9 @@ export class SkillsManager {
       'codex-cli': path.join(home, '.codex', 'skills'),
       opencode: path.join(home, '.config', 'opencode', 'skills'),
       'agent-skills': path.join(home, '.agents', 'skills'),
+      codebuddy: path.join(home, '.codebuddy', 'skills'),
+      workbuddy: path.join(home, '.workbuddy', 'skills'),
+      qoder: path.join(home, '.qoder', 'skills'),
     };
 
     this.loadSettings();
@@ -201,6 +224,14 @@ export class SkillsManager {
         await this.ensureSkillsDir(client);
         const skillPath = path.join(this.getSkillsPath(client), skillName);
 
+        if (!sourceInfo.files || sourceInfo.files.length === 0) {
+          // 文件清单为空：不写入空壳目录，直接返回失败（对齐 installFromDiscovered 的做法）
+          return {
+            success: false,
+            error: 'No installable files found for this Skill (empty file list). Installation aborted.',
+          };
+        }
+
         await fs.mkdir(skillPath, { recursive: true });
 
         let downloadedCount = 0;
@@ -275,6 +306,134 @@ export class SkillsManager {
         console.error(`[SkillsManager] Failed to uninstall skill from ${client}:`, error);
       }
     }
+  }
+
+  /**
+   * 将 Skill 名称规范化为合法的目录名（去掉路径分隔符等非法字符，转为 kebab-case）
+   */
+  private sanitizeSkillName(name: string): string {
+    return name
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-zA-Z0-9_.-]/g, '')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase();
+  }
+
+  /**
+   * 生成 SKILL.md 内容（YAML frontmatter + 正文），符合 Anthropic Skill 规范
+   */
+  private buildSkillMd(name: string, description: string, body: string): string {
+    const desc = (description || '').trim();
+    const frontmatter =
+      `---\nname: ${name}\n` +
+      `description: ${desc}\n---\n\n`;
+    return frontmatter + (body || '').trim() + '\n';
+  }
+
+  /** 解析 SKILL.md 的 frontmatter 与正文（用于编辑回填） */
+  async readSkillMd(skillName: string, client: SkillClientType): Promise<{ name: string; description: string; body: string } | null> {
+    await this.loadSettings();
+    const skillPath = path.join(this.getSkillsPath(client), skillName);
+    try {
+      const content = await fs.readFile(path.join(skillPath, 'SKILL.md'), 'utf-8');
+      const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
+      if (!match) {
+        return { name: skillName, description: '', body: content };
+      }
+      const fm: Record<string, string> = {};
+      match[1].split('\n').forEach(line => {
+        const idx = line.indexOf(':');
+        if (idx > 0) fm[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+      });
+      return {
+        name: fm.name || skillName,
+        description: fm.description || '',
+        body: match[2].trim(),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 创建自定义 Skill：在目标客户端的 skills/<name>/ 下写入 SKILL.md（不依赖网络，无 .source.json）
+   */
+  async createCustomSkill(
+    input: { name: string; description: string; body: string },
+    clients: SkillClientType[]
+  ): Promise<{ success: boolean; error?: string; skillName?: string }> {
+    const skillName = this.sanitizeSkillName(input.name);
+    if (!skillName) {
+      return { success: false, error: 'Skill 名称无效（仅允许字母、数字、点、中划线、下划线）' };
+    }
+
+    const content = this.buildSkillMd(skillName, input.description, input.body);
+
+    for (const client of clients) {
+      try {
+        const skillPath = path.join(this.getSkillsPath(client), skillName);
+        // 目录已存在且含 SKILL.md 视为重名冲突（仅对创建场景）
+        try {
+          await fs.access(path.join(skillPath, 'SKILL.md'));
+          return { success: false, error: `Skill "${skillName}" 已存在于 ${client}` };
+        } catch { /* 不存在，继续 */ }
+
+        await this.ensureSkillsDir(client);
+        await fs.mkdir(skillPath, { recursive: true });
+        await fs.writeFile(path.join(skillPath, 'SKILL.md'), content, 'utf-8');
+        console.log(`[SkillsManager] Created custom skill ${skillName} to ${client}`);
+      } catch (error) {
+        return { success: false, error: (error as Error).message };
+      }
+    }
+
+    return { success: true, skillName };
+  }
+
+  /**
+   * 更新自定义 Skill：改写 SKILL.md frontmatter 与正文；若改名则移动整个目录
+   */
+  async updateCustomSkill(
+    originalName: string,
+    input: { name: string; description: string; body: string },
+    clients: SkillClientType[]
+  ): Promise<{ success: boolean; error?: string }> {
+    const newName = this.sanitizeSkillName(input.name) || originalName;
+    const content = this.buildSkillMd(newName, input.description, input.body);
+
+    for (const client of clients) {
+      try {
+        const base = this.getSkillsPath(client);
+        const oldPath = path.join(base, originalName);
+        const newPath = path.join(base, newName);
+
+        await fs.access(oldPath);
+        await this.ensureSkillsDir(client);
+
+        if (newName !== originalName) {
+          // 目标目录已存在且不是自身（大小写归一后冲突）则报错，避免覆盖
+          if (newName !== originalName.toLowerCase() || newPath !== oldPath) {
+            try {
+              await fs.access(path.join(newPath, 'SKILL.md'));
+              if (newPath !== oldPath) {
+                return { success: false, error: `Skill "${newName}" 已存在，无法重命名` };
+              }
+            } catch { /* 目标不存在，可移动 */ }
+          }
+          await fs.mkdir(newPath, { recursive: true });
+          await fs.cp(oldPath, newPath, { recursive: true });
+          await fs.rm(oldPath, { recursive: true, force: true });
+        }
+
+        await fs.writeFile(path.join(newPath, 'SKILL.md'), content, 'utf-8');
+        console.log(`[SkillsManager] Updated custom skill ${originalName} -> ${newName} on ${client}`);
+      } catch (error) {
+        return { success: false, error: (error as Error).message };
+      }
+    }
+
+    return { success: true };
   }
 
   /**
@@ -675,34 +834,47 @@ export class SkillsManager {
   }
 
   /**
-   * 获取指定目录下的所有文件（Contents API → HTML fallback）
+   * 递归获取指定目录下的所有文件（含子目录），用于完整安装一个 Skill。
+   * installSkill 会按 file 的相对路径重建子目录，因此这里把 name 设为完整相对路径。
    */
   private async listDirFiles(
     owner: string, repo: string, branch: string, dirPath: string
   ): Promise<Array<{ name: string; path: string; rawUrl: string }>> {
-    const makeEntry = (name: string) => {
-      const fullPath = dirPath ? `${dirPath}/${name}` : name;
-      return {
-        name,
-        path: fullPath,
-        rawUrl: `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${fullPath}`,
-      };
+    const baseRaw = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}`;
+
+    // 策略 1: 通过 GitHub Contents API 递归遍历（一次请求拿一层，自动下钻子目录）
+    const walk = async (
+      apiPath: string,
+      relPrefix: string
+    ): Promise<Array<{ name: string; path: string; rawUrl: string }>> => {
+      let items: any[] = [];
+      try {
+        items = await this.githubFetch(
+          `https://api.github.com/repos/${owner}/${repo}/${apiPath}?ref=${branch}`
+        );
+      } catch {
+        return [];
+      }
+      if (!Array.isArray(items)) return [];
+
+      const out: Array<{ name: string; path: string; rawUrl: string }> = [];
+      for (const f of items) {
+        const rel = relPrefix ? `${relPrefix}/${f.name}` : f.name;
+        if (f.type === 'file') {
+          out.push({ name: rel, path: rel, rawUrl: `${baseRaw}/${rel}` });
+        } else if (f.type === 'dir') {
+          out.push(...(await walk(`${apiPath}/${f.name}`, rel)));
+        }
+      }
+      return out;
     };
 
-    // 策略 1: Contents API
-    try {
-      const items = await this.listDirContents(owner, repo, branch, dirPath);
-      const files = items
-        .filter((f: any) => f.type === 'file')
-        .map((f: any) => ({
-          name: f.name as string,
-          path: f.path as string,
-          rawUrl: `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${f.path}`,
-        }));
-      if (files.length > 0) return files;
-    } catch { /* fallback */ }
+    // relPrefix 从空开始：返回「相对 dirPath 的子路径」（如 LICENSE.txt、templates/a.js），
+    // 与 installFromDiscovered 里已含 skill.path 的 rawBaseUrl 拼接，避免双重前缀导致 404。
+    const files = await walk(dirPath ? `contents/${dirPath}` : 'contents', '');
+    if (files.length > 0) return files;
 
-    // 策略 2: HTML 页面解析文件名
+    // 策略 2: HTML 页面解析文件名（不消耗 API 配额，作为兜底）
     try {
       const pageUrl = `https://github.com/${owner}/${repo}/tree/${branch}/${dirPath}`;
       const res = await this.fetchWithTimeout(pageUrl, {
@@ -719,19 +891,14 @@ export class SkillsManager {
           fileNames.add(m[1]);
         }
         if (fileNames.size > 0) {
-          return [...fileNames].map(makeEntry);
+          return [...fileNames].map(name => ({
+            name,
+            path: dirPath ? `${dirPath}/${name}` : name,
+            rawUrl: `${baseRaw}/${dirPath ? `${dirPath}/` : ''}${name}`,
+          }));
         }
       }
     } catch { /* fallback */ }
-
-    // 策略 3: 至少尝试获取 SKILL.md
-    try {
-      const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${dirPath ? dirPath + '/' : ''}SKILL.md`;
-      const res = await this.fetchWithTimeout(rawUrl, { method: 'HEAD' });
-      if (res.ok) {
-        return [makeEntry('SKILL.md')];
-      }
-    } catch { /* ignore */ }
 
     return [];
   }
@@ -774,13 +941,19 @@ export class SkillsManager {
 
           const skillName = dir ? dir.split('/').pop() || repo : repo;
 
+          // repository.url 必须带实际子路径 dir（如 .../tree/<branch>/skills/brand-guidelines），
+          // 否则列表项 sourceUrl 会变成仓库根，详情页 resolveSkill 解析整个仓库后盲取 skills[0]，
+          // 安装的是错误的 skill 子目录（下载地址不对）。
+          const repoUrl = dir
+            ? `https://github.com/${owner}/${repo}/tree/${branch}/${dir}`
+            : `https://github.com/${owner}/${repo}`;
           return {
             name: skillName,
             path: dir,
             skillMdUrl,
             skillMdContent,
             files: [],
-            repository: { url: `https://github.com/${owner}/${repo}`, branch, owner, repo },
+            repository: { url: repoUrl, branch, owner, repo },
           } as DiscoveredSkill;
         });
         const results = await Promise.all(fetches);
@@ -798,20 +971,135 @@ export class SkillsManager {
   }
 
   /**
+   * 当 GitHub Contents API 限流 / 网络失败时，绕开 API 直接通过 raw.githubusercontent.com 探测并补全文件清单。
+   * 思路：
+   *  1) 优先确认 SKILL.md 在 raw 上可达；
+   *  2) 解析 SKILL.md 正文中引用的本地相对路径（references/、scripts/、assets/ 等），逐个 raw HEAD 探测，存在的纳入清单。
+   * 不消耗 api.github.com 配额，规避 403 rate limit。
+   */
+  private async resolveFilesViaRaw(
+    owner: string,
+    repo: string,
+    branch: string,
+    skillPath: string
+  ): Promise<string[]> {
+    const baseRaw = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}`;
+    const prefix = skillPath ? `${skillPath}/` : '';
+
+    const existsOnRaw = async (rel: string): Promise<boolean> => {
+      try {
+        const res = await this.fetchWithTimeout(`${baseRaw}/${prefix}${rel}`, { method: 'HEAD' });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    };
+
+    const files: string[] = [];
+    const seen = new Set<string>();
+    const push = (rel: string) => {
+      if (rel && !seen.has(rel)) {
+        seen.add(rel);
+        files.push(rel);
+      }
+    };
+
+    // 1) SKILL.md 必须存在
+    const skillMdRel = 'SKILL.md';
+    if (await existsOnRaw(skillMdRel)) {
+      push(skillMdRel);
+    } else {
+      return []; // raw 上连 SKILL.md 都拿不到，直接放弃
+    }
+
+    // 2) 下载 SKILL.md 正文，解析本地相对路径引用
+    let mdText = '';
+    try {
+      const mdRes = await this.fetchWithTimeout(`${baseRaw}/${prefix}${skillMdRel}`);
+      if (mdRes.ok) mdText = await mdRes.text();
+    } catch { /* ignore */ }
+
+    if (mdText) {
+      // 匹配形如 `references/foo.md`、`scripts/run.py`、`assets/img.png` 的本地相对引用
+      const refRe = /(?:\[[^\]]*\]\(\s*|\b(?:include|reference|source)\s*[=:]\s*)(?:\.\/)?([\w./-]+\.(?:md|markdown|txt|json|ya?ml|py|js|ts|sh|bash|png|jpg|jpeg|gif|svg|csv|html|css))(?:\s*\)|\s*$)/gi;
+      const candidates = new Set<string>();
+      let m: RegExpExecArray | null;
+      while ((m = refRe.exec(mdText)) !== null) {
+        const rel = m[1].replace(/^\.\//, '');
+        if (!rel.includes('://') && !rel.startsWith('/')) candidates.add(rel);
+      }
+
+      for (const rel of candidates) {
+        if (await existsOnRaw(rel)) push(rel);
+      }
+
+      // 3) 常见子目录探测：references/、scripts/、assets/、templates/
+      for (const dir of ['references', 'scripts', 'assets', 'templates']) {
+        // 目录无法直接 HEAD，尝试探测几个常见文件名；若 SKILL.md 提到该目录则更激进
+        const probeNames =
+          dir === 'references'
+            ? ['references/reference.md', 'references/README.md']
+            : dir === 'scripts'
+            ? ['scripts/main.py', 'scripts/run.py', 'scripts/main.js']
+            : dir === 'assets'
+            ? ['assets/icon.png', 'assets/cover.png']
+            : ['templates/template.md', 'templates/index.html'];
+        for (const p of probeNames) {
+          if (await existsOnRaw(p)) push(p);
+        }
+      }
+    }
+
+    return files;
+  }
+
+  /**
    * 从发现的 Skill 安装到指定客户端
    */
   async installFromDiscovered(
     skill: DiscoveredSkill,
     clients: SkillClientType[]
   ): Promise<SkillInstallResult> {
+    // 非 GitHub 源的 zip 下载直链（如 ModelScope）→ 走 zip 解压安装通道
+    if (skill.downloadUrl) {
+      return this.installSkillFromZip(skill.downloadUrl, skill.name, clients);
+    }
+
     const { owner, repo, branch } = skill.repository;
     const skillId = `${owner}/${skill.path ? `${repo}/${skill.name}` : repo}`;
     const rawBaseUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}${skill.path ? `/${skill.path}` : ''}`;
 
-    let fileNames = skill.files.map(f => f.name);
+    // 1) 解析阶段已带出的文件清单优先
+    let fileNames: string[] = skill.files.map(f => f.name);
+    // 2) 否则递归列举 skill 目录（含子目录），拿到全部文件
     if (fileNames.length === 0) {
-      const files = await this.listDirFiles(owner, repo, branch, skill.path || '');
-      fileNames = files.map(f => f.name);
+      try {
+        const files = await this.listDirFiles(owner, repo, branch, skill.path || '');
+        fileNames = files.map(f => f.name);
+      } catch {
+        fileNames = [];
+      }
+    }
+    // 3) 兜底（方案 B）：GitHub Contents API 限流 / 网络失败时，绕开 API 直接通过
+    //    raw.githubusercontent.com 探测并补全文件清单，不消耗 api.github.com 配额。
+    if (fileNames.length === 0) {
+      try {
+        const rawFiles = await this.resolveFilesViaRaw(owner, repo, branch, skill.path || '');
+        fileNames = rawFiles;
+      } catch {
+        fileNames = [];
+      }
+    }
+    // 文件名需为「相对 skill.path 的子路径」：listDirFiles 返回的是带 skill.path 前缀的全路径，
+    // 而 rawBaseUrl 已含 skill.path，若直接拼接会变成 .../skill.path/skill.path/file → 404。
+    // 统一去掉可能的前导 skill.path 前缀，保证 rawBaseUrl + '/' + file 命中正确 raw 地址。
+    const pathPrefix = skill.path ? `${skill.path}/` : '';
+    fileNames = fileNames.map(f => (pathPrefix && f.startsWith(pathPrefix) ? f.slice(pathPrefix.length) : f));
+    // 4) 仍无文件则明确抛错，避免写入“空壳 .source.json”造成“安装成功但无内容”的假象
+    if (fileNames.length === 0) {
+      throw new Error(
+        '无法获取该 Skill 的文件（GitHub 目录列举与 raw 直抓均失败，可能被限流或网络异常）。请稍后重试。'
+      );
     }
 
     const sourceInfo: SkillSourceMeta = {
@@ -831,6 +1119,153 @@ export class SkillsManager {
   }
 
   /**
+   * 从非 GitHub 源的 zip 下载直链（如 ModelScope 的 /skills/<owner>/<slug>/archive/zip/master）
+   * 安装 Skill：下载 zip → 解压到客户端 skills 目录 → 写 .source.json。
+   * 与 GitHub 通道解耦，不影响既有逻辑。
+   */
+  private async installSkillFromZip(
+    downloadUrl: string,
+    skillName: string,
+    clients: SkillClientType[]
+  ): Promise<SkillInstallResult> {
+    const name = skillName.split('/').pop() || skillName;
+    const tmpRoot = path.join(os.tmpdir(), 'mcp-dock-ms-install');
+    const token = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const zipPath = path.join(tmpRoot, `${token}.zip`);
+    const extractDir = path.join(tmpRoot, token);
+
+    try {
+      await fs.mkdir(tmpRoot, { recursive: true });
+
+      // 1) 下载 zip
+      const res = await fetch(downloadUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+      });
+      if (!res.ok) {
+        return {
+          success: false,
+          error: `下载 Skill 压缩包失败：HTTP ${res.status}`,
+        };
+      }
+      const buf = Buffer.from(await res.arrayBuffer());
+      await fs.writeFile(zipPath, buf);
+
+      // 2) 解压（优先系统 tar，回退 PowerShell Expand-Archive）
+      await fs.mkdir(extractDir, { recursive: true });
+      let extracted = false;
+      try {
+        await new Promise<void>((resolve, reject) =>
+          execFile('tar', ['-xf', zipPath, '-C', extractDir], { windowsHide: true }, (err) =>
+            err ? reject(err) : resolve()
+          )
+        );
+        extracted = true;
+      } catch {
+        try {
+          await new Promise<void>((resolve, reject) =>
+            execFile(
+              'powershell',
+              [
+                '-NoProfile',
+                '-Command',
+                `Expand-Archive -Force -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${extractDir.replace(/'/g, "''")}'`,
+              ],
+              { windowsHide: true },
+              (err) => (err ? reject(err) : resolve())
+            )
+          );
+          extracted = true;
+        } catch {
+          extracted = false;
+        }
+      }
+      if (!extracted) {
+        return {
+          success: false,
+          error: '解压 Skill 压缩包失败：系统缺少 tar 或 PowerShell Expand-Archive 支持。',
+        };
+      }
+
+      // 3) 定位真正的 skill 根目录：zip 常带顶层外壳目录（如 skills/<owner>/<slug>/SKILL.md
+      //    或单 <slug>/SKILL.md），需递归找到含 SKILL.md 的目录，否则整体 cp 会把 SKILL.md
+      //    放到 skillPath/skills/.../SKILL.md，客户端按 <skillDir>/SKILL.md 扫描会读不到。
+      const skillRoot = await this.findSkillRootDir(extractDir);
+
+      // 4) 写入各客户端
+      for (const client of clients) {
+        try {
+          await this.ensureSkillsDir(client);
+          const skillPath = path.join(this.getSkillsPath(client), name);
+          await fs.rm(skillPath, { recursive: true, force: true });
+          await fs.cp(skillRoot, skillPath, { recursive: true });
+
+          const sourceMeta: SkillSourceMeta = {
+            id: name,
+            installedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            source: {
+              repositoryUrl: downloadUrl,
+              branch: 'master',
+              skillPath: '',
+              rawBaseUrl: downloadUrl,
+            },
+            files: [],
+          };
+          await fs.writeFile(
+            path.join(skillPath, '.source.json'),
+            JSON.stringify(sourceMeta, null, 2),
+            'utf-8'
+          );
+          console.log(`[SkillsManager] Installed skill ${name} (zip) to ${client}`);
+        } catch (error) {
+          return { success: false, error: (error as Error).message };
+        }
+      }
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    } finally {
+      await fs.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  /**
+   * 递归定位 zip 解压目录中含 SKILL.md 的“skill 根目录”。
+   * zip 通常带一层外壳目录（如 skills/<owner>/<slug>/SKILL.md），需找到真正的 skill 根，
+   * 否则整体 cp 会把 SKILL.md 放到错误层级，客户端按 <skillDir>/SKILL.md 扫描会读不到。
+   * 找不到 SKILL.md 时回退返回传入根目录。
+   */
+  private async findSkillRootDir(root: string): Promise<string> {
+    const stack: string[] = [root];
+    let firstHit: string | null = null;
+    while (stack.length) {
+      const dir = stack.pop()!;
+      let entries: import('fs').Dirent[] = [];
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      // 该目录直接含 SKILL.md → 即为 skill 根
+      if (entries.some((e) => e.isFile() && e.name === 'SKILL.md')) {
+        return dir;
+      }
+      // 否则把子目录压栈，并记录最浅的候选（含 SKILL.md 的更深目录）
+      for (const e of entries) {
+        if (e.isDirectory()) {
+          const child = path.join(dir, e.name);
+          stack.push(child);
+          if (!firstHit && entries.some((x) => x.isFile() && x.name === 'SKILL.md')) {
+            firstHit = dir;
+          }
+        }
+      }
+    }
+    return root;
+  }
+
+  /**
    * 获取所有客户端的已安装 Skills
    */
   async getAllInstalledSkills(): Promise<{
@@ -845,6 +1280,9 @@ export class SkillsManager {
       'codex-cli': [],
       opencode: [],
       'agent-skills': [],
+      codebuddy: [],
+      workbuddy: [],
+      qoder: [],
     };
 
     for (const client of SKILL_SUPPORTED_CLIENTS) {
@@ -924,5 +1362,83 @@ export class SkillsManager {
       files: fileList,
       clients: foundClients,
     };
+  }
+
+  /**
+   * 递归拷贝目录（含 .source.json，保留更新元数据）
+   */
+  private async copyDir(src: string, dest: string): Promise<void> {
+    await fs.mkdir(dest, { recursive: true });
+    const entries = await fs.readdir(src, { withFileTypes: true });
+    for (const entry of entries) {
+      const srcPath = path.join(src, entry.name);
+      const destPath = path.join(dest, entry.name);
+      if (entry.isDirectory()) {
+        await this.copyDir(srcPath, destPath);
+      } else if (entry.isFile()) {
+        await fs.copyFile(srcPath, destPath);
+      }
+    }
+  }
+
+  /**
+   * 将一个已安装的 Skill 从源客户端同步（拷贝）到目标客户端
+   */
+  async syncSkillToClients(
+    skillName: string,
+    sourceClient: SkillClientType,
+    targetClients: SkillClientType[]
+  ): Promise<SkillSyncResult> {
+    const sourcePath = path.join(this.getSkillsPath(sourceClient), skillName);
+    try {
+      await fs.access(sourcePath);
+    } catch {
+      return {
+        success: [],
+        failed: [...targetClients],
+        errors: { [skillName]: '源客户端未找到该 Skill' },
+      };
+    }
+
+    const success: SkillClientType[] = [];
+    const failed: SkillClientType[] = [];
+    const errors: Record<string, string> = {};
+
+    for (const client of targetClients) {
+      if (client === sourceClient) continue;
+      const targetPath = path.join(this.getSkillsPath(client), skillName);
+      try {
+        await this.ensureSkillsDir(client);
+        await fs.rm(targetPath, { recursive: true, force: true });
+        await this.copyDir(sourcePath, targetPath);
+        success.push(client);
+      } catch (err) {
+        failed.push(client);
+        errors[client] = (err as Error).message || '复制失败';
+      }
+    }
+
+    return { success, failed, errors };
+  }
+
+  /**
+   * 批量将多个已安装的 Skill 同步到目标客户端
+   */
+  async syncSkillsToClients(
+    items: Array<{ name: string; sourceClient: SkillClientType }>,
+    targetClients: SkillClientType[]
+  ): Promise<SkillBatchSyncResult> {
+    const details: SkillBatchSyncResult['details'] = [];
+    let synced = 0;
+    let failed = 0;
+
+    for (const item of items) {
+      const result = await this.syncSkillToClients(item.name, item.sourceClient, targetClients);
+      details.push({ name: item.name, success: result.success, failed: result.failed });
+      synced += result.success.length;
+      failed += result.failed.length;
+    }
+
+    return { synced, failed, details };
   }
 }

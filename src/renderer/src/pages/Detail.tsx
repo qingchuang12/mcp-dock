@@ -4,27 +4,36 @@
  * 布局：左侧信息 + README + 右侧操作区
  */
 
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { useTranslation } from 'react-i18next';
-import { 
-  fetchServerDetail, 
-  fetchReadmeFromGitHub,
-  isSmitheryDetail, 
-  isOfficialDetail,
-  type DataSource,
-  type SmitheryDetail,
-  type OfficialPackage,
-  type OfficialRemote,
+import {useEffect, useState} from 'react';
+import {useNavigate, useParams, useSearchParams} from 'react-router-dom';
+import {useQuery} from '@tanstack/react-query';
+import {useTranslation} from 'react-i18next';
+import {
+    type DataSource,
+    fetchReadmeFromGitHub,
+    fetchServerDetail,
+    isOfficialDetail,
+    isSmitheryDetail,
+    type OfficialPackage,
+    type OfficialRemote,
+    type SmitheryDetail,
 } from '../api/registry';
-import { useElectronAPI, type RuntimeInfo, type ClientInfo, type ClientType } from '../lib/electron';
-import { useStore } from '../store/useStore';
+import {type ClientInfo, type ClientType, type RuntimeInfo, useElectronAPI} from '../lib/electron';
+import {useStore} from '../store/useStore';
 import Modal from '../components/Modal';
 import ConfigForm from '../components/ConfigForm';
 import OfficialConfigForm from '../components/OfficialConfigForm';
 import ClientIcon from '../components/ClientIcon';
-import { BackIcon, ClockIcon, DownloadIcon, VerifiedIcon, GitHubIcon, ExternalLinkIcon, CheckIcon } from '../components/Icons';
+import PlatformServerDetail from './PlatformServerDetail';
+import {
+    BackIcon,
+    CheckIcon,
+    ClockIcon,
+    DownloadIcon,
+    ExternalLinkIcon,
+    GitHubIcon,
+    VerifiedIcon
+} from '../components/Icons';
 
 // 从仓库 URL 提取 GitHub 用户名
 function extractGitHubUsername(repoUrl: string | null | undefined): string | null {
@@ -79,7 +88,8 @@ function DefaultIcon({ name, repoUrl }: { name: string; repoUrl?: string | null 
 }
 
 export default function Detail() {
-  const { source, id } = useParams<{ source: DataSource; id: string }>();
+  const { source, id } = useParams<{ source: string; id: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
   const api = useElectronAPI();
@@ -101,12 +111,33 @@ export default function Detail() {
 
   const dataSource = (source || 'official') as DataSource;
   const decodedId = id ? decodeURIComponent(id) : '';
+  // 平台源（如 ModelScope）走独立详情页
+  const isPlatform = source === 'platform';
+  const connId = searchParams.get('conn');
+
+  // 平台源：交给 PlatformServerDetail 组件处理（提前返回，不执行官方/Smithery 查询）
+  if (isPlatform) {
+    if (!connId) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full bg-[#1c1c1e]">
+          <div className="w-12 h-12 rounded-full bg-[#ff3b30]/10 flex items-center justify-center mb-3">
+            <svg className="w-6 h-6 text-[#ff3b30]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+            </svg>
+          </div>
+          <p className="text-[13px] text-white mb-3">{t('detail.loadFailed')}</p>
+          <button onClick={() => navigate('/store')} className="btn btn-secondary">{t('detail.back')}</button>
+        </div>
+      );
+    }
+    return <PlatformServerDetail connId={connId} serverId={decodedId} />;
+  }
 
   // 获取服务器详情
   const { data: server, isLoading, error } = useQuery({
     queryKey: ['serverDetail', dataSource, decodedId],
     queryFn: () => fetchServerDetail(dataSource, decodedId),
-    enabled: !!decodedId,
+    enabled: !!decodedId && !isPlatform,
     retry: 1,
   });
 
@@ -119,10 +150,10 @@ export default function Detail() {
   useEffect(() => {
     if (server) {
       if (isSmitheryDetail(server) && server.connection?.runtime) {
-        api.env.checkRuntime(server.connection.runtime).then(setRuntimeInfo);
-      } else if (isOfficialDetail(server) && server.packages.length > 0) {
+        api.env.checkRuntime(server.connection.runtime as 'node' | 'python').then(setRuntimeInfo);
+      } else if (isOfficialDetail(server) && server.packages && server.packages.length > 0) {
         const pkg = server.packages[0];
-        const runtime = pkg.runtimeHint === 'uvx' ? 'python' : 'node';
+        const runtime = pkg.runtimeHint === 'python' ? 'python' : 'node';
         api.env.checkRuntime(runtime).then(setRuntimeInfo);
         setSelectedPackage(pkg);
       } else {
@@ -209,11 +240,12 @@ export default function Detail() {
       
       const smitheryServer = server as SmitheryDetail;
       const runtime = smitheryServer.connection?.runtime || 'node';
+      const qualifiedName = smitheryServer.qualifiedName || decodedId.replace(/^smithery-/, '');
       const config = {
         command: runtime === 'node' ? npxPath : uvxPath,
         args: runtime === 'node'
-          ? ['-y', '@smithery/cli@latest', 'run', decodedId, '--config', JSON.stringify(configValues)]
-          : ['smithery-cli', 'run', decodedId, '--config', JSON.stringify(configValues)],
+          ? ['-y', '@smithery/cli@latest', 'run', qualifiedName, '--config', JSON.stringify(configValues)]
+          : ['smithery-cli', 'run', qualifiedName, '--config', JSON.stringify(configValues)],
       };
 
       const result = await api.config.installServer(decodedId, config, clientsToInstall);
@@ -402,7 +434,7 @@ export default function Detail() {
     if (isSmitheryDetail(server!)) {
       return server!.connection?.runtime || 'node';
     } else if (isOfficialDetail(server!)) {
-      if (selectedPackage?.runtimeHint === 'uvx') return 'python';
+      if (selectedPackage?.runtimeHint === 'python') return 'python';
       if (selectedPackage?.runtimeHint === 'docker') return 'docker';
       return 'node';
     }
@@ -648,13 +680,13 @@ export default function Detail() {
               <div className="card overflow-hidden mb-6">
                 <div className="px-4 py-3 border-b border-[#3a3a3c]">
                   <h2 className="text-[13px] font-semibold text-white">
-                    {t('detail.capabilities')} ({server.capabilities.length})
+                    {t('detail.capabilities')} ({server.capabilities?.length ?? 0})
                   </h2>
                 </div>
-                {server.capabilities.map((cap, index) => (
+                {(server.capabilities ?? []).map((cap, index) => (
                   <div
                     key={index}
-                    className={`px-4 py-3 ${index !== server.capabilities.length - 1 ? 'border-b border-[#3a3a3c]' : ''}`}
+                    className={`px-4 py-3 ${index !== (server.capabilities ?? []).length - 1 ? 'border-b border-[#3a3a3c]' : ''}`}
                   >
                     <h4 className="text-[12px] font-mono text-[#0a84ff] mb-0.5">{cap.name}</h4>
                     <p className="text-[12px] text-[#636366]">{cap.description || t('detail.noToolDescription')}</p>
@@ -800,7 +832,7 @@ export default function Detail() {
                 href="#"
                 onClick={(e) => {
                   e.preventDefault();
-                  api.system.openExternal(server.links.registry);
+                  api.system.openExternal(server.links?.registry ?? '');
                 }}
                 className="flex items-center justify-between text-[12px] text-[#98989d] hover:text-[#0a84ff] transition-colors"
               >
@@ -817,7 +849,7 @@ export default function Detail() {
                 href="#"
                 onClick={(e) => {
                   e.preventDefault();
-                  api.system.openExternal(server.links.homepage);
+                  api.system.openExternal(server.links?.homepage ?? '');
                 }}
                 className="flex items-center justify-between text-[12px] text-[#98989d] hover:text-[#0a84ff] transition-colors"
               >
@@ -905,13 +937,13 @@ export default function Detail() {
           {isOfficialDetail(server) && server.packages && server.packages.length > 0 && (
             <div className="card p-4">
               <h3 className="text-[13px] font-semibold text-white mb-3">
-                Packages ({server.packages.length})
+                Packages ({server.packages?.length ?? 0})
               </h3>
               <div className="space-y-2">
-                {server.packages.map((pkg, index) => (
+                {(server.packages ?? []).map((pkg, index) => (
                   <div
                     key={index}
-                    className={`p-2 rounded-md bg-[#3a3a3c]/30 ${index !== server.packages.length - 1 ? '' : ''}`}
+                    className={`p-2 rounded-md bg-[#3a3a3c]/30 ${index !== (server.packages ?? []).length - 1 ? '' : ''}`}
                   >
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`

@@ -35,7 +35,22 @@
     "refreshSuccess": "数据已刷新",
     "refreshFailed": "刷新数据失败",
     "communityEditionDesc": "社区版不支持浏览注册表。您仍然可以在「已安装」页面手动添加 MCP 服务器。",
-    "goToLibrary": "前往已安装"
+    "goToLibrary": "前往已安装",
+    "mcpPlatform": "平台源",
+    "pageSize": "每页",
+    "items": "条"
+  },
+  "mcpCategory": {
+    "developer-tools": "开发工具",
+    "ai-media": "AI 媒体",
+    "skill-management": "技能管理",
+    "cloud-devops": "云 DevOps",
+    "frontend-development": "前端开发",
+    "code-quality-testing": "代码质量测试",
+    "marketing-seo": "营销 SEO",
+    "ai-automation": "AI 自动化",
+    "doc-processing": "文档处理",
+    "browser-automation": "浏览器自动化"
   },
   "detail": {
     "about": "简介",
@@ -105,7 +120,14 @@
     "dockerRequiredDesc": "此服务器使用 Docker 容器运行，请确保已安装 Docker Desktop 并正在运行。",
     "mcpbNotSupported": "MCPB 格式暂不支持",
     "mcpbNotSupportedDesc": "MCP Bundle (.mcpb) 格式需要手动下载并配置。请点击下方链接下载后，按照说明手动安装。",
-    "inspect": "调试"
+    "inspect": "调试",
+    "verified": "已验证",
+    "hosted": "云端托管",
+    "views": "次浏览",
+    "publisher": "发布者",
+    "viewSource": "查看源码",
+    "envRequired": "请填写必填环境变量",
+    "noInstallConfig": "无可用安装配置"
   },
   "installed": {
     "title": "已安装的服务器",
@@ -118,6 +140,10 @@
     "remove": "移除",
     "removeAll": "全部移除",
     "confirmRemove": "确定要移除此服务器吗？",
+    "uninstallTitle": "卸载服务器",
+    "uninstallHint": "选择要从哪些客户端卸载此服务器：",
+    "selectAll": "全选",
+    "confirmUninstall": "确认卸载",
     "configPath": "配置路径",
     "servers": "个服务器",
     "notInstalled": "未安装",
@@ -129,7 +155,16 @@
     "noMoreClients": "此服务器已安装到所有可用的客户端。",
     "all": "全部",
     "external": "外部",
-    "inspect": "调试"
+    "inspect": "调试",
+    "select": "选择",
+    "cancelSelect": "取消选择",
+    "batchSync": "同步 ({{count}})",
+    "batchSyncTitle": "同步服务器到其他客户端",
+    "batchSyncHint": "选择要将 {{count}} 个服务器同步到的客户端：",
+    "syncing": "同步中...",
+    "serversSynced": "已同步 {{count}} 个服务器到客户端",
+    "serversSyncFailed": "{{count}} 个服务器同步失败",
+    "syncError": "同步失败"
   },
   "inspector": {
     "title": "MCP 调试器",
@@ -227,7 +262,7 @@
     "editPath": "编辑配置路径",
     "uninstalledClients": "更多未安装的客户端",
     "about": "关于",
-    "aboutDesc": "MCP Dock v1.0.0",
+    "aboutDesc": "AI-Tools v1.0.0",
     "openSource": "在 GitHub 上开源",
     "contribute": "贡献 MCP/Skill",
     "refreshed": "设置已刷新",
@@ -260,13 +295,43 @@
     "noSkills": "暂无已安装的 Skills",
     "noSkillsHint": "访问商店发现并安装 Skills",
     "confirmRemoveSkill": "确定要移除此 Skill 吗？",
+    "uninstallTitle": "卸载 Skill",
+    "uninstallHint": "选择要从哪些客户端卸载此 Skill：",
     "update": "更新",
     "updateAll": "全部更新",
     "manual": "手动安装",
+      "createCustomSkill": "新建自定义 Skill",
+      "editSkill": "编辑 Skill",
+      "create": "创建",
+      "name": "名称",
+      "description": "描述",
+      "skillNameRequired": "请输入 Skill 名称",
+      "skillClientRequired": "请至少选择一个目标客户端",
+      "discardTitle": "放弃编辑内容？",
+      "discardHint": "您已修改内容但尚未保存，关闭后将丢失这些改动。",
+      "keepEditing": "继续编辑",
+      "discardChanges": "放弃",
+    "skillSaveFailed": "保存失败",
+    "skillNamePlaceholder": "my-custom-skill",
+    "skillNameHint": "仅允许字母、数字、点、中划线、下划线，将作为目录名",
+    "skillDescPlaceholder": "一句话描述这个 Skill 的用途",
+    "skillBodyPlaceholder": "描述 Skill 的用途、使用场景与示例……",
+    "content": "正文",
+    "targetClients": "目标客户端",
     "skillUpdated": "Skill 更新成功",
     "skillUpdateFailed": "Skill 更新失败",
     "allSkillsUpdated": "所有 Skills 已更新",
-    "allSkillsUpdateFailed": "Skills 更新失败"
+    "allSkillsUpdateFailed": "Skills 更新失败",
+    "select": "选择",
+    "cancelSelect": "取消选择",
+    "batchSync": "同步 ({{count}})",
+    "syncTitle": "同步 Skill 到其他客户端",
+    "syncHint": "选择要将 {{count}} 个 Skill 同步到的客户端：",
+    "sync": "同步",
+    "syncing": "同步中...",
+    "skillsSynced": "已同步 {{count}} 个 Skill 到客户端",
+    "skillsSyncFailed": "{{count}} 个 Skill 同步失败",
+    "syncError": "同步失败"
   },
   "skill": {
     "author": "作者",
@@ -279,7 +344,8 @@
     "installTitle": "安装 Skill",
     "selectClients": "选择要安装此 Skill 的客户端：",
     "noClientsSupport": "没有已安装的客户端支持 Skills",
-    "confirmUninstall": "确定要从所有客户端卸载此 Skill 吗？"
+    "confirmUninstall": "确定要从所有客户端卸载此 Skill 吗？",
+    "noInstallableContent": "该来源未提供可安装的 Skill 内容（无 SKILL.md 下载通道），仅支持预览。"
   },
   "importSkill": {
     "title": "导入 Skill",
@@ -311,6 +377,21 @@
     "security": "安全",
     "content-writing": "内容写作",
     "productivity": "效率工具",
-    "design": "设计"
+    "design": "设计",
+    "skillsmp": {
+      "all": "全部",
+      "architecture-patterns": "架构模式",
+      "coding": "编程开发",
+      "testing": "测试",
+      "devops": "运维部署",
+      "data-analytics": "数据分析",
+      "security": "安全",
+      "content-writing": "内容写作",
+      "design": "设计",
+      "productivity": "效率工具",
+      "agents": "智能体",
+      "mcp-integration": "MCP 集成",
+      "rag": "检索增强"
+    }
   }
 }

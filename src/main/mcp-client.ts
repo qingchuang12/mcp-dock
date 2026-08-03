@@ -3,8 +3,8 @@
  * 用于 Inspector 功能，通过 stdio 与 MCP Server 通信
  */
 
-import { spawn, ChildProcess, execSync } from 'child_process';
-import { EventEmitter } from 'events';
+import {ChildProcess, execSync, spawn} from 'child_process';
+import {EventEmitter} from 'events';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -245,7 +245,7 @@ export class McpClient extends EventEmitter {
           protocolVersion: '2024-11-05',
           capabilities: {},
           clientInfo: {
-            name: 'MCP Dock Inspector',
+            name: 'AI-Tools Inspector',
             version: '1.0.0',
           },
         }).then((result: unknown) => {

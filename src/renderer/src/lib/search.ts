@@ -8,11 +8,12 @@
  * - author: 作者名（仅 Smithery 数据源有）
  */
 
+import type {IFuseOptions} from 'fuse.js';
 import Fuse from 'fuse.js';
-import type { ServerListItem } from '../api/registry';
+import type {ServerListItem} from '../api/registry';
 
 // Fuse.js 配置 - 只搜索名称和作者
-const fuseOptions: Fuse.IFuseOptions<ServerListItem> = {
+const fuseOptions: IFuseOptions<ServerListItem> = {
   keys: [
     { name: 'displayName', weight: 0.5 },  // MCP 名称
     { name: 'id', weight: 0.3 },           // ID（包含作者信息）

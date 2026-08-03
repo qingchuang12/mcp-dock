@@ -3,12 +3,12 @@
  * 支持从 GitHub URL 解析、预览、选择客户端并安装 Skills
  */
 
-import { useState, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
+import {useEffect, useState} from 'react';
+import {useTranslation} from 'react-i18next';
 import Modal from './Modal';
 import ClientIcon from './ClientIcon';
-import { useElectronAPI, type ClientInfo, type SkillClientType, type DiscoveredSkill } from '../lib/electron';
-import { toast } from './Toast';
+import {type ClientInfo, type DiscoveredSkill, type SkillClientType, useElectronAPI} from '../lib/electron';
+import {toast} from './Toast';
 
 interface ImportSkillModalProps {
   isOpen: boolean;
@@ -60,7 +60,22 @@ export default function ImportSkillModal({
     setParseError('');
 
     try {
-      const result = await api.skills.parseImportUrl(url.trim());
+      const input = url.trim();
+      // 先尝试平台解析（ModelScope / SafeSkill / SkillHub 等社区详情页 URL）
+      const platformResult = await api.skills.resolvePlatformUrl(input);
+      if (platformResult.success && platformResult.skills.length > 0) {
+        setDiscoveredSkills(platformResult.skills);
+        if (platformResult.skills.length === 1) {
+          setSelectedSkills(new Set([0]));
+          setStep('install');
+        } else {
+          setSelectedSkills(new Set(platformResult.skills.map((_, i) => i)));
+          setStep('select');
+        }
+        return;
+      }
+      // 平台未命中（或不是平台 URL）→ 回退到 GitHub 解析，复用原有逻辑
+      const result = await api.skills.parseImportUrl(input);
       if (result.success && result.skills.length > 0) {
         setDiscoveredSkills(result.skills);
         if (result.skills.length === 1) {
@@ -71,7 +86,12 @@ export default function ImportSkillModal({
           setStep('select');
         }
       } else {
-        setParseError(result.error || t('importSkill.noSkillFound'));
+        // 优先展示平台解析给出的可操作错误（更贴近用户粘贴的链接）
+        setParseError(
+          platformResult.error ||
+          result.error ||
+          t('importSkill.noSkillFound')
+        );
       }
     } catch (error) {
       setParseError((error as Error).message);
@@ -159,7 +179,7 @@ export default function ImportSkillModal({
         {step === 'input' && (
           <>
             <p className="text-[12px] text-[#98989d]">
-              {t('importSkill.hint') || 'Paste a GitHub repository URL containing SKILL.md files'}
+              {t('importSkill.hint') || 'Paste a GitHub repo URL, or a ModelScope / SkillHub / SafeSkill / SkillsMP skill page (or list) URL'}
             </p>
 
             <div className="flex gap-2">
@@ -168,7 +188,7 @@ export default function ImportSkillModal({
                 value={url}
                 onChange={e => setUrl(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="https://github.com/owner/repo or owner/repo"
+                placeholder="https://github.com/owner/repo  ·  modelscope.cn/skills/...  ·  skillhub.cn/skills/...  ·  safeskill.cn/skill/...  ·  skillsmp.com/zh/skills"
                 className="flex-1 px-3 py-2 bg-[#1c1c1e] border border-[#3a3a3c] rounded-lg text-[13px] text-white placeholder-[#636366] focus:outline-none focus:border-[#0a84ff]"
                 autoFocus
                 disabled={isParsing}
@@ -213,8 +233,10 @@ export default function ImportSkillModal({
               <ul className="mt-1.5 space-y-1">
                 {[
                   'https://github.com/owner/repo',
-                  'https://github.com/owner/repo/tree/main/path/to/skill',
-                  'owner/repo',
+                  'https://skillsmp.com/zh/skills',
+                  'https://www.modelscope.cn/skills/@owner/your-skill',
+                  'https://skillhub.cn/skills/your-skill',
+                  'https://safeskill.cn/skill/your-skill',
                 ].map(example => (
                   <li key={example}>
                     <button

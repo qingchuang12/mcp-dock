@@ -10,7 +10,10 @@ release/
 .vscode/
 *.swp
 *.swo
-
+.codebuddy
+.github
+.tmp
+%TEMP%
 # OS
 .DS_Store
 Thumbs.db
@@ -18,6 +21,14 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Temporary scripts & helper files (agent/debug scaffolding, not project source)
+tmp-*.ps1
+*-tmp.ps1
+*.tmp
+dev-*.log
+run-*.ps1
+install-*.ps1
 
 # Environment
 .env

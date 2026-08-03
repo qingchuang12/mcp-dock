@@ -16,7 +16,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { app } from 'electron';
+import {app} from 'electron';
 
 // ==================== 加密常量 ====================
 
@@ -76,7 +76,10 @@ interface CacheConfig {
 const DEFAULT_CONFIG: CacheConfig = {
   indexTTL: 60 * 60 * 1000,        // 1 小时
   detailTTL: 24 * 60 * 60 * 1000,  // 24 小时
-  version: '1.0.0',
+  // 1.1.0：GitHub Registry 技能源由 modelcontextprotocol/servers 改为 anthropics/skills，
+  // 旧的 skills-index 缓存里全是无 SKILL.md 的条目（详情页必报“加载 Skill 失败”），
+  // 提升版本号以强制失效历史缓存。
+  version: '1.1.0',
 };
 
 // ==================== CacheManager 类 ====================

@@ -7,7 +7,6 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import { app } from 'electron';
 import * as jsonc from 'jsonc-parser';
 import * as TOML from 'smol-toml';
 
@@ -26,13 +25,13 @@ export interface ClientConfig {
 }
 
 // 所有 MCP 客户端类型
-export type ClientType = 'cursor' | 'vscode' | 'claude-code' | 'gemini-cli' | 'codex-cli' | 'windsurf' | 'zed' | 'trae' | 'trae-cn' | 'kiro' | 'opencode' | 'jetbrains' | 'antigravity' | 'openclaw';
+export type ClientType = 'cursor' | 'vscode' | 'claude-code' | 'gemini-cli' | 'codex-cli' | 'windsurf' | 'zed' | 'trae' | 'trae-cn' | 'kiro' | 'opencode' | 'jetbrains' | 'antigravity' | 'openclaw' | 'codebuddy' | 'workbuddy' | 'qoder';
 
 // 支持 Skills 的客户端类型（含 .agents 统一标准）
-export type SkillClientType = 'cursor' | 'claude-code' | 'gemini-cli' | 'codex-cli' | 'opencode' | 'agent-skills';
+export type SkillClientType = 'cursor' | 'claude-code' | 'gemini-cli' | 'codex-cli' | 'opencode' | 'agent-skills' | 'codebuddy' | 'workbuddy' | 'qoder';
 
 // 客户端是否支持 Skills
-export const SKILL_SUPPORTED_CLIENTS: SkillClientType[] = ['cursor', 'claude-code', 'gemini-cli', 'codex-cli', 'opencode', 'agent-skills'];
+export const SKILL_SUPPORTED_CLIENTS: SkillClientType[] = ['cursor', 'claude-code', 'gemini-cli', 'codex-cli', 'opencode', 'agent-skills', 'codebuddy', 'workbuddy', 'qoder'];
 
 // VS Code 使用 "servers" 键而非 "mcpServers"
 const SERVERS_KEY_CLIENTS: ClientType[] = ['vscode'];
@@ -85,6 +84,9 @@ export class ConfigManager {
         jetbrains: '', // resolved dynamically via findJetBrainsConfigPath
         antigravity: path.join(home, '.gemini', 'antigravity', 'mcp_config.json'),
         openclaw: path.join(home, '.openclaw', 'openclaw.json'),
+        codebuddy: path.join(home, '.codebuddy', 'mcp.json'),
+        workbuddy: path.join(home, '.workbuddy', 'mcp.json'),
+        qoder: path.join(home, '.qoder', 'mcp.json'),
       };
       // Skills 目录路径
       this.defaultSkillsPaths = {
@@ -94,6 +96,9 @@ export class ConfigManager {
         'codex-cli': path.join(home, '.codex', 'skills'),
         opencode: path.join(home, '.config', 'opencode', 'skills'),
         'agent-skills': path.join(home, '.agents', 'skills'),
+        codebuddy: path.join(home, '.codebuddy', 'skills'),
+        workbuddy: path.join(home, '.workbuddy', 'skills'),
+        qoder: path.join(home, '.qoder', 'skills'),
       };
     } else if (platform === 'win32') {
       // Windows 路径配置
@@ -112,6 +117,9 @@ export class ConfigManager {
         jetbrains: '', // resolved dynamically
         antigravity: path.join(home, '.gemini', 'antigravity', 'mcp_config.json'),
         openclaw: path.join(home, '.openclaw', 'openclaw.json'),
+        codebuddy: path.join(home, '.codebuddy', 'mcp.json'),
+        workbuddy: path.join(home, '.workbuddy', 'mcp.json'),
+        qoder: path.join(home, '.qoder', 'mcp.json'),
       };
       this.defaultSkillsPaths = {
         cursor: path.join(home, '.cursor', 'skills'),
@@ -120,6 +128,9 @@ export class ConfigManager {
         'codex-cli': path.join(home, '.codex', 'skills'),
         opencode: path.join(home, '.config', 'opencode', 'skills'),
         'agent-skills': path.join(home, '.agents', 'skills'),
+        codebuddy: path.join(home, '.codebuddy', 'skills'),
+        workbuddy: path.join(home, '.workbuddy', 'skills'),
+        qoder: path.join(home, '.qoder', 'skills'),
       };
     } else {
       // Linux 路径配置
@@ -138,6 +149,9 @@ export class ConfigManager {
         jetbrains: '', // resolved dynamically
         antigravity: path.join(home, '.gemini', 'antigravity', 'mcp_config.json'),
         openclaw: path.join(home, '.openclaw', 'openclaw.json'),
+        codebuddy: path.join(home, '.codebuddy', 'mcp.json'),
+        workbuddy: path.join(home, '.workbuddy', 'mcp.json'),
+        qoder: path.join(home, '.qoder', 'mcp.json'),
       };
       this.defaultSkillsPaths = {
         cursor: path.join(home, '.cursor', 'skills'),
@@ -146,6 +160,9 @@ export class ConfigManager {
         'codex-cli': path.join(home, '.codex', 'skills'),
         opencode: path.join(home, '.config', 'opencode', 'skills'),
         'agent-skills': path.join(home, '.agents', 'skills'),
+        codebuddy: path.join(home, '.codebuddy', 'skills'),
+        workbuddy: path.join(home, '.workbuddy', 'skills'),
+        qoder: path.join(home, '.qoder', 'skills'),
       };
     }
 
@@ -294,6 +311,9 @@ export class ConfigManager {
       jetbrains: 'JetBrains',
       antigravity: 'Antigravity',
       openclaw: 'OpenClaw',
+      codebuddy: 'CodeBuddy',
+      workbuddy: 'WorkBuddy',
+      qoder: 'Qoder',
     };
     return names[client];
   }
@@ -325,6 +345,9 @@ export class ConfigManager {
       opencode: ['/usr/local/bin/opencode', path.join(home, '.local', 'bin', 'opencode'), '/opt/homebrew/bin/opencode'],
       antigravity: ['/Applications/Antigravity.app', path.join(home, 'Applications', 'Antigravity.app')],
       openclaw: ['/usr/local/bin/openclaw', '/usr/local/bin/oclaw', path.join(home, '.local', 'bin', 'openclaw'), '/opt/homebrew/bin/openclaw'],
+      codebuddy: ['/Applications/CodeBuddy.app', path.join(home, 'Applications', 'CodeBuddy.app')],
+      workbuddy: ['/Applications/WorkBuddy.app', path.join(home, 'Applications', 'WorkBuddy.app')],
+      qoder: ['/Applications/Qoder.app', path.join(home, 'Applications', 'Qoder.app')],
       jetbrains: [
         '/Applications/IntelliJ IDEA.app',
         '/Applications/IntelliJ IDEA CE.app',
@@ -394,6 +417,21 @@ export class ConfigManager {
         path.join(home, 'AppData', 'Roaming', 'npm', 'openclaw.cmd'),
         path.join(home, 'AppData', 'Local', 'Programs', 'openclaw', 'openclaw.exe'),
         path.join(home, '.openclaw'),
+      ],
+      codebuddy: [
+        path.join(home, 'AppData', 'Local', 'Programs', 'CodeBuddy', 'CodeBuddy.exe'),
+        path.join(home, 'AppData', 'Local', 'CodeBuddy', 'CodeBuddy.exe'),
+        path.join(home, '.codebuddy', 'bin', 'codebuddy.exe'),
+      ],
+      workbuddy: [
+        path.join(home, 'AppData', 'Local', 'Programs', 'WorkBuddy', 'WorkBuddy.exe'),
+        path.join(home, 'AppData', 'Local', 'WorkBuddy', 'WorkBuddy.exe'),
+        path.join(home, '.workbuddy', 'bin', 'workbuddy.exe'),
+      ],
+      qoder: [
+        path.join(home, 'AppData', 'Local', 'Programs', 'Qoder', 'Qoder.exe'),
+        path.join(home, 'AppData', 'Local', 'Qoder', 'Qoder.exe'),
+        path.join(home, '.qoder', 'bin', 'qoder.exe'),
       ],
       jetbrains: [
         path.join(home, 'AppData', 'Local', 'JetBrains', 'Toolbox'),
@@ -471,6 +509,24 @@ export class ConfigManager {
         '/usr/local/bin/oclaw',
         path.join(home, '.local', 'bin', 'openclaw'),
       ],
+      codebuddy: [
+        '/usr/bin/codebuddy',
+        '/usr/local/bin/codebuddy',
+        path.join(home, '.local', 'bin', 'codebuddy'),
+        path.join(home, '.codebuddy', 'bin', 'codebuddy'),
+      ],
+      workbuddy: [
+        '/usr/bin/workbuddy',
+        '/usr/local/bin/workbuddy',
+        path.join(home, '.local', 'bin', 'workbuddy'),
+        path.join(home, '.workbuddy', 'bin', 'workbuddy'),
+      ],
+      qoder: [
+        '/usr/bin/qoder',
+        '/usr/local/bin/qoder',
+        path.join(home, '.local', 'bin', 'qoder'),
+        path.join(home, '.qoder', 'bin', 'qoder'),
+      ],
       jetbrains: [
         path.join(home, '.local', 'share', 'JetBrains', 'Toolbox'),
         '/opt/idea',
@@ -504,6 +560,19 @@ export class ConfigManager {
       }
     }
 
+    // 配置目录探测：部分客户端以 IDE 插件形态存在（如 CodeBuddy 可作为
+    // JetBrains / VS Code 插件安装），没有独立可执行文件，也不注册 CLI。
+    // 此时用户主目录下的配置目录才是唯一可靠的"已安装"信号。
+    // 由于本软件只需完成配置同步，配置目录存在即足以支持全部功能。
+    for (const marker of this.getConfigMarkers(client)) {
+      try {
+        await fs.access(marker);
+        return true;
+      } catch {
+        // 继续
+      }
+    }
+
     // CLI 工具通过 which/where 命令作为后备检测
     const cliClients: Partial<Record<ClientType, string>> = {
       'codex-cli': 'codex',
@@ -511,6 +580,7 @@ export class ConfigManager {
       'claude-code': 'claude',
       'gemini-cli': 'gemini',
       'openclaw': 'openclaw',
+      'codebuddy': 'codebuddy',
     };
 
     const cliName = cliClients[client];
@@ -531,6 +601,34 @@ export class ConfigManager {
     }
 
     return false;
+  }
+
+  /**
+   * 客户端「配置目录标记」：这些路径存在即视为客户端可用。
+   *
+   * 适用于以 IDE 插件 / 无独立可执行文件形态分发的客户端。
+   * 典型场景：CodeBuddy 作为 JetBrains 或 VS Code 插件安装时，
+   * 既没有 CodeBuddy.exe，也不会把 `codebuddy` 注册进 PATH，
+   * 但会在用户主目录创建 `~/.codebuddy/`（内含 mcp.json、skills、settings.json）。
+   * 由于本软件的职责仅为配置同步，该目录存在就意味着功能完全可用。
+   */
+  private getConfigMarkers(client: ClientType): string[] {
+    const home = os.homedir();
+    const markers: Partial<Record<ClientType, string[]>> = {
+      codebuddy: [
+        path.join(home, '.codebuddy'),
+      ],
+      workbuddy: [
+        path.join(home, '.workbuddy'),
+      ],
+      qoder: [
+        path.join(home, '.qoder'),
+      ],
+      openclaw: [
+        path.join(home, '.openclaw'),
+      ],
+    };
+    return markers[client] || [];
   }
 
   /**
@@ -568,7 +666,7 @@ export class ConfigManager {
     // 确保用户设置已加载
     await this.loadUserSettings();
     
-    const clients: ClientType[] = ['cursor', 'vscode', 'claude-code', 'gemini-cli', 'codex-cli', 'windsurf', 'zed', 'trae', 'trae-cn', 'kiro', 'opencode', 'jetbrains', 'antigravity', 'openclaw'];
+    const clients: ClientType[] = ['cursor', 'vscode', 'claude-code', 'gemini-cli', 'codex-cli', 'windsurf', 'zed', 'trae', 'trae-cn', 'kiro', 'opencode', 'jetbrains', 'antigravity', 'openclaw', 'codebuddy', 'workbuddy', 'qoder'];
     const results: ClientInfo[] = [];
 
     for (const client of clients) {
@@ -741,10 +839,25 @@ export class ConfigManager {
    * Zed: JSONC 格式，key 为 context_servers，保留用户注释
    * Opencode: JSONC 格式，key 为 mcp，保留用户注释
    */
-  async writeConfig(config: ClientConfig, client: ClientType = 'cursor'): Promise<void> {
+  async writeConfig(config: ClientConfig, client: ClientType = 'cursor', merge = true): Promise<void> {
     await this.ensureConfigDir(client);
     const configPath = this.getClientConfigPath(client);
-    
+
+    // 关键修复：以「当前客户端配置文件里【已有的】 server」为基准做合并，
+    // 再叠加本次要写入的 server。这样即便前面 readConfig 因键名/格式差异漏读了
+    // 用户原有的 mcpServers，这里也会兜底保留，绝不会把客户端原 mcp 覆盖掉。
+    // 但卸载场景（merge=false）必须以传入内容为准：传入里被显式删除的 server
+    // 必须真正从磁盘移除，不能被 live 兜底"复活"。
+    if (merge) {
+      try {
+        const liveConfig = await this.readConfig(client);
+        const liveServers = liveConfig.mcpServers || {};
+        config.mcpServers = { ...liveServers, ...(config.mcpServers || {}) };
+      } catch {
+        // 读不到（如文件不存在）则退化为以传入的 config.mcpServers 为准
+      }
+    }
+
     if (client === 'jetbrains') {
       let existingConfig: Record<string, any> = {};
       try {
@@ -903,7 +1016,7 @@ export class ConfigManager {
     servers: Record<string, { config: McpServerConfig; clients: ClientType[] }>;
     byClient: Record<ClientType, Record<string, McpServerConfig>>;
   }> {
-    const clients: ClientType[] = ['cursor', 'vscode', 'claude-code', 'gemini-cli', 'codex-cli', 'windsurf', 'zed', 'trae', 'trae-cn', 'kiro', 'opencode', 'jetbrains', 'antigravity', 'openclaw'];
+    const clients: ClientType[] = ['cursor', 'vscode', 'claude-code', 'gemini-cli', 'codex-cli', 'windsurf', 'zed', 'trae', 'trae-cn', 'kiro', 'opencode', 'jetbrains', 'antigravity', 'openclaw', 'codebuddy', 'workbuddy', 'qoder'];
     const servers: Record<string, { config: McpServerConfig; clients: ClientType[] }> = {};
     const byClient: Record<ClientType, Record<string, McpServerConfig>> = {
       cursor: {},
@@ -920,6 +1033,9 @@ export class ConfigManager {
       jetbrains: {},
       antigravity: {},
       openclaw: {},
+      codebuddy: {},
+      workbuddy: {},
+      qoder: {},
     };
 
     for (const client of clients) {
@@ -996,7 +1112,7 @@ export class ConfigManager {
         const config = await this.readConfig(client);
         if (config.mcpServers && config.mcpServers[serverId]) {
           delete config.mcpServers[serverId];
-          await this.writeConfig(config, client);
+          await this.writeConfig(config, client, false);
         }
         success.push(client);
       } catch (error) {
@@ -1040,6 +1156,37 @@ export class ConfigManager {
     }
 
     return this.installServer(serverId, serverConfig, targetClients);
+  }
+
+  /**
+   * 批量同步多个服务器到其他客户端（用于「我的库」多客户端复用）
+   * 每个服务器使用自身已安装客户端的配置作为源，安装到所有目标客户端。
+   */
+  async syncServersToClients(
+    items: { serverId: string; config: McpServerConfig }[],
+    targetClients: ClientType[]
+  ): Promise<{
+    synced: number;
+    failed: number;
+    details: { serverId: string; success: ClientType[]; failed: ClientType[] }[];
+  }> {
+    const details: { serverId: string; success: ClientType[]; failed: ClientType[] }[] = [];
+    let synced = 0;
+    let failed = 0;
+
+    for (const item of items) {
+      if (!item.config) {
+        failed += 1;
+        details.push({ serverId: item.serverId, success: [], failed: targetClients });
+        continue;
+      }
+      const result = await this.installServer(item.serverId, item.config, targetClients);
+      details.push({ serverId: item.serverId, success: result.success, failed: result.failed });
+      if (result.success.length > 0) synced += 1;
+      if (result.failed.length > 0) failed += 1;
+    }
+
+    return { synced, failed, details };
   }
 
   /**

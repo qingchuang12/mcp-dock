@@ -2,11 +2,11 @@
  * 添加自定义 Server 模态框
  */
 
-import { useState, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
+import {useEffect, useState} from 'react';
+import {useTranslation} from 'react-i18next';
 import Modal from './Modal';
 import ClientIcon from './ClientIcon';
-import type { ClientInfo, ClientType } from '../../../preload/index';
+import type {ClientInfo, ClientType} from '../lib/electron';
 
 interface AddServerModalProps {
   isOpen: boolean;

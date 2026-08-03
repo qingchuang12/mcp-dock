@@ -1,15 +1,32 @@
 /**
- * MCP Dock - Electron 主进程入口
+ * AI-Tools - Electron 主进程入口
  */
 
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import {app, BrowserWindow, ipcMain, session, shell} from 'electron';
 import path from 'path';
-import { ConfigManager, ClientType, SkillClientType } from './config-manager';
-import { EnvManager } from './env-manager';
-import { HistoryManager } from './history-manager';
-import { SkillsManager, SkillSourceMeta, DiscoveredSkill } from './skills-manager';
-import { getCacheManager } from './cache-manager';
-import { createMcpClient, getMcpClient, removeMcpClient } from './mcp-client';
+import {ClientType, ConfigManager, SkillClientType} from './config-manager';
+import {EnvManager} from './env-manager';
+import {HistoryManager} from './history-manager';
+import {DiscoveredSkill, SkillsManager, SkillSourceMeta} from './skills-manager';
+import type {
+    PlatformSearchPage,
+    PlatformServerDetail,
+    PlatformServerSearchPage,
+    PlatformSkillListItem
+} from './platform-skill-resolver';
+import {
+    fetchPlatformServerDetail,
+    getLastDirectSearchDiagnostics,
+    resolveDirectSkill,
+    resolvePlatformSkillUrl,
+    searchPlatformDirect,
+    searchPlatformDirectPaged,
+    searchPlatformServersPaged
+} from './platform-skill-resolver';
+import {getCacheManager} from './cache-manager';
+import {getSecretStore, TokenMeta, TokenScope} from './secret-store';
+import {ApiConnection, getConnectionsStore} from './connections-store';
+import {createMcpClient, getMcpClient, removeMcpClient} from './mcp-client';
 
 // 管理器实例
 const configManager = new ConfigManager();
@@ -17,8 +34,18 @@ const envManager = new EnvManager();
 const historyManager = new HistoryManager();
 const skillsManager = new SkillsManager();
 const cacheManager = getCacheManager();
+const secretStore = getSecretStore();
+const connectionsStore = getConnectionsStore();
 
 let mainWindow: BrowserWindow | null = null;
+
+// 进程级兜底：避免未捕获的 Promise 拒绝 / 异常导致静默崩溃
+process.on('unhandledRejection', (reason: unknown) => {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err: Error) => {
+  console.error('[uncaughtException]', err);
+});
 
 // 开发模式：明确设置了 NODE_ENV=development 或 VITE_DEV_SERVER_URL
 const isDev = process.env.NODE_ENV === 'development' || !!process.env.VITE_DEV_SERVER_URL;
@@ -68,6 +95,15 @@ function createWindow() {
   // 开发模式加载 Vite 开发服务器
   if (isDev) {
     const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
+    // 开发模式下移除 HTML 中的 CSP 限制，避免拦截 Vite 的 localhost/ws 模块与 HMR 连接导致黑屏
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [],
+        },
+      });
+    });
     mainWindow.loadURL(devServerUrl);
     mainWindow.webContents.openDevTools();
   } else {
@@ -86,6 +122,18 @@ function createWindow() {
     return { action: 'deny' };
   });
 }
+
+// 单一实例锁：避免重复启动产生多个窗口
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+}
+
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
 
 // 应用准备就绪
 app.whenReady().then(() => {
@@ -170,6 +218,11 @@ ipcMain.handle('config:update-server', async (_, serverId: string, serverConfig:
 ipcMain.handle('config:sync-server', async (_, serverId: string, sourceClient: ClientType, targetClients: ClientType[]) => {
   await historyManager.backup();
   return configManager.syncServerToClients(serverId, sourceClient, targetClients);
+});
+
+ipcMain.handle('config:sync-servers-batch', async (_, items: { serverId: string; config: any }[], targetClients: ClientType[]) => {
+  await historyManager.backup();
+  return configManager.syncServersToClients(items, targetClients);
 });
 
 // 环境检测
@@ -373,15 +426,62 @@ ipcMain.handle('skills:parse-import-url', async (_, url: string) => {
   return skillsManager.parseImportUrl(url);
 });
 
+// 解析平台（ModelScope / SafeSkill / SkillHub）skill 详情页 URL，自动提取可下载源
+ipcMain.handle('skills:resolve-platform-url', async (_, url: string) => {
+  return resolvePlatformSkillUrl(skillsManager, url);
+});
+
 // 从发现的 Skill 安装
 ipcMain.handle('skills:install-from-discovered', async (_, skill: DiscoveredSkill, clients: SkillClientType[]) => {
   await historyManager.backup();
   return skillsManager.installFromDiscovered(skill, clients);
 });
 
+// 创建自定义 Skill（本地，无网络）
+ipcMain.handle('skills:create-custom', async (_, input: { name: string; description: string; body: string }, clients: SkillClientType[]) => {
+  await historyManager.backup();
+  return skillsManager.createCustomSkill(input, clients);
+});
+
+// 更新自定义 Skill（改写 SKILL.md，可重命名）
+ipcMain.handle('skills:update-custom', async (_, originalName: string, input: { name: string; description: string; body: string }, clients: SkillClientType[]) => {
+  await historyManager.backup();
+  return skillsManager.updateCustomSkill(originalName, input, clients);
+});
+
+// 读取本地 Skill 的 SKILL.md（解析 frontmatter 与正文，用于编辑回填）
+ipcMain.handle('skills:read-skill-md', async (_, skillName: string, client: SkillClientType) => {
+  return skillsManager.readSkillMd(skillName, client);
+});
+
 // 获取本地 Skill 详情
 ipcMain.handle('skills:get-local-detail', async (_, skillId: string) => {
   return skillsManager.getLocalSkillDetail(skillId);
+});
+
+// 远程 GitHub Registry skill 详情：复用 parseImportUrl 解析仓库并取回首个 Skill 的源 / SKILL.md
+// （替代渲染端 fetchSkillDetail 桩——该桩对所有内置 skill 一律抛错，导致详情页“加载失败”）
+ipcMain.handle('skills:get-remote-detail', async (_, githubPath: string) => {
+  try {
+    const url = /^[a-z][a-z0-9+.-]*:\/\//i.test(githubPath) ? githubPath : `https://github.com/${githubPath}`;
+    const result = await skillsManager.parseImportUrl(url);
+    if (!result.success || result.skills.length === 0) {
+      return { success: false, skill: null, error: result.error || 'No SKILL.md found in this repository' };
+    }
+    return { success: true, skill: result.skills[0], error: null };
+  } catch (e) {
+    return { success: false, skill: null, error: (e as Error).message || 'Failed to load skill detail' };
+  }
+});
+
+// 同步单个 Skill 到目标客户端
+ipcMain.handle('skills:sync', async (_, skillName: string, sourceClient: SkillClientType, targetClients: SkillClientType[]) => {
+  return skillsManager.syncSkillToClients(skillName, sourceClient, targetClients);
+});
+
+// 批量同步多个 Skill 到目标客户端
+ipcMain.handle('skills:sync-batch', async (_, items: Array<{ name: string; sourceClient: SkillClientType }>, targetClients: SkillClientType[]) => {
+  return skillsManager.syncSkillsToClients(items, targetClients);
 });
 
 // 设置自定义 Skills 路径
@@ -393,6 +493,140 @@ ipcMain.handle('clients:set-custom-skills-path', async (_, client: SkillClientTy
 ipcMain.handle('system:open-skills-directory', async (_, client: SkillClientType) => {
   const skillsPath = configManager.getSkillsPath(client);
   return shell.openPath(skillsPath);
+});
+
+// ============ API 令牌 IPC 处理器 ============
+ipcMain.handle('api-tokens:list', async (): Promise<TokenMeta[]> => {
+  return secretStore.listTokens();
+});
+
+ipcMain.handle('api-tokens:create', async (_, name: string, scopes: TokenScope[], expiresAt: number | null): Promise<TokenMeta> => {
+  if (!name || !name.trim()) throw new Error('令牌名称不能为空');
+  return secretStore.createToken(name, scopes, expiresAt);
+});
+
+ipcMain.handle('api-tokens:import', async (_, rawKey: string, name: string, platform?: string, expiresAt?: number | null): Promise<TokenMeta> => {
+  if (!name || !name.trim()) throw new Error('令牌名称不能为空');
+  return secretStore.importToken(rawKey, name, platform, expiresAt ?? null);
+});
+
+ipcMain.handle('api-tokens:reveal', async (_, id: string): Promise<string | null> => {
+  return secretStore.revealToken(id);
+});
+
+ipcMain.handle('api-tokens:revoke', async (_, id: string): Promise<TokenMeta | null> => {
+  return secretStore.revokeToken(id);
+});
+
+ipcMain.handle('api-tokens:restore', async (_, id: string): Promise<TokenMeta | null> => {
+  return secretStore.restoreToken(id);
+});
+
+ipcMain.handle('api-tokens:delete', async (_, id: string): Promise<void> => {
+  secretStore.deleteToken(id);
+});
+
+// ============ API 直连 IPC 处理器 ============
+ipcMain.handle('api-connections:list', async (_, kind?: 'mcp' | 'skill'): Promise<ApiConnection[]> => {
+  return connectionsStore.list(kind);
+});
+
+ipcMain.handle('api-connections:create', async (_, conn: Omit<ApiConnection, 'id' | 'createdAt' | 'status' | 'lastCheckedAt'>): Promise<ApiConnection> => {
+  if (!conn.name || !conn.name.trim()) throw new Error('连接名称不能为空');
+  if (!conn.baseUrl || !/^https?:\/\//i.test(conn.baseUrl)) throw new Error('Base URL 格式无效');
+  return connectionsStore.upsert(conn);
+});
+
+ipcMain.handle('api-connections:update', async (_, conn: ApiConnection): Promise<ApiConnection> => {
+  if (!conn.id) throw new Error('缺少连接 ID');
+  return connectionsStore.upsert(conn);
+});
+
+ipcMain.handle('api-connections:delete', async (_, id: string): Promise<void> => {
+  connectionsStore.delete(id);
+});
+
+ipcMain.handle('api-connections:verify', async (_, id: string): Promise<ApiConnection> => {
+  return connectionsStore.verify(id);
+});
+
+ipcMain.handle('api-connections:export', async (_, id?: string): Promise<string> => {
+  return connectionsStore.exportConfig(id);
+});
+
+// ============ API 直连驱动的平台搜索 / 解析 ============
+ipcMain.handle('api-connections:search-platform', async (_, connectionId: string, query: string, page: number, pageSize?: number, category?: string): Promise<PlatformSkillListItem[]> => {
+  const conn = connectionsStore.get(connectionId);
+  if (!conn) throw new Error('连接不存在');
+  const secret = conn.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
+  return searchPlatformDirect(conn.platformType, conn.baseUrl, secret, query, page, pageSize, category);
+});
+
+/**
+ * 分页搜索：返回条目 + 平台分页元信息（total / totalPages / hasMore）。
+ * 渲染层据此渲染翻页控件。
+ */
+ipcMain.handle('api-connections:search-platform-paged', async (_, connectionId: string, query: string, page: number, pageSize?: number, category?: string): Promise<PlatformSearchPage> => {
+  const conn = connectionsStore.get(connectionId);
+  if (!conn) throw new Error('连接不存在');
+  const secret = conn.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
+  return searchPlatformDirectPaged(conn.platformType, conn.baseUrl, secret, query, page, pageSize, category);
+});
+
+/**
+ * 获取最近一次直连搜索的诊断信息（端点探测链路、状态码、耗时、失败原因）。
+ * 渲染层在"无结果"时调用，向用户展示具体原因而非空白列表。
+ */
+ipcMain.handle('api-connections:search-diagnostics', async (_, connectionId: string) => {
+  const conn = connectionsStore.get(connectionId);
+  if (!conn) throw new Error('连接不存在');
+  return getLastDirectSearchDiagnostics(conn.platformType);
+});
+
+ipcMain.handle('api-connections:resolve-skill', async (_, connectionId: string, sourceUrl: string): Promise<ReturnType<typeof resolveDirectSkill>> => {
+  const conn = connectionsStore.get(connectionId);
+  if (!conn) throw new Error('连接不存在');
+  return resolveDirectSkill(skillsManager, conn.platformType, sourceUrl);
+});
+
+/**
+ * 分页搜索 MCP server（平台直连，如 ModelScope MCP 广场）。
+ * 复用连接绑定的令牌，服务端分页；渲染层据此渲染翻页控件。
+ */
+ipcMain.handle('api-connections:search-servers-paged', async (_, connectionId: string, query: string, page: number, pageSize?: number, category?: string): Promise<PlatformServerSearchPage> => {
+  const conn = connectionsStore.get(connectionId);
+  if (!conn) throw new Error('连接不存在');
+  const secret = conn.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
+  return searchPlatformServersPaged(conn.platformType, conn.baseUrl, secret, query, page, pageSize, category);
+});
+
+/**
+ * 获取单个平台 MCP server 的详情（含安装配置 / README）。
+ * 复用连接绑定的令牌，平台直连（如 ModelScope）。
+ */
+ipcMain.handle('api-connections:get-server-detail', async (_, connectionId: string, serverId: string): Promise<PlatformServerDetail> => {
+  const conn = connectionsStore.get(connectionId);
+  if (!conn) throw new Error('连接不存在');
+  const secret = conn.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
+  return fetchPlatformServerDetail(conn.platformType, conn.baseUrl, secret, serverId);
+});
+
+// ============ API 直连默认来源 ============
+ipcMain.handle('api-connections:set-default', async (_, id: string): Promise<ApiConnection> => {
+  connectionsStore.setDefault(id);
+  return connectionsStore.get(id)!;
+});
+
+ipcMain.handle('api-connections:set-enabled', async (_, id: string, enabled: boolean): Promise<ApiConnection> => {
+  return connectionsStore.setEnabled(id, enabled);
+});
+
+ipcMain.handle('api-connections:restore-builtin-mcp', async (): Promise<ApiConnection[]> => {
+  return connectionsStore.restoreBuiltinMcpSources();
+});
+
+ipcMain.handle('api-connections:restore-builtin-skill', async (): Promise<ApiConnection[]> => {
+  return connectionsStore.restoreBuiltinSkillSources();
 });
 
 // ============ 缓存 IPC 处理器 ============
