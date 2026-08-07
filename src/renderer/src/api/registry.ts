@@ -173,6 +173,8 @@ export interface SkillListItem {
   id: string;
   name: string;
   description: string;
+  /** 来源平台显式标注语言的描述变体（如 { zh: '…' }），按界面语言择优展示 */
+  descriptions?: Record<string, string>;
   author: string;
   authorUrl: string;
   /** 下载直链（非 GitHub 源，如 ModelScope 的 /skills/<owner>/<slug>/archive/zip/master；为空则走 authorUrl/sourceUrl） */

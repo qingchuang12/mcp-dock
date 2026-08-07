@@ -27,7 +27,7 @@
 
 - **MCP Store** - Browse and search 8500+ MCP Servers from Official Registry and Smithery
 - **Skills Store** - Discover 4400+ AI Skills for Cursor, Claude Code, Gemini CLI, Codex CLI, and Opencode
-- **One-Click Install** - Auto-configure to Cursor, VS Code, Claude Code, Gemini CLI, Codex CLI, Windsurf, Zed, TRAE, TRAE CN, Kiro, Opencode, JetBrains, Antigravity, OpenClaw
+- **One-Click Install** - Auto-configure to Cursor, VS Code, Claude Code, Gemini CLI, Codex CLI, Windsurf, Zed, TRAE, TRAE CN, TRAE Plugin (MarsCode), Kiro, Opencode, JetBrains, Antigravity, OpenClaw
 - **Agent Skills Standard** - Support for `~/.agents/skills/` unified standard ([skills.sh](https://skills.sh/))
 - **MCP Inspector** - Interactive debugging tool for testing MCP Server tools
 - **Config Management** - Unified management of MCP configurations across all clients
@@ -81,6 +81,7 @@ brew upgrade --cask mcp-dock
 | Zed | Supported |
 | TRAE | Supported |
 | TRAE CN | Supported |
+| TRAE Plugin (MarsCode, `~/.marscode`) | Supported |
 | Kiro | Supported |
 | Opencode | Supported |
 | JetBrains (IntelliJ, WebStorm, PyCharm, etc.) | Supported |
@@ -129,9 +130,9 @@ See [Community Registry README](./community-registry/README.md) for detailed ins
 ### Where is data stored?
 
 All configurations and data are stored locally:
-- macOS: `~/.mcp-dock/`
-- Windows: `%USERPROFILE%\.mcp-dock\`
-- Linux: `~/.mcp-dock/`
+- macOS: `~/.ai-tool/`
+- Windows: `%USERPROFILE%\.ai-tool\`
+- Linux: `~/.ai-tool/`
 
 ### Does it require internet?
 
@@ -140,7 +141,7 @@ Internet is required for loading the MCP list. Installed MCP configurations are 
 ### How to uninstall?
 
 1. Delete the application
-2. Delete the config directory `~/.mcp-dock/`
+2. Delete the config directory `~/.ai-tool/`
 3. MCP configurations remain in each client's config file. Remove manually if needed.
 
 ## Source Code

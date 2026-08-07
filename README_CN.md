@@ -27,7 +27,7 @@
 
 - **MCP 商店** - 浏览和搜索来自 Official Registry 和 Smithery 的 8500+ MCP Server
 - **Skills 商店** - 发现 4400+ AI Skills，适用于 Cursor、Claude Code、Gemini CLI、Codex CLI、Opencode
-- **一键安装** - 自动配置到 Cursor、VS Code、Claude Code、Gemini CLI、Codex CLI、Windsurf、Zed、TRAE、TRAE CN、Kiro、Opencode、JetBrains、Antigravity、OpenClaw
+- **一键安装** - 自动配置到 Cursor、VS Code、Claude Code、Gemini CLI、Codex CLI、Windsurf、Zed、TRAE、TRAE CN、TRAE 插件 (MarsCode)、Kiro、Opencode、JetBrains、Antigravity、OpenClaw
 - **Agent Skills 标准** - 支持 `~/.agents/skills/` 统一标准（[skills.sh](https://skills.sh/)）
 - **MCP Inspector** - 交互式调试工具，测试 MCP Server 的 Tools
 - **配置管理** - 统一管理所有客户端的 MCP 配置
@@ -81,6 +81,7 @@ brew upgrade --cask mcp-dock
 | Zed | 支持 |
 | TRAE | 支持 |
 | TRAE CN | 支持 |
+| TRAE 插件 (MarsCode, `~/.marscode`) | 支持 |
 | Kiro | 支持 |
 | Opencode | 支持 |
 | JetBrains (IntelliJ, WebStorm, PyCharm 等) | 支持 |
@@ -129,9 +130,9 @@ AI-Tools 支持两个数据源：
 ### 数据存储在哪里？
 
 所有配置和数据都存储在本地：
-- macOS: `~/.mcp-dock/`
-- Windows: `%USERPROFILE%\.mcp-dock\`
-- Linux: `~/.mcp-dock/`
+- macOS: `~/.ai-tool/`
+- Windows: `%USERPROFILE%\.ai-tool\`
+- Linux: `~/.ai-tool/`
 
 ### 需要联网吗？
 
@@ -140,7 +141,7 @@ AI-Tools 支持两个数据源：
 ### 如何卸载？
 
 1. 删除应用程序
-2. 删除配置目录 `~/.mcp-dock/`
+2. 删除配置目录 `~/.ai-tool/`
 3. MCP 配置会保留在各客户端的配置文件中，如需清理请手动删除
 
 ## 许可证

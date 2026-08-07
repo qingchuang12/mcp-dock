@@ -95,6 +95,16 @@ export const CLAWHUB_PAGE_LIMIT = 100;
 export const CLAWHUB_MAX_ITEMS = 600;
 
 /**
+ * ClawHub 原生技能的 zip 下载直链（`?slug=<slug>`，无凭证，实测返回 application/zip）。
+ *
+ * 榜单里 `install.kind === 'clawhub'` 的条目（实测约占 60%）只有
+ * `install.reference = "<owner>/<slug>"`，既不是 GitHub 仓库也没有 `sourceUrl`；
+ * 若按 owner/repo 拼成 github.com 链接会 404（如 plato-1/fable-method 无此仓库）。
+ * 这些技能必须走本直链下载 zip（包内含 SKILL.md）。
+ */
+export const CLAWHUB_DOWNLOAD_BASE = 'https://clawhub.ai/api/v1/download';
+
+/**
  * 各平台「测试连接」使用的探活路径（相对 baseUrl，按顺序尝试，任一成功即视为连通）。
  *
  * 为什么不直接请求 baseUrl：部分站点首页对非浏览器请求不响应（实测
