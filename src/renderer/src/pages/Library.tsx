@@ -22,6 +22,7 @@ import ClientIcon from '../components/ClientIcon';
 import AddServerModal from '../components/AddServerModal';
 import {CreateSkillModal} from '../components/CreateSkillModal';
 import {toast} from '../components/Toast';
+import WindowControls from '../components/WindowControls';
 import {type DataSource, fetchServerList, type ServerListItem} from '../api/registry';
 
 interface InstalledServer {
@@ -806,7 +807,7 @@ export default function Library() {
         <div className="flex flex-col h-full bg-[#1c1c1e]">
             {/* 头部工具栏（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
             <div
-                className={`flex items-center justify-between px-4 h-12 drag-region border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl ${isMac ? 'pl-20' : ''}`}>
+                className={`flex items-center justify-between px-4 h-[38px] drag-region relative border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
                 <div className="flex items-center gap-4 no-drag">
                     <h1 className="text-[14px] font-semibold text-white tracking-tight">
                         {t('nav.library') || 'Library'}
@@ -972,6 +973,7 @@ export default function Library() {
                         </>
                     )}
                 </div>
+                <WindowControls />
             </div>
 
             {/* 内容区域 */}

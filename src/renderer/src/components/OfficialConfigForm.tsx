@@ -262,7 +262,7 @@ export default function OfficialConfigForm({
               className={`
                 flex-1 px-3 py-2 rounded-md border text-[12px] font-medium transition-colors
                 ${installType === 'remote'
-                  ? 'bg-[#30d158]/10 border-[#30d158]/30 text-[#30d158]'
+                  ? 'bg-[#34c759]/10 border-[#34c759]/30 text-[#34c759]'
                   : 'bg-[#3a3a3c] border-[#3a3a3c] text-white hover:border-[#636366]'
                 }
               `}
@@ -368,19 +368,19 @@ export default function OfficialConfigForm({
                 className={`
                   w-full flex items-center gap-3 p-3 rounded-md border text-left transition-colors
                   ${selectedRemote === remote
-                    ? 'bg-[#30d158]/10 border-[#30d158]/30'
+                    ? 'bg-[#34c759]/10 border-[#34c759]/30'
                     : 'bg-[#3a3a3c] border-[#3a3a3c] hover:border-[#636366]'
                   }
                 `}
               >
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#30d158]/15 text-[#30d158]">
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#34c759]/15 text-[#34c759]">
                   {remote.type}
                 </span>
                 <div className="flex-1 min-w-0">
                   <div className="text-[12px] font-mono text-white truncate">{remote.url}</div>
                 </div>
                 {selectedRemote === remote && (
-                  <svg className="w-4 h-4 text-[#30d158]" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-4 h-4 text-[#34c759]" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
                 )}
@@ -392,12 +392,12 @@ export default function OfficialConfigForm({
 
       {/* 单个远程服务器信息展示 */}
       {installType === 'remote' && remotes.length === 1 && selectedRemote && (
-        <div className="p-3 rounded-md bg-[#30d158]/10 border border-[#30d158]/30">
+        <div className="p-3 rounded-md bg-[#34c759]/10 border border-[#34c759]/30">
           <div className="flex items-center gap-2 mb-1">
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#30d158]/15 text-[#30d158]">
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#34c759]/15 text-[#34c759]">
               {selectedRemote.type}
             </span>
-            <span className="text-[10px] text-[#30d158]">{t('detail.remoteServer')}</span>
+            <span className="text-[10px] text-[#34c759]">{t('detail.remoteServer')}</span>
           </div>
           <div className="text-[12px] font-mono text-white break-all">{selectedRemote.url}</div>
         </div>

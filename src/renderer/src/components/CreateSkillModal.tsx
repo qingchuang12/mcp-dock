@@ -187,7 +187,7 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
                 <div className="space-y-5 px-6 py-5">
                     {error && (
                         <div
-                            className="flex items-start gap-2 rounded-lg border border-[#ff453a]/40 bg-[#ff453a]/10 px-3 py-2 text-[12px] text-[#ff6961]">
+                            className="flex items-start gap-2 rounded-lg border border-[#ff3b30]/40 bg-[#ff3b30]/10 px-3 py-2 text-[12px] text-[#ff6961]">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                  strokeWidth="2" className="mt-0.5 shrink-0">
                                 <circle cx="12" cy="12" r="10"/>
@@ -361,7 +361,7 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
                                     setConfirmDiscard(false);
                                     onClose();
                                 }}
-                                className="rounded-lg bg-[#ff453a] px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#ff453a]/85"
+                                className="rounded-lg bg-[#ff3b30] px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#ff3b30]/85"
                             >
                                 {t('library.discardChanges') || '放弃'}
                             </button>

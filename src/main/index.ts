@@ -84,9 +84,9 @@ function createWindow() {
             titleBarStyle: 'hiddenInset',
             trafficLightPosition: {x: 16, y: 18},
         } : {}),
-        // Windows 特有配置
+        // Windows / Linux 使用无边框窗口 + 自定义标题栏，避免原生标题栏与深色界面割裂
         ...(isWin ? {
-            frame: true,
+            frame: false,
             autoHideMenuBar: true,
         } : {}),
         backgroundColor: '#1c1c1e',
@@ -120,6 +120,11 @@ function createWindow() {
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
+
+    // 自定义标题栏：广播窗口最大化状态变化（双击标题栏/拖拽到顶部/系统快照等触发）
+    mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximize-changed', true));
+    mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximize-changed', false));
+    mainWindow.on('restore', () => mainWindow?.webContents.send('window:maximize-changed', false));
 
     // 外部链接在默认浏览器中打开
     mainWindow.webContents.setWindowOpenHandler(({url}) => {
@@ -300,6 +305,28 @@ ipcMain.handle('system:get-version', () => {
 
 ipcMain.handle('system:open-external', async (_, url: string) => {
     return shell.openExternal(url);
+});
+
+// 自定义标题栏：窗口控制（Windows / Linux 无边框窗口）
+ipcMain.on('window:minimize', () => {
+    mainWindow?.minimize();
+});
+
+ipcMain.on('window:toggle-maximize', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize();
+    } else {
+        mainWindow.maximize();
+    }
+});
+
+ipcMain.on('window:close', () => {
+    mainWindow?.close();
+});
+
+ipcMain.handle('window:is-maximized', () => {
+    return mainWindow?.isMaximized() ?? false;
 });
 
 ipcMain.handle('system:get-config-path', (_, client?: ClientType) => {

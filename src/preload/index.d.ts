@@ -229,6 +229,13 @@ declare const api: {
         onDisconnected: (callback: (data: { sessionId: string; code: number }) => void) => () => void;
         onError: (callback: (data: { sessionId: string; error: string }) => void) => () => void;
     };
+    window: {
+        minimize: () => void;
+        toggleMaximize: () => void;
+        close: () => void;
+        isMaximized: () => Promise<boolean>;
+        onMaximizeChange: (callback: (maximized: boolean) => void) => () => void;
+    };
 };
 
 export type ElectronAPI = typeof api;

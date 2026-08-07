@@ -11,11 +11,12 @@ import ClientIcon from '../components/ClientIcon';
 import RuntimeIcon from '../components/RuntimeIcon';
 import Modal from '../components/Modal';
 import {toast} from '../components/Toast';
-import mcpDockIcon from '../../assets/icons/mcp-dock.png';
+import mcpDockIcon from '../../assets/icons/mcp-dock.svg';
 import TokenManager from '../components/TokenManager';
 import ConnectionManager from '../components/ConnectionManager';
 import McpSourceManager from '../components/McpSourceManager';
 import CloudSyncManager from '../components/CloudSyncManager';
+import WindowControls from '../components/WindowControls';
 
 export default function Settings() {
     const {t, i18n} = useTranslation();
@@ -140,10 +141,11 @@ export default function Settings() {
         <div className="flex flex-col h-full bg-[#1c1c1e]">
             {/* 头部（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
             <div
-                className={`flex items-center px-4 h-12 drag-region border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl ${isMac ? 'pl-20' : ''}`}>
+                className={`flex items-center px-4 h-[38px] drag-region relative border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
                 <h1 className="text-[14px] font-semibold text-white tracking-tight no-drag">
                     {t('settings.title')}
                 </h1>
+                <WindowControls />
             </div>
 
             {/* 内容 */}

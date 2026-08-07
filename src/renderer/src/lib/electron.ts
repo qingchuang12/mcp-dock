@@ -379,6 +379,14 @@ interface ElectronAPI {
         }>;
         getDirectory: () => Promise<string>;
     };
+    // 自定义标题栏：窗口控制（Windows / Linux 无边框窗口）
+    window: {
+        minimize: () => void;
+        toggleMaximize: () => void;
+        close: () => void;
+        isMaximized: () => Promise<boolean>;
+        onMaximizeChange: (callback: (maximized: boolean) => void) => () => void;
+    };
 }
 
 // 获取 Electron API
@@ -724,6 +732,17 @@ const mockAPI: ElectronAPI = {
         },
         getStats: async () => ({totalFiles: 0, totalSize: 0, indexCaches: [], detailCaches: 0, encrypted: false}),
         getDirectory: async () => '',
+    },
+    window: {
+        minimize: () => {
+        },
+        toggleMaximize: () => {
+        },
+        close: () => {
+        },
+        isMaximized: async () => false,
+        onMaximizeChange: () => () => {
+        },
     },
 };
 

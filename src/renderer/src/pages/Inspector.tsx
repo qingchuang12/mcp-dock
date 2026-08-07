@@ -12,6 +12,7 @@ import {useStore} from '../store/useStore';
 import {Light as SyntaxHighlighter} from 'react-syntax-highlighter';
 import json from 'react-syntax-highlighter/dist/esm/languages/hljs/json';
 import {atomOneDark} from 'react-syntax-highlighter/dist/esm/styles/hljs';
+import WindowControls from '../components/WindowControls';
 
 // 注册 JSON 语言
 SyntaxHighlighter.registerLanguage('json', json);
@@ -376,7 +377,7 @@ export default function Inspector() {
   return (
     <div className="flex flex-col h-full bg-[#1c1c1e]">
       {/* 顶部控制栏（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
-      <div className={`flex items-center justify-between px-4 h-12 drag-region border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl ${isMac ? 'pl-20' : ''}`}>
+      <div className={`flex items-center justify-between px-4 h-[38px] drag-region relative border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
         <div className="flex items-center gap-3 no-drag">
           <h1 className="text-[14px] font-semibold text-white tracking-tight">
             {t('inspector.title') || 'MCP Inspector'}
@@ -417,6 +418,7 @@ export default function Inspector() {
             : (t('inspector.connect') || 'Connect')
           }
         </button>
+        <WindowControls />
       </div>
 
       {/* 主内容区 - 三栏布局 */}

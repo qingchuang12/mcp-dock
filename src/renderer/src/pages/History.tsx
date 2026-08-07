@@ -5,9 +5,11 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useElectronAPI, type DiffResult, type ClientType } from '../lib/electron';
+import { useIsMac } from '../lib/useIsMac';
 import Modal from '../components/Modal';
 import ClientIcon from '../components/ClientIcon';
 import { toast } from '../components/Toast';
+import WindowControls from '../components/WindowControls';
 
 interface BackupInfo {
   timestamp: string;
@@ -21,6 +23,7 @@ interface BackupInfo {
 export default function History() {
   const { t } = useTranslation();
   const api = useElectronAPI();
+  const isMac = useIsMac();
   
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -149,7 +152,7 @@ export default function History() {
   return (
     <div className="flex flex-col h-full bg-[#1c1c1e]">
       {/* 头部 */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#3a3a3c]">
+      <div className={`flex items-center justify-between px-4 py-2 drag-region relative border-b border-[#3a3a3c] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
         <div className="flex items-center gap-4">
           <h1 className="text-[15px] font-semibold text-white">
             {t('history.title')}
@@ -158,8 +161,8 @@ export default function History() {
             {backups.length} {t('history.backups') || 'backups'}
           </span>
         </div>
-        
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-2 no-drag">
           {backups.length > 0 && (
             <button
               onClick={handleClearAll}
@@ -178,6 +181,7 @@ export default function History() {
             </svg>
           </button>
         </div>
+        <WindowControls />
       </div>
 
       {/* 内容 */}

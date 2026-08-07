@@ -22,6 +22,7 @@ import Modal from '../components/Modal';
 import ClientIcon from '../components/ClientIcon';
 import {BackIcon, CheckIcon, ExternalLinkIcon, GitHubIcon, StarIcon, VerifiedIcon} from '../components/Icons';
 import {toast} from '../components/Toast';
+import WindowControls from '../components/WindowControls';
 
 // 根据命令推断所需运行时
 function commandToRuntime(cmd: string): 'node' | 'python' | 'docker' {
@@ -268,16 +269,17 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
         <div className="flex flex-col h-full bg-[#1c1c1e]">
             {/* 头部导航（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
             <div
-                className={`flex items-center gap-2 px-4 h-10 drag-region border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl text-[12px] text-[#636366] ${isMac ? 'pl-20' : ''}`}>
-                <button onClick={() => navigate(-1)} className="hover:text-white transition-colors">
+                className={`flex items-center gap-2 px-4 h-[32px] drag-region relative border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl text-[12px] text-[#636366] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
+                <button onClick={() => navigate(-1)} className="no-drag hover:text-white transition-colors">
                     <BackIcon className="w-4 h-4"/>
                 </button>
-                <span className="hover:text-white cursor-pointer" onClick={() => navigate('/store')}>Store</span>
+                <span className="no-drag hover:text-white cursor-pointer" onClick={() => navigate('/store')}>Store</span>
                 <span>/</span>
-                <span className="hover:text-white cursor-pointer"
+                <span className="no-drag hover:text-white cursor-pointer"
                       onClick={() => navigate('/store')}>{t('store.mcpPlatform') || '平台源'}</span>
                 <span>/</span>
                 <span className="text-white">{detail.displayName}</span>
+                <WindowControls />
             </div>
 
             <div className="flex-1 overflow-hidden flex">
@@ -303,7 +305,7 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                                         )}
                                         {detail.isHosted && (
                                             <span
-                                                className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/20">
+                                                className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#34c759]/15 text-[#34c759] border border-[#34c759]/20">
                         {t('detail.hosted') || 'Hosted'}
                       </span>
                                         )}

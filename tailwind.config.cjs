@@ -22,24 +22,29 @@ module.exports = {
           card: '#2c2c2e',
           border: '#3a3a3c',
         },
-        // 主色调
+        // 主色调（锚定到全站实际使用的 Apple 系统蓝 #0a84ff）
         primary: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a',
+          50: '#e8f1ff',
+          100: '#cfe3ff',
+          200: '#9cc6ff',
+          300: '#66a9ff',
+          400: '#3a96ff',
+          500: '#0a84ff',
+          600: '#0a6fd6',
+          700: '#095bb0',
+          800: '#08478a',
+          900: '#063365',
         },
-        // 状态色
+        // 语义别名
+        accent: '#0a84ff',
+        muted: '#636366',
+        muted2: '#98989d',
+        link: '#5ac8fa',
+        // 状态色（统一，消除 #30d158 / #ff453a 等离群值）
         success: '#34c759',
         warning: '#ff9f0a',
         danger: '#ff3b30',
-        info: '#5ac8fa',
+        info: '#0a84ff',
       },
       fontFamily: {
         sans: ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Text', 'Helvetica Neue', 'sans-serif'],

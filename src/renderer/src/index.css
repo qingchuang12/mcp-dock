@@ -2,6 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 设计令牌：全站配色单一事实来源（与 tailwind.config.cjs 保持一致） */
+:root {
+  --color-bg: #1c1c1e;
+  --color-surface: #2c2c2e;
+  --color-surface-hover: #3a3a3c;
+  --color-border: #3a3a3c;
+  --color-accent: #0a84ff;
+  --color-accent-hover: #0a6fd6;
+  --color-success: #34c759;
+  --color-warning: #ff9f0a;
+  --color-danger: #ff3b30;
+  --color-muted: #636366;
+  --color-muted2: #98989d;
+}
+
+/* 键盘聚焦环：统一焦点反馈、提升可访问性 */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
 /* 基础样式 */
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
@@ -42,6 +64,33 @@ body {
   -webkit-app-region: no-drag;
 }
 
+/* 自定义窗口控制按钮（Windows / Linux 无边框标题栏，集成于页面 header 右侧） */
+.win-ctrl {
+  width: 46px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #d1d1d6;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.win-ctrl:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.win-ctrl svg {
+  width: 11px;
+  height: 11px;
+}
+
+.win-ctrl-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
 /* 输入框样式 */
 input:focus,
 textarea:focus,
@@ -56,9 +105,9 @@ select:focus {
 
 /* 卡片样式 */
 .card {
-  background: #2c2c2e;
+  background: var(--color-surface);
   border-radius: 10px;
-  border: 1px solid #3a3a3c;
+  border: 1px solid var(--color-border);
 }
 
 /* 按钮基础样式 */
@@ -77,17 +126,22 @@ select:focus {
   transform: scale(0.98);
 }
 
+.btn:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 .btn-primary {
-  background: #3b82f6;
+  background: var(--color-accent);
   color: white;
 }
 
 .btn-primary:hover {
-  background: #2563eb;
+  background: var(--color-accent-hover);
 }
 
 .btn-secondary {
-  background: #3a3a3c;
+  background: var(--color-surface-hover);
   color: #ffffff;
 }
 
@@ -97,7 +151,7 @@ select:focus {
 
 .btn-danger {
   background: rgba(255, 59, 48, 0.15);
-  color: #ff3b30;
+  color: var(--color-danger);
 }
 
 .btn-danger:hover {
@@ -112,22 +166,22 @@ select:focus {
 }
 
 .status-dot.active {
-  background: #34c759;
+  background: var(--color-success);
   box-shadow: 0 0 6px rgba(52, 199, 89, 0.5);
 }
 
 .status-dot.inactive {
-  background: #636366;
+  background: var(--color-muted);
 }
 
 .status-dot.warning {
-  background: #ff9f0a;
+  background: var(--color-warning);
 }
 
 /* 分隔线 */
 .divider {
   height: 1px;
-  background: #3a3a3c;
+  background: var(--color-border);
 }
 
 /* 标签样式 */
@@ -142,12 +196,12 @@ select:focus {
 
 .tag-success {
   background: rgba(52, 199, 89, 0.15);
-  color: #34c759;
+  color: var(--color-success);
 }
 
 .tag-warning {
   background: rgba(255, 159, 10, 0.15);
-  color: #ff9f0a;
+  color: var(--color-warning);
 }
 
 .tag-info {
@@ -157,7 +211,7 @@ select:focus {
 
 .tag-default {
   background: rgba(152, 152, 157, 0.15);
-  color: #98989d;
+  color: var(--color-muted2);
 }
 
 /* 动画 */

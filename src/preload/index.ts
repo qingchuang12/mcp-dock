@@ -468,6 +468,23 @@ const api = {
         getDirectory: (): Promise<string> =>
             ipcRenderer.invoke('cache:get-directory'),
     },
+
+    // 自定义标题栏：窗口控制（Windows / Linux 无边框窗口）
+    window: {
+        minimize: (): void =>
+            ipcRenderer.send('window:minimize'),
+        toggleMaximize: (): void =>
+            ipcRenderer.send('window:toggle-maximize'),
+        close: (): void =>
+            ipcRenderer.send('window:close'),
+        isMaximized: (): Promise<boolean> =>
+            ipcRenderer.invoke('window:is-maximized'),
+        onMaximizeChange: (callback: (maximized: boolean) => void): (() => void) => {
+            const listener = (_e: unknown, maximized: boolean) => callback(maximized);
+            ipcRenderer.on('window:maximize-changed', listener);
+            return () => ipcRenderer.removeListener('window:maximize-changed', listener);
+        },
+    },
 };
 
 // 暴露 API 到渲染进程

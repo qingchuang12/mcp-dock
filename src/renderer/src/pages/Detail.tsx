@@ -19,12 +19,14 @@ import {
     type SmitheryDetail,
 } from '../api/registry';
 import {type ClientInfo, type ClientType, type RuntimeInfo, useElectronAPI} from '../lib/electron';
+import {useIsMac} from '../lib/useIsMac';
 import {useStore} from '../store/useStore';
 import Modal from '../components/Modal';
 import ConfigForm from '../components/ConfigForm';
 import OfficialConfigForm from '../components/OfficialConfigForm';
 import ClientIcon from '../components/ClientIcon';
 import PlatformServerDetail from './PlatformServerDetail';
+import WindowControls from '../components/WindowControls';
 import {
     BackIcon,
     CheckIcon,
@@ -94,6 +96,7 @@ export default function Detail() {
     const navigate = useNavigate();
     const {t} = useTranslation();
     const api = useElectronAPI();
+    const isMac = useIsMac();
 
     const {addInstalledServerId, removeInstalledServerId} = useStore();
 
@@ -488,16 +491,17 @@ export default function Detail() {
     return (
         <div className="flex flex-col h-full bg-[#1c1c1e]">
             {/* 头部导航 - 参考 SkillDetail 风格 */}
-            <div className="flex items-center gap-2 px-4 py-2 border-b border-[#3a3a3c] text-[12px] text-[#636366]">
-                <button onClick={() => navigate(-1)} className="hover:text-white transition-colors">
+            <div className={`flex items-center gap-2 px-4 py-2 drag-region relative border-b border-[#3a3a3c] text-[12px] text-[#636366] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
+                <button onClick={() => navigate(-1)} className="no-drag hover:text-white transition-colors">
                     <BackIcon className="w-4 h-4"/>
                 </button>
-                <span className="hover:text-white cursor-pointer" onClick={() => navigate('/store')}>Store</span>
+                <span className="no-drag hover:text-white cursor-pointer" onClick={() => navigate('/store')}>Store</span>
                 <span>/</span>
                 <span
-                    className="hover:text-white cursor-pointer">{dataSource === 'official' ? 'Official' : 'Smithery'}</span>
+                    className="no-drag hover:text-white cursor-pointer">{dataSource === 'official' ? 'Official' : 'Smithery'}</span>
                 <span>/</span>
                 <span className="text-white">{server.displayName}</span>
+                <WindowControls />
             </div>
 
             {/* 内容区域 - 左右布局 */}
@@ -730,7 +734,7 @@ export default function Detail() {
                                         className={`px-4 py-3 ${index !== server.remotes!.length - 1 ? 'border-b border-[#3a3a3c]' : ''}`}
                                     >
                                         <div className="flex items-center gap-2 mb-1">
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#30d158]/15 text-[#30d158]">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#34c759]/15 text-[#34c759]">
                         {remote.type}
                       </span>
                                             <span className="text-[10px] text-[#636366]">

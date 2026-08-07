@@ -426,7 +426,7 @@ function SecretField({
                 <label className="text-[12px] text-[#98989d]">{label}</label>
                 {saved && !editing && (
                     <button onClick={() => onChange('')}
-                            className="text-[10px] text-[#ff453a] hover:underline">{t('cloudSync.clear')}</button>
+                            className="text-[10px] text-[#ff3b30] hover:underline">{t('cloudSync.clear')}</button>
                 )}
                 {editing && (
                     <button onClick={() => onChange(undefined)}

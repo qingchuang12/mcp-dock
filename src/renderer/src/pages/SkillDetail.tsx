@@ -21,6 +21,7 @@ import ClientIcon from '../components/ClientIcon';
 import Modal from '../components/Modal';
 import {toast} from '../components/Toast';
 import {ClockIcon, ForkIcon, StarIcon} from '../components/Icons';
+import WindowControls from '../components/WindowControls';
 
 function formatNumber(count: number): string {
     if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
@@ -471,15 +472,15 @@ export default function SkillDetail() {
         <div className="flex flex-col h-full bg-[#1c1c1e]">
             {/* 头部导航（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
             <div
-                className={`flex items-center gap-2 px-4 h-10 drag-region border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl text-[12px] text-[#636366] ${isMac ? 'pl-20' : ''}`}>
-                <button onClick={() => navigate(-1)} className="hover:text-white transition-colors">
+                className={`flex items-center gap-2 px-4 h-[32px] drag-region relative border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl text-[12px] text-[#636366] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
+                <button onClick={() => navigate(-1)} className="no-drag hover:text-white transition-colors">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/>
                     </svg>
                 </button>
                 {skillView.type === 'registry' ? (
                     <>
-                        <span className="hover:text-white cursor-pointer"
+                        <span className="no-drag hover:text-white cursor-pointer"
                               onClick={() => navigate('/store')}>{t('nav.store')}</span>
                         <span>/</span>
                         {hasCategory && (
@@ -492,12 +493,13 @@ export default function SkillDetail() {
                     </>
                 ) : (
                     <>
-                        <span className="hover:text-white cursor-pointer"
+                        <span className="no-drag hover:text-white cursor-pointer"
                               onClick={() => navigate('/library')}>{t('nav.library')}</span>
                         <span>/</span>
                     </>
                 )}
                 <span className="text-white">{skillView.name}</span>
+                <WindowControls />
             </div>
 
             {/* 内容区域 */}

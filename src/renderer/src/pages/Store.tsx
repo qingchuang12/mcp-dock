@@ -24,6 +24,7 @@ import {useIsMac} from '../lib/useIsMac';
 import ServerCard from '../components/ServerCard';
 import SkillCard from '../components/SkillCard';
 import Pagination from '../components/Pagination';
+import WindowControls from '../components/WindowControls';
 import {BUILTIN_SKILL_SOURCE_IDS} from '../../../shared/platform-constants';
 import {getTotalCache, setTotalCache} from '../lib/storeStats';
 import {toast} from '../components/Toast';
@@ -488,7 +489,7 @@ export default function Store() {
         <div className="flex flex-col h-full bg-[#1c1c1e]">
             {/* 头部工具栏（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
             <div
-                className={`flex items-center justify-between gap-3 px-4 h-12 drag-region border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl sticky top-0 z-10 ${isMac ? 'pl-20' : ''}`}
+                className={`flex items-center justify-between gap-3 px-4 h-[38px] drag-region border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl sticky top-0 z-10 ${isMac ? 'pl-20' : 'pr-[140px]'}`}
             >
                 {/* min-w-0 让左侧在空间不足时收缩，避免把右侧搜索框挤到重叠 */}
                 <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden no-drag">
@@ -636,6 +637,7 @@ export default function Store() {
                         </button>
                     )}
                 </div>
+                <WindowControls />
             </div>
 
             {/* 内容区域 */}

@@ -14,7 +14,7 @@ import {toast} from './Toast';
 const STATUS_META: Record<ApiConnection['status'], { dot: string; text: string }> = {
     active: {dot: 'bg-[#34c759]', text: 'text-[#34c759]'},
     unverified: {dot: 'bg-[#98989d]', text: 'text-[#98989d]'},
-    error: {dot: 'bg-[#ff3b30]', text: 'text-[#ff453a]'},
+    error: {dot: 'bg-[#ff3b30]', text: 'text-[#ff3b30]'},
     token_revoked: {dot: 'bg-[#ff9f0a]', text: 'text-[#ff9f0a]'},
 };
 
@@ -441,7 +441,7 @@ function IconBtn({children, onClick, title, danger, disabled}: {
             onClick={disabled ? () => {
             } : onClick}
             disabled={disabled}
-            className={`p-1.5 rounded transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : danger ? 'text-[#98989d] hover:text-[#ff453a] hover:bg-[#ff3b30]/10' : 'text-[#98989d] hover:text-white hover:bg-[#3a3a3c]'}`}
+            className={`p-1.5 rounded transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : danger ? 'text-[#98989d] hover:text-[#ff3b30] hover:bg-[#ff3b30]/10' : 'text-[#98989d] hover:text-white hover:bg-[#3a3a3c]'}`}
         >
             {children}
         </button>
