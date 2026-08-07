@@ -149,6 +149,8 @@ declare const api: {
         installServer: (serverId: string, serverConfig: McpServerConfig, clients: ClientType[]) => Promise<InstallResult>;
         uninstallServer: (serverId: string, clients: ClientType[]) => Promise<InstallResult>;
         updateServer: (serverId: string, serverConfig: McpServerConfig, client?: ClientType) => Promise<void>;
+        markServerManual: (serverId: string) => Promise<void>;
+        getManualServers: () => Promise<string[]>;
         syncServer: (serverId: string, sourceClient: ClientType, targetClients: ClientType[]) => Promise<InstallResult>;
         syncServersBatch: (items: {
             serverId: string;

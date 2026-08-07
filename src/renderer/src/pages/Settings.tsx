@@ -37,6 +37,9 @@ export default function Settings() {
     // 未安装客户端折叠状态
     const [showUninstalled, setShowUninstalled] = useState(false);
 
+    // 关于弹窗
+    const [showAbout, setShowAbout] = useState(false);
+
     useEffect(() => {
         loadData(true);
     }, [api]);
@@ -166,7 +169,7 @@ export default function Settings() {
                                 }
                 `}
                             >
-                                🇺🇸 {t('settings.english')}
+                                {t('settings.english')}
                             </button>
                             <button
                                 onClick={() => handleLanguageChange('zh')}
@@ -178,7 +181,7 @@ export default function Settings() {
                                 }
                 `}
                             >
-                                🇨🇳 {t('settings.chinese')}
+                                {t('settings.chinese')}
                             </button>
                         </div>
                     </div>
@@ -369,15 +372,21 @@ export default function Settings() {
                     <CloudSyncManager runtimes={runtimes} onChanged={() => loadData()}/>
 
                     {/* 关于 */}
-                    <div className="card p-4">
+                    <div
+                        className="card p-4 cursor-pointer hover:bg-[#3a3a3c]/40 transition-colors"
+                        onClick={() => setShowAbout(true)}
+                    >
                         <div className="flex items-center gap-3">
                             <img src={mcpDockIcon} alt="AI-Tools" className="w-10 h-10 rounded-lg"/>
                             <div>
-                                <h3 className="text-[13px] font-semibold text-white">AI-Tools</h3>
-                                <p className="text-[11px] text-[#636366]">{version ? `Version ${version}` : 'Loading...'}</p>
+                                <h3 className="text-[13px] font-semibold text-white">{t('settings.about')}</h3>
+                                <p className="text-[11px] text-[#636366]">{version ? `v${version}` : 'Loading...'}</p>
                             </div>
+                            <svg className="ml-auto w-4 h-4 text-[#636366]" fill="none" viewBox="0 0 24 24"
+                                 stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
+                            </svg>
                         </div>
-
                     </div>
                 </div>
             </div>
@@ -431,6 +440,37 @@ export default function Settings() {
                             {t('common.save')}
                         </button>
                     </div>
+                </div>
+            </Modal>
+
+            {/* 关于弹窗 */}
+            <Modal
+                isOpen={showAbout}
+                onClose={() => setShowAbout(false)}
+                title={t('settings.aboutTitle')}
+            >
+                <div className="flex flex-col items-center text-center">
+                    <img src={mcpDockIcon} alt="AI-Tools" className="w-16 h-16 rounded-2xl mb-3"/>
+                    <h3 className="text-[16px] font-semibold text-white">AI-Tools</h3>
+                    <p className="text-[12px] text-[#98989d] mt-0.5">{version ? `Version ${version}` : 'Loading...'}</p>
+                    <p className="text-[12px] text-[#98989d] mt-3 leading-relaxed">
+                        {t('settings.aboutIntro')}
+                    </p>
+                    <div className="w-full mt-4 p-3 rounded-lg bg-[#1c1c1e] border border-[#3a3a3c] text-left">
+                        <p className="text-[11px] text-[#98989d] font-medium">License</p>
+                        <p className="text-[11px] text-[#636366] mt-1.5 leading-relaxed break-all">
+                            {t('settings.aboutLicense')}
+                        </p>
+                    </div>
+                    <p className="text-[10px] text-[#636366] mt-4 leading-relaxed whitespace-pre-line">
+                        {t('settings.aboutCopyright')}
+                    </p>
+                    <a
+                        href="mailto:qingchuang12@gmail.com"
+                        className="mt-4 text-[12px] text-[#0a84ff] hover:underline"
+                    >
+                        {t('settings.aboutEmail')}
+                    </a>
                 </div>
             </Modal>
         </div>

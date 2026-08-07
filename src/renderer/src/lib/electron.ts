@@ -168,6 +168,14 @@ export interface ImportParseResult {
     error?: string;
 }
 
+export interface ImportSkillFileResult {
+    success: boolean;
+    name?: string;
+    description?: string;
+    body?: string;
+    error?: string;
+}
+
 export interface AllSkillsResult {
     skills: Record<string, { name: string; clients: SkillClientType[] }>;
     byClient: Record<SkillClientType, InstalledSkill[]>;
@@ -228,6 +236,10 @@ interface ElectronAPI {
         installServer: (serverId: string, serverConfig: McpServerConfig, clients: ClientType[]) => Promise<InstallResult>;
         uninstallServer: (serverId: string, clients: ClientType[]) => Promise<InstallResult>;
         updateServer: (serverId: string, serverConfig: McpServerConfig, client?: ClientType) => Promise<void>;
+        /** 标记 MCP server 为「手动安装」（编辑保存后调用，避免线上商店更新覆盖本地调整） */
+        markServerManual: (serverId: string) => Promise<void>;
+        /** 获取所有被标记为「手动安装」的 MCP server id 列表 */
+        getManualServers: () => Promise<string[]>;
         syncServer: (serverId: string, sourceClient: ClientType, targetClients: ClientType[]) => Promise<InstallResult>;
         syncServersBatch: (items: {
             serverId: string;
@@ -280,6 +292,8 @@ interface ElectronAPI {
             description: string;
             body: string
         } | null>;
+        /** 从本地 .zip / .skill 文件解析 Skill（解包后读取 SKILL.md），用于「我的库」上传创建 */
+        importFromFile: (filePath: string) => Promise<ImportSkillFileResult>;
         /** 远程 GitHub Registry skill 详情：解析仓库并取回首个 Skill 的源 / SKILL.md（替代渲染端抛错的 fetchSkillDetail 桩） */
         getRemoteDetail: (githubPath: string) => Promise<{
             success: boolean;
@@ -538,6 +552,9 @@ const mockAPI: ElectronAPI = {
         uninstallServer: async (_, clients) => ({success: clients, failed: []}),
         updateServer: async () => {
         },
+        markServerManual: async () => {
+        },
+        getManualServers: async () => [],
         syncServer: async (_, __, targets) => ({success: targets, failed: []}),
         syncServersBatch: async (items, targets) => ({
             synced: items.length,
@@ -603,6 +620,7 @@ const mockAPI: ElectronAPI = {
         createCustom: async (input) => ({success: true, skillName: input.name}),
         updateCustom: async (originalName) => ({success: true, skillName: originalName}),
         readSkillMd: async (skillName) => ({name: skillName, description: '', body: ''}),
+        importFromFile: async () => ({success: false, error: 'Not available in browser'}),
         getLocalDetail: async () => null,
         getRemoteDetail: async () => ({success: false, skill: null, error: 'Not available in browser'}),
         sync: async () => ({success: [], failed: [], errors: {}}),

@@ -5,17 +5,25 @@
  * 布局与交互与「Skill 源管理」（ConnectionManager）保持一致。
  */
 import {useEffect, useMemo, useState} from 'react';
+import {useTranslation} from 'react-i18next';
 import {type ApiConnection, type PlatformType, type TokenMeta, useElectronAPI} from '../lib/electron';
 import {BUILTIN_MCP_SOURCE_IDS, MCP_PLATFORM_TYPES, PLATFORM_META} from '../../../shared/platform-constants';
 import {useStore} from '../store/useStore';
 import Modal from './Modal';
 import {toast} from './Toast';
 
-const STATUS_META: Record<ApiConnection['status'], { label: string; dot: string; text: string }> = {
-    active: {label: '已连接', dot: 'bg-[#34c759]', text: 'text-[#34c759]'},
-    unverified: {label: '未验证', dot: 'bg-[#98989d]', text: 'text-[#98989d]'},
-    error: {label: '连接失败', dot: 'bg-[#ff3b30]', text: 'text-[#ff453a]'},
-    token_revoked: {label: '令牌已撤销', dot: 'bg-[#ff9f0a]', text: 'text-[#ff9f0a]'},
+const STATUS_META: Record<ApiConnection['status'], { dot: string; text: string }> = {
+    active: {dot: 'bg-[#34c759]', text: 'text-[#34c759]'},
+    unverified: {dot: 'bg-[#98989d]', text: 'text-[#98989d]'},
+    error: {dot: 'bg-[#ff3b30]', text: 'text-[#ff453a]'},
+    token_revoked: {dot: 'bg-[#ff9f0a]', text: 'text-[#ff9f0a]'},
+};
+
+const STATUS_LABEL_KEY: Record<ApiConnection['status'], string> = {
+    active: 'statusActive',
+    unverified: 'statusUnverified',
+    error: 'statusError',
+    token_revoked: 'statusTokenRevoked',
 };
 
 const BUILTIN_IDS: string[] = [BUILTIN_MCP_SOURCE_IDS.official, BUILTIN_MCP_SOURCE_IDS.smithery];
@@ -26,6 +34,7 @@ interface Props {
 }
 
 export default function McpSourceManager({onChanged}: Props) {
+    const {t} = useTranslation();
     const api = useElectronAPI();
     const tokens = useStore(s => s.tokens);
     const [conns, setConns] = useState<ApiConnection[]>([]);
@@ -92,33 +101,33 @@ export default function McpSourceManager({onChanged}: Props) {
 
     const handleSave = async () => {
         if (!editing || !editing.name?.trim()) {
-            toast.error('请输入源名称');
+            toast.error(t('mcpSource.nameRequired'));
             return;
         }
         try {
             const payload = {...editing, kind: 'mcp' as const};
             if (editing.id) await api.apiConnections.update(payload as ApiConnection);
             else await api.apiConnections.create(payload as Omit<ApiConnection, 'id' | 'createdAt' | 'status' | 'lastCheckedAt'>);
-            toast.success('MCP 源已保存');
+            toast.success(t('mcpSource.saved'));
             setShowEdit(false);
             await reload();
         } catch (e: any) {
-            toast.error(e?.message || '保存失败');
+            toast.error(e?.message || t('mcpSource.opFailed'));
         }
     };
 
     const handleDelete = async (id: string) => {
         await api.apiConnections.delete(id);
-        toast.success('已删除 MCP 源');
+        toast.success(t('mcpSource.deleted'));
         await reload();
     };
 
     const handleVerify = async (id: string) => {
         const c = await api.apiConnections.verify(id);
         setConns(prev => prev.map(x => x.id === id ? c : x));
-        if (c.status === 'active') toast.success(c.lastVerifyMessage || '连接成功');
-        else if (c.status === 'token_revoked') toast.error(c.lastVerifyMessage || '令牌无效');
-        else toast.error(c.lastVerifyMessage || '连接失败');
+        if (c.status === 'active') toast.success(c.lastVerifyMessage || t('mcpSource.connSuccess'));
+        else if (c.status === 'token_revoked') toast.error(c.lastVerifyMessage || t('mcpSource.tokenInvalid'));
+        else toast.error(c.lastVerifyMessage || t('mcpSource.connFailed'));
     };
 
     const handleToggleEnabled = async (c: ApiConnection) => {
@@ -126,10 +135,10 @@ export default function McpSourceManager({onChanged}: Props) {
         try {
             const updated = await api.apiConnections.setEnabled(c.id, next);
             setConns(prev => prev.map(x => x.id === c.id ? {...x, enabled: updated.enabled} : x));
-            toast.success(next ? `已启用「${c.name}」` : `已禁用「${c.name}」`);
+            toast.success(next ? t('mcpSource.enabled', {name: c.name}) : t('mcpSource.disabled', {name: c.name}));
             onChanged?.();
         } catch (e: any) {
-            toast.error(e?.message || '操作失败');
+            toast.error(e?.message || t('mcpSource.opFailed'));
         }
     };
 
@@ -142,16 +151,16 @@ export default function McpSourceManager({onChanged}: Props) {
         a.download = id ? 'mcp-source.json' : 'mcp-sources.json';
         a.click();
         URL.revokeObjectURL(url);
-        toast.success('配置文件已导出');
+        toast.success(t('mcpSource.exported'));
     };
 
     const handleRestoreBuiltin = async () => {
         try {
             await api.apiConnections.restoreBuiltinMcp();
-            toast.success('已恢复内置 MCP 源');
+            toast.success(t('mcpSource.restored'));
             await reload();
         } catch (e: any) {
-            toast.error(e?.message || '恢复失败');
+            toast.error(e?.message || t('mcpSource.restoreFailed'));
         }
     };
 
@@ -159,9 +168,9 @@ export default function McpSourceManager({onChanged}: Props) {
         try {
             const updated = await api.apiConnections.setDefault(id);
             setConns(prev => prev.map(x => ({...x, isDefault: x.id === updated.id})));
-            toast.success(`已将「${updated.name}」设为默认来源`);
+            toast.success(t('mcpSource.setDefaultToast', {name: updated.name}));
         } catch (e: any) {
-            toast.error(e?.message || '设置默认失败');
+            toast.error(e?.message || t('mcpSource.setDefaultFailed'));
         }
     };
 
@@ -170,33 +179,33 @@ export default function McpSourceManager({onChanged}: Props) {
     return (
         <div className="card p-4">
             <div className="flex items-center justify-between mb-1">
-                <h2 className="text-[13px] font-semibold text-white">MCP 源管理</h2>
+                <h2 className="text-[13px] font-semibold text-white">{t('mcpSource.title')}</h2>
                 <div className="flex items-center gap-2">
                     {missingBuiltin && (
                         <button
                             onClick={handleRestoreBuiltin}
                             className="px-2.5 py-1 rounded-md bg-[#3a3a3c] text-white text-[12px] hover:bg-[#3a3a3c]/80 transition-colors"
                         >
-                            恢复内置源
+                            {t('mcpSource.restoreBuiltin')}
                         </button>
                     )}
                     <button
                         onClick={openCreate}
                         className="px-2.5 py-1 rounded-md bg-[#0a84ff] text-white text-[12px] font-medium hover:bg-[#0a84ff]/90 transition-colors"
                     >
-                        + 新建 MCP 源
+                        {t('mcpSource.newSource')}
                     </button>
                 </div>
             </div>
             <p className="text-[12px] text-[#98989d] mb-3">
-                管理 Store 页 MCP 列表的数据来源。禁用的源不会出现在来源下拉中。导出配置不含令牌明文。
+                {t('mcpSource.desc')}
             </p>
 
             {/* 搜索框 */}
             <input
                 value={query}
                 onChange={e => setQuery(e.target.value)}
-                placeholder="按名称 / 平台 / 详情筛选…"
+                placeholder={t('mcpSource.search')}
                 className="w-full px-3 py-2 mb-3 rounded-md bg-[#1c1c1e] border border-[#3a3a3c] text-white text-[12px] focus:border-[#0a84ff] transition-colors"
             />
 
@@ -206,12 +215,13 @@ export default function McpSourceManager({onChanged}: Props) {
                 </div>
             ) : filtered.length === 0 ? (
                 <div className="text-[12px] text-[#636366] py-3 text-center">
-                    {conns.length === 0 ? '尚未配置任何 MCP 源，点击「新建 MCP 源」或「恢复内置源」' : '无匹配的 MCP 源'}
+                    {conns.length === 0 ? t('mcpSource.emptyNoSource') : t('mcpSource.emptyNoMatch')}
                 </div>
             ) : (
                 <div className="space-y-2">
                     {filtered.map(c => {
                         const st = STATUS_META[c.status];
+                        const statusLabel = t(`mcpSource.${STATUS_LABEL_KEY[c.status]}`);
                         const tk = c.tokenId ? tokenById.get(c.tokenId) : undefined;
                         const enabled = c.enabled ?? true;
                         const isBuiltin = BUILTIN_IDS.includes(c.id);
@@ -220,7 +230,7 @@ export default function McpSourceManager({onChanged}: Props) {
                                 <div className="flex items-center justify-between gap-2">
                                     <div className="flex items-center gap-2 min-w-0">
                                         <span className={`w-2.5 h-2.5 rounded-full ${st.dot} flex-shrink-0`}
-                                              title={st.label}/>
+                                              title={statusLabel}/>
                                         <div className="min-w-0">
                                             <div className="flex items-center gap-2">
                                                 <span
@@ -231,15 +241,15 @@ export default function McpSourceManager({onChanged}: Props) {
                         </span>
                                                 {isBuiltin && (
                                                     <span
-                                                        className="text-[10px] px-1.5 py-0.5 rounded bg-[#98989d]/15 text-[#98989d] flex-shrink-0">内置</span>
+                                                        className="text-[10px] px-1.5 py-0.5 rounded bg-[#98989d]/15 text-[#98989d] flex-shrink-0">{t('mcpSource.builtin')}</span>
                                                 )}
                                                 {c.isDefault && (
                                                     <span
-                                                        className="text-[10px] px-1.5 py-0.5 rounded bg-[#ff9f0a]/15 text-[#ff9f0a] flex-shrink-0">默认</span>
+                                                        className="text-[10px] px-1.5 py-0.5 rounded bg-[#ff9f0a]/15 text-[#ff9f0a] flex-shrink-0">{t('mcpSource.default')}</span>
                                                 )}
                                                 {!enabled && (
                                                     <span
-                                                        className="text-[10px] px-1.5 py-0.5 rounded bg-[#ff9f0a]/15 text-[#ff9f0a] flex-shrink-0">已禁用</span>
+                                                        className="text-[10px] px-1.5 py-0.5 rounded bg-[#ff9f0a]/15 text-[#ff9f0a] flex-shrink-0">{t('mcpSource.disabledBadge')}</span>
                                                 )}
                                             </div>
                                             <p className="text-[10px] text-[#636366] mt-0.5 truncate">{c.baseUrl}</p>
@@ -248,7 +258,7 @@ export default function McpSourceManager({onChanged}: Props) {
                                     <div className="flex items-center gap-1 flex-shrink-0">
                                         {/* 启用/禁用开关 */}
                                         <button
-                                            title={enabled ? '禁用此源' : '启用此源'}
+                                            title={enabled ? t('mcpSource.disableTitle') : t('mcpSource.enableTitle')}
                                             onClick={() => handleToggleEnabled(c)}
                                             className={`relative w-8 h-[18px] rounded-full transition-colors flex-shrink-0 mr-1 ${enabled ? 'bg-[#34c759]' : 'bg-[#3a3a3c]'}`}
                                         >
@@ -256,14 +266,14 @@ export default function McpSourceManager({onChanged}: Props) {
                           className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all ${enabled ? 'left-[16px]' : 'left-[2px]'}`}
                       />
                                         </button>
-                                        <IconBtn title="测试连接" onClick={() => handleVerify(c.id)}>
+                                        <IconBtn title={t('mcpSource.testConn')} onClick={() => handleVerify(c.id)}>
                                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"
                                                  stroke="currentColor" strokeWidth={2}>
                                                 <path strokeLinecap="round" strokeLinejoin="round"
                                                       d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
                                             </svg>
                                         </IconBtn>
-                                        <IconBtn title="导出配置" onClick={() => handleExport(c.id)}>
+                                        <IconBtn title={t('mcpSource.export')} onClick={() => handleExport(c.id)}>
                                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"
                                                  stroke="currentColor" strokeWidth={2}>
                                                 <path strokeLinecap="round" strokeLinejoin="round"
@@ -271,7 +281,8 @@ export default function McpSourceManager({onChanged}: Props) {
                                             </svg>
                                         </IconBtn>
                                         {!c.isDefault && (
-                                            <IconBtn title="设为默认源" onClick={() => handleSetDefault(c.id)}>
+                                            <IconBtn title={t('mcpSource.setDefault')}
+                                                     onClick={() => handleSetDefault(c.id)}>
                                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"
                                                      stroke="currentColor" strokeWidth={2}>
                                                     <path strokeLinecap="round" strokeLinejoin="round"
@@ -279,14 +290,15 @@ export default function McpSourceManager({onChanged}: Props) {
                                                 </svg>
                                             </IconBtn>
                                         )}
-                                        <IconBtn title="编辑" onClick={() => openEdit(c)}>
+                                        <IconBtn title={t('mcpSource.edit')} onClick={() => openEdit(c)}>
                                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"
                                                  stroke="currentColor" strokeWidth={2}>
                                                 <path strokeLinecap="round" strokeLinejoin="round"
                                                       d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
                                             </svg>
                                         </IconBtn>
-                                        <IconBtn title="删除" danger onClick={() => handleDelete(c.id)}>
+                                        <IconBtn title={t('mcpSource.delete')} danger
+                                                 onClick={() => handleDelete(c.id)}>
                                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"
                                                  stroke="currentColor" strokeWidth={2}>
                                                 <path strokeLinecap="round" strokeLinejoin="round"
@@ -303,14 +315,15 @@ export default function McpSourceManager({onChanged}: Props) {
                                               d="M13.19 8.688a4.5 4.5 0 011.242 7.247l-4.44 4.439a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.79-6.061a4.5 4.5 0 00-6.364 6.364"/>
                                     </svg>
                                     <p className="text-[10px] text-[#636366] leading-relaxed">
-                                        绑定令牌：
+                                        {t('mcpSource.tokenBound')}
                                         {tk
-                                            ? <span className="text-[#98989d]"> {tk.name}（范围 {tk.scopes.join(', ')} · 有效期 {tk.expiresAt ? new Date(tk.expiresAt).toLocaleDateString() : '无期限'} · {tk.revoked ? '已撤销' : '正常'}）</span>
-                                            : <span className="text-[#98989d]"> 未绑定令牌（公开源无需鉴权）</span>}
+                                            ? <span
+                                                className="text-[#98989d]"> {tk.name}（{t('mcpSource.scope')} {tk.scopes.join(', ')} · {t('mcpSource.expiry')} {tk.expiresAt ? new Date(tk.expiresAt).toLocaleDateString() : t('mcpSource.noExpiry')} · {tk.revoked ? t('mcpSource.revoked') : t('mcpSource.normal')}）</span>
+                                            : <span className="text-[#98989d]"> {t('mcpSource.noToken')}</span>}
                                     </p>
                                 </div>
                                 {c.detail &&
-                                    <p className="text-[10px] text-[#636366] mt-1 truncate">详情：{c.detail}</p>}
+                                    <p className="text-[10px] text-[#636366] mt-1 truncate">{t('mcpSource.detailPrefix')}{c.detail}</p>}
                             </div>
                         );
                     })}
@@ -319,11 +332,11 @@ export default function McpSourceManager({onChanged}: Props) {
 
             {/* 编辑/新建弹窗 */}
             <Modal isOpen={showEdit} onClose={() => setShowEdit(false)}
-                   title={editing?.id ? '编辑 MCP 源' : '新建 MCP 源'}>
+                   title={editing?.id ? t('mcpSource.editTitle') : t('mcpSource.createTitle')}>
                 {editing && (
                     <div className="space-y-4">
                         <div>
-                            <label className="block text-[12px] text-[#98989d] mb-1.5">名称</label>
+                            <label className="block text-[12px] text-[#98989d] mb-1.5">{t('mcpSource.name')}</label>
                             <input
                                 value={editing.name || ''}
                                 onChange={e => setEditing({...editing, name: e.target.value})}
@@ -331,7 +344,8 @@ export default function McpSourceManager({onChanged}: Props) {
                             />
                         </div>
                         <div>
-                            <label className="block text-[12px] text-[#98989d] mb-1.5">平台类型</label>
+                            <label
+                                className="block text-[12px] text-[#98989d] mb-1.5">{t('mcpSource.platformType')}</label>
                             <select
                                 value={editing.platformType}
                                 onChange={e => {
@@ -349,7 +363,7 @@ export default function McpSourceManager({onChanged}: Props) {
                                 ))}
                             </select>
                             <p className="text-[10px] text-[#636366] mt-1">
-                                Official / Smithery 使用内置抓取实现；ModelScope 等平台源与自定义源通过 Base URL 直连搜索。
+                                {t('mcpSource.platformHint')}
                             </p>
                         </div>
                         <div>
@@ -362,30 +376,32 @@ export default function McpSourceManager({onChanged}: Props) {
                             />
                         </div>
                         <div>
-                            <label className="block text-[12px] text-[#98989d] mb-1.5">绑定令牌</label>
+                            <label
+                                className="block text-[12px] text-[#98989d] mb-1.5">{t('mcpSource.bindToken')}</label>
                             <select
                                 value={editing.tokenId || ''}
                                 onChange={e => setEditing({...editing, tokenId: e.target.value || undefined})}
                                 className="w-full px-3 py-2 rounded-md bg-[#1c1c1e] border border-[#3a3a3c] text-white text-[12px] focus:border-[#0a84ff] transition-colors"
                             >
-                                <option value="">未绑定</option>
-                                {tokens.map(t => (
-                                    <option key={t.id} value={t.id}
-                                            disabled={t.revoked}>{t.name}{t.revoked ? '（已撤销）' : ''}</option>
+                                <option value="">{t('mcpSource.unbound')}</option>
+                                {tokens.map(tok => (
+                                    <option key={tok.id} value={tok.id}
+                                            disabled={tok.revoked}>{tok.name}{tok.revoked ? `（${t('mcpSource.revoked')}）` : ''}</option>
                                 ))}
                             </select>
                         </div>
                         <div>
-                            <label className="block text-[12px] text-[#98989d] mb-1.5">详情说明（可选）</label>
+                            <label
+                                className="block text-[12px] text-[#98989d] mb-1.5">{t('mcpSource.detailOptional')}</label>
                             <input
                                 value={editing.detail || ''}
                                 onChange={e => setEditing({...editing, detail: e.target.value})}
-                                placeholder="如区域、版本、备注"
+                                placeholder={t('mcpSource.detailPlaceholder')}
                                 className="w-full px-3 py-2 rounded-md bg-[#1c1c1e] border border-[#3a3a3c] text-white text-[12px] focus:border-[#0a84ff] transition-colors"
                             />
                         </div>
                         <div className="flex items-center justify-between">
-                            <label className="text-[12px] text-[#98989d]">启用此源</label>
+                            <label className="text-[12px] text-[#98989d]">{t('mcpSource.enableSource')}</label>
                             <button
                                 onClick={() => setEditing({...editing, enabled: !(editing.enabled ?? true)})}
                                 className={`relative w-9 h-5 rounded-full transition-colors ${(editing.enabled ?? true) ? 'bg-[#34c759]' : 'bg-[#3a3a3c]'}`}
@@ -397,10 +413,10 @@ export default function McpSourceManager({onChanged}: Props) {
                         </div>
                         <div className="flex justify-end gap-2 pt-2">
                             <button onClick={() => setShowEdit(false)}
-                                    className="px-3 py-1.5 rounded-md bg-[#3a3a3c] text-white text-[12px] hover:bg-[#3a3a3c]/80 transition-colors">取消
+                                    className="px-3 py-1.5 rounded-md bg-[#3a3a3c] text-white text-[12px] hover:bg-[#3a3a3c]/80 transition-colors">{t('common.cancel')}
                             </button>
                             <button onClick={handleSave}
-                                    className="px-3 py-1.5 rounded-md bg-[#0a84ff] text-white text-[12px] font-medium hover:bg-[#0a84ff]/90 transition-colors">保存
+                                    className="px-3 py-1.5 rounded-md bg-[#0a84ff] text-white text-[12px] font-medium hover:bg-[#0a84ff]/90 transition-colors">{t('common.save')}
                             </button>
                         </div>
                     </div>

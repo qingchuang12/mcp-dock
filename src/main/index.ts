@@ -26,7 +26,7 @@ import {
 import {getCacheManager} from './cache-manager';
 import {getSecretStore, TokenMeta, TokenScope} from './secret-store';
 import {ApiConnection, getConnectionsStore} from './connections-store';
-import {createMcpClient, getMcpClient, removeMcpClient} from './mcp-client';
+import {createMcpClient, disconnectAllClients, getMcpClient, removeMcpClient} from './mcp-client';
 import {getCloudSyncStore} from './cloud-sync-store';
 import {getCloudSyncService} from './cloud-sync-service';
 import type {CloudSyncConfig, CloudSyncConfigInput, CloudSyncResult} from '../shared/cloud-sync-constants';
@@ -178,8 +178,18 @@ app.whenReady().then(() => {
 // 所有窗口关闭时退出应用 (macOS 除外)
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
+        disconnectAllClients();
         app.quit();
     }
+});
+
+// 退出前兜底清理：MCP Inspector 的 spawn 子进程（shell:true 派生）若不杀干净，
+// stdio 管道句柄会保持事件循环存活，导致主进程退出后仍残留。
+app.on('before-quit', () => {
+    disconnectAllClients();
+    // 兜底：若仍有句柄阻止正常退出，1.5s 后强制退出
+    const forceQuitTimer = setTimeout(() => app.exit(0), 1500);
+    forceQuitTimer.unref?.();
 });
 
 // ============ IPC 处理器 ============
@@ -220,6 +230,16 @@ ipcMain.handle('config:uninstall-server', async (_, serverId: string, clients: C
 ipcMain.handle('config:update-server', async (_, serverId: string, serverConfig: any, client?: ClientType) => {
     await historyManager.backup();
     return configManager.updateServer(serverId, serverConfig, client);
+});
+
+// 标记 MCP server 为「手动安装」（编辑保存后调用，避免线上商店更新覆盖本地调整）
+ipcMain.handle('config:mark-server-manual', async (_, serverId: string) => {
+    return configManager.markMcpServerManual(serverId);
+});
+
+// 获取所有被标记为「手动安装」的 MCP server id 列表
+ipcMain.handle('config:get-manual-servers', async (): Promise<string[]> => {
+    return configManager.getManualMcpServers();
 });
 
 ipcMain.handle('config:sync-server', async (_, serverId: string, sourceClient: ClientType, targetClients: ClientType[]) => {
@@ -474,6 +494,11 @@ ipcMain.handle('skills:update-custom', async (_, originalName: string, input: {
 // 读取本地 Skill 的 SKILL.md（解析 frontmatter 与正文，用于编辑回填）
 ipcMain.handle('skills:read-skill-md', async (_, skillName: string, client: SkillClientType) => {
     return skillsManager.readSkillMd(skillName, client);
+});
+
+// 从本地 .zip / .skill 文件解析 Skill（解包后读取 SKILL.md），用于「我的库」上传创建
+ipcMain.handle('skills:import-file', async (_, filePath: string) => {
+    return skillsManager.importFromFile(filePath);
 });
 
 // 获取本地 Skill 详情

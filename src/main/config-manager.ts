@@ -83,6 +83,8 @@ export interface ClientInfo {
 interface UserSettings {
     customConfigPaths?: Partial<Record<ClientType, string>>;
     customSkillsPaths?: Partial<Record<SkillClientType, string>>;
+    // 编辑保存后转为「手动安装」的 MCP server id 列表：此后不再被当作商店来源，避免线上更新覆盖
+    manualMcpServers?: string[];
 }
 
 export class ConfigManager {
@@ -339,6 +341,28 @@ export class ConfigManager {
 
         await this.saveUserSettings();
         this.invalidateClientsCache();
+    }
+
+    /**
+     * 标记 MCP server 为「手动安装」：用户在「我的库」编辑保存后调用，
+     * 此后该 server 不再被当作商店来源（避免从线上商店更新覆盖本地调整）。
+     */
+    async markMcpServerManual(serverId: string): Promise<void> {
+        await this.loadUserSettings();
+        if (!this.userSettings.manualMcpServers) {
+            this.userSettings.manualMcpServers = [];
+        }
+        if (!this.userSettings.manualMcpServers.includes(serverId)) {
+            this.userSettings.manualMcpServers.push(serverId);
+            await this.saveUserSettings();
+        }
+    }
+
+    /**
+     * 获取所有被标记为「手动安装」的 MCP server id 列表
+     */
+    getManualMcpServers(): string[] {
+        return this.userSettings.manualMcpServers || [];
     }
 
     /**

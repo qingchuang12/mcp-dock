@@ -20,7 +20,6 @@ import {useStore} from '../store/useStore';
 import Modal from '../components/Modal';
 import ClientIcon from '../components/ClientIcon';
 import AddServerModal from '../components/AddServerModal';
-import ImportSkillModal from '../components/ImportSkillModal';
 import {CreateSkillModal} from '../components/CreateSkillModal';
 import {toast} from '../components/Toast';
 import {type DataSource, fetchServerList, type ServerListItem} from '../api/registry';
@@ -31,6 +30,8 @@ interface InstalledServer {
     clients: ClientType[];
     isMcpDock: boolean;
     source: DataSource;
+    // 编辑保存后转为「手动安装」：不再被当作商店来源，避免线上更新覆盖
+    manual: boolean;
 }
 
 // 检查是否是 AI-Tools 安装的服务器
@@ -232,7 +233,6 @@ export default function Library() {
     const [isAddingServer, setIsAddingServer] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [refreshingSkill, setRefreshingSkill] = useState<string | null>(null);
-    const [showImportModal, setShowImportModal] = useState(false);
 
     // 创建 / 编辑自定义 Skill
     const [showCreateSkill, setShowCreateSkill] = useState(false);
@@ -312,18 +312,20 @@ export default function Library() {
 
     const loadData = async () => {
         try {
-            const [clientList, {servers: serverMap}, {byClient: skillsByClient}] = await Promise.all([
+            const [clientList, {servers: serverMap}, {byClient: skillsByClient}, manualServers] = await Promise.all([
                 api.clients.getAll(),
                 api.config.getAllServers(),
                 api.skills.getAllInstalled(),
+                api.config.getManualServers(),
             ]);
 
             setClients(clientList);
 
             // 处理 MCP Servers
+            const manualSet = new Set(manualServers);
             const serverList = Object.entries(serverMap).map(([id, {config, clients}]) => {
                 const {isMcpDock, source} = isMcpDockInstalled(config, id, serverLists);
-                return {id, config, clients, isMcpDock, source};
+                return {id, config, clients, isMcpDock, source, manual: manualSet.has(id)};
             });
             setServers(serverList);
             setInstalledServerIds(Object.keys(serverMap));
@@ -366,8 +368,15 @@ export default function Library() {
         if (!editingServer) return;
         try {
             const newConfig = JSON.parse(editedConfig);
+            // 简单判断：编辑前后配置无变化则不标记为「手动安装」，保留商店来源
+            const configChanged =
+                JSON.stringify(newConfig) !== JSON.stringify(editingServer.config);
             for (const client of editingServer.clients) {
                 await api.config.updateServer(editingServer.id, newConfig, client);
+            }
+            // 仅当配置有修改时才标记为手动安装，避免线上更新覆盖本地调整
+            if (configChanged) {
+                await api.config.markServerManual(editingServer.id);
             }
             setEditingServer(null);
             loadData();
@@ -898,51 +907,12 @@ export default function Library() {
                                      strokeWidth={2}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
                                 </svg>
-                                {t('installed.addCustom') || 'Add Custom'}
+                                {t('library.create') || '创建'}
                             </button>
                         </>
                     )}
                     {activeTab === 'skills' && (
                         <>
-                            <button
-                                onClick={() => setShowImportModal(true)}
-                                className="flex items-center gap-1.5 px-3 py-1 bg-[#0a84ff] text-white rounded-md text-[12px] font-medium hover:bg-[#0a84ff]/80 transition-colors"
-                            >
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                                     strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
-                                </svg>
-                                {t('importSkill.import') || 'Import'}
-                            </button>
-                            <button
-                                onClick={() => setShowCreateSkill(true)}
-                                className="flex items-center gap-1.5 px-3 py-1 bg-[#3a3a3c] text-white rounded-md text-[12px] font-medium hover:bg-[#4a4a4c] transition-colors"
-                            >
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                                     strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
-                                </svg>
-                                {t('library.createCustomSkill') || '新建自定义'}
-                            </button>
-                            {skills.length > 0 && (
-                                <button
-                                    onClick={handleUpdateAllSkills}
-                                    disabled={isRefreshing}
-                                    className="flex items-center gap-1.5 px-3 py-1 bg-[#3a3a3c] text-white rounded-md text-[12px] font-medium hover:bg-[#4a4a4c] transition-colors disabled:opacity-50"
-                                >
-                                    <svg
-                                        className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`}
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke="currentColor"
-                                        strokeWidth={2}
-                                    >
-                                        <path strokeLinecap="round" strokeLinejoin="round"
-                                              d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
-                                    </svg>
-                                    {t('library.updateAll') || 'Update All'}
-                                </button>
-                            )}
                             {skills.length > 0 && (
                                 <button
                                     onClick={toggleSelectMode}
@@ -968,6 +938,35 @@ export default function Library() {
                                               d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
                                     </svg>
                                     {t('library.batchSync', {count: selectedSkills.length}) || `Sync (${selectedSkills.length})`}
+                                </button>
+                            )}
+                            <button
+                                onClick={() => setShowCreateSkill(true)}
+                                className="flex items-center gap-1.5 px-3 py-1 bg-[#0a84ff] text-white rounded-md text-[12px] font-medium hover:bg-[#0a84ff]/80 transition-colors"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                     strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+                                </svg>
+                                {t('library.create') || '创建'}
+                            </button>
+                            {skills.length > 0 && (
+                                <button
+                                    onClick={handleUpdateAllSkills}
+                                    disabled={isRefreshing}
+                                    className="flex items-center gap-1.5 px-3 py-1 bg-[#3a3a3c] text-white rounded-md text-[12px] font-medium hover:bg-[#4a4a4c] transition-colors disabled:opacity-50"
+                                >
+                                    <svg
+                                        className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`}
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke="currentColor"
+                                        strokeWidth={2}
+                                    >
+                                        <path strokeLinecap="round" strokeLinejoin="round"
+                                              d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
+                                    </svg>
+                                    {t('library.updateAll') || 'Update All'}
                                 </button>
                             )}
                         </>
@@ -1055,12 +1054,12 @@ export default function Library() {
                                             {!serverSelectMode && (
                                                 <div className="flex items-center gap-2 flex-shrink-0"
                                                      onClick={e => e.stopPropagation()}>
-                                                    {/* AI-Tools 标志 - 最左边 */}
-                                                    {server.isMcpDock ? (
-                                                        <span className="tag tag-info">AI-Tools</span>
-                                                    ) : (
+                                                    {/* 来源标记 - 最左边：手动安装 > AI-Tools（从商店安装统一显示） */}
+                                                    {server.manual ? (
                                                         <span
-                                                            className="tag tag-default">{t('installed.external') || 'External'}</span>
+                                                            className="tag tag-default">{t('library.manual') || 'Manual'}</span>
+                                                    ) : (
+                                                        <span className="tag tag-info">AI-Tools</span>
                                                     )}
 
                                                     {/* 操作按钮 */}
@@ -1231,20 +1230,18 @@ export default function Library() {
                                                         </button>
                                                     )}
 
-                                                    {/* 编辑按钮（仅自定义 Skill） */}
-                                                    {!skill.source && (
-                                                        <button
-                                                            onClick={() => handleEditSkill(skill.name)}
-                                                            className="p-1.5 rounded text-[#98989d] hover:text-white hover:bg-[#3a3a3c] transition-colors"
-                                                            title={t('installed.edit')}
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
-                                                                 stroke="currentColor" strokeWidth={2}>
-                                                                <path strokeLinecap="round" strokeLinejoin="round"
-                                                                      d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
-                                                            </svg>
-                                                        </button>
-                                                    )}
+                                                    {/* 编辑按钮（商店来源的 Skill 也可编辑；保存后转为手动安装） */}
+                                                    <button
+                                                        onClick={() => handleEditSkill(skill.name)}
+                                                        className="p-1.5 rounded text-[#98989d] hover:text-white hover:bg-[#3a3a3c] transition-colors"
+                                                        title={t('installed.edit')}
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
+                                                             stroke="currentColor" strokeWidth={2}>
+                                                            <path strokeLinecap="round" strokeLinejoin="round"
+                                                                  d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
+                                                        </svg>
+                                                    </button>
 
                                                     {/* 同步到其他客户端 */}
                                                     {installedClients.length > 0 && (
@@ -1505,14 +1502,6 @@ export default function Library() {
                 onSubmit={handleAddServer}
                 clients={clients}
                 isLoading={isAddingServer}
-            />
-
-            {/* 导入 Skill 模态框 */}
-            <ImportSkillModal
-                isOpen={showImportModal}
-                onClose={() => setShowImportModal(false)}
-                onSuccess={loadData}
-                clients={clients}
             />
 
             {/* 创建 / 编辑自定义 Skill 模态框 */}

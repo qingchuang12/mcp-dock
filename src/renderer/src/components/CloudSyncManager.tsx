@@ -4,6 +4,7 @@
  * 凭据以明文提交给主进程，落盘时换成 SecretStore 的 secretId；已保存的凭据在这里只显示占位符。
  */
 import {useEffect, useState} from 'react';
+import {useTranslation} from 'react-i18next';
 import {
     type AllRuntimes,
     type CloudSyncConfig,
@@ -21,10 +22,8 @@ interface Props {
     onChanged?: () => void;
 }
 
-/** 已保存凭据的占位提示 */
-const SAVED_PLACEHOLDER = '••••••••（已保存）';
-
 export default function CloudSyncManager({runtimes, onChanged}: Props) {
+    const {t} = useTranslation();
     const api = useElectronAPI();
     const [cfg, setCfg] = useState<CloudSyncConfig>(defaultCloudSyncConfig());
     const [loading, setLoading] = useState(true);
@@ -81,10 +80,10 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
     const validate = (): string | null => {
         if (!cfg.enabled) return null;
         if (cfg.provider === 'git') {
-            if (!cfg.git.repoUrl.trim()) return '请填写 Git 仓库地址';
+            if (!cfg.git.repoUrl.trim()) return t('cloudSync.repoRequired');
         } else {
-            if (!cfg.sftp.host.trim()) return '请填写 SFTP 主机地址';
-            if (!cfg.sftp.username.trim()) return '请填写 SFTP 用户名';
+            if (!cfg.sftp.host.trim()) return t('cloudSync.sftpHostRequired');
+            if (!cfg.sftp.username.trim()) return t('cloudSync.sftpUserRequired');
         }
         return null;
     };
@@ -109,9 +108,9 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
     const handleSave = async () => {
         setSaving(true);
         try {
-            if (await persist()) toast.success('云同步配置已保存');
+            if (await persist()) toast.success(t('cloudSync.saved'));
         } catch (e: any) {
-            toast.error(e?.message || '保存失败');
+            toast.error(e?.message || t('cloudSync.saveFailed'));
         } finally {
             setSaving(false);
         }
@@ -123,10 +122,10 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
         try {
             if (!(await persist())) return;
             const res = await api.cloudSync.test();
-            if (res.ok) toast.success(res.message || '连接成功');
-            else toast.error(res.message || '连接失败');
+            if (res.ok) toast.success(res.message || t('cloudSync.testSuccess'));
+            else toast.error(res.message || t('cloudSync.testFailed'));
         } catch (e: any) {
-            toast.error(e?.message || '测试失败');
+            toast.error(e?.message || t('cloudSync.testError'));
         } finally {
             setTesting(false);
         }
@@ -137,20 +136,18 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
     return (
         <div className="card p-4">
             <div className="flex items-center justify-between mb-1">
-                <h2 className="text-[13px] font-semibold text-white">云同步</h2>
+                <h2 className="text-[13px] font-semibold text-white">{t('cloudSync.title')}</h2>
                 <button
                     onClick={() => setCfg({...cfg, enabled: !cfg.enabled})}
                     className={`relative w-9 h-5 rounded-full transition-colors ${cfg.enabled ? 'bg-[#34c759]' : 'bg-[#3a3a3c]'}`}
-                    title={cfg.enabled ? '关闭云同步' : '开启云同步'}
+                    title={cfg.enabled ? t('cloudSync.disableTitle') : t('cloudSync.enableTitle')}
                 >
                     <span
                         className={`absolute top-[2px] w-4 h-4 rounded-full bg-white transition-all ${cfg.enabled ? 'left-[18px]' : 'left-[2px]'}`}/>
                 </button>
             </div>
             <p className="text-[12px] text-[#98989d] mb-3">
-                把云端当作一个客户端：会在远端自动创建 <code
-                className="font-mono text-[#98989d]">{CLOUD_ROOT_DIR}</code> 目录存放 MCP 配置与 Skill。配置完成后可在「我的库」手动上传
-                / 下载。
+                {t('cloudSync.desc', {dir: CLOUD_ROOT_DIR})}
             </p>
 
             {loading ? (
@@ -167,7 +164,7 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                                     cfg.provider === p ? 'bg-[#0a84ff] text-white' : 'bg-[#3a3a3c] text-[#98989d] hover:text-white'
                                 }`}
                             >
-                                {p === 'git' ? 'Git 仓库' : 'SFTP'}
+                                {p === 'git' ? t('cloudSync.gitChannel') : t('cloudSync.sftpChannel')}
                             </button>
                         ))}
                     </div>
@@ -175,13 +172,13 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                     {gitMissing && (
                         <div
                             className="mb-3 px-3 py-2 rounded-md bg-[#ff9f0a]/10 border border-[#ff9f0a]/30 text-[11px] text-[#ff9f0a]">
-                            未检测到系统 git，Git 通道无法使用。请先安装 Git 并在「运行时环境」中刷新。
+                            {t('cloudSync.gitMissing')}
                         </div>
                     )}
 
                     {cfg.provider === 'git' ? (
                         <div className="space-y-3">
-                            <Field label="仓库地址">
+                            <Field label={t('cloudSync.repoUrl')}>
                                 <input
                                     value={cfg.git.repoUrl}
                                     onChange={e => setCfg({...cfg, git: {...cfg.git, repoUrl: e.target.value}})}
@@ -190,7 +187,7 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                                 />
                             </Field>
                             <div className="grid grid-cols-2 gap-3">
-                                <Field label="分支">
+                                <Field label={t('cloudSync.branch')}>
                                     <input
                                         value={cfg.git.branch}
                                         onChange={e => setCfg({...cfg, git: {...cfg.git, branch: e.target.value}})}
@@ -198,7 +195,7 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                                         className={inputCls}
                                     />
                                 </Field>
-                                <Field label="认证方式">
+                                <Field label={t('cloudSync.authType')}>
                                     <select
                                         value={cfg.git.authType}
                                         onChange={e => setCfg({
@@ -210,16 +207,16 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                                         })}
                                         className={inputCls}
                                     >
-                                        <option value="none">无（公开仓库 / 已配置凭据）</option>
-                                        <option value="ssh-key">SSH 密钥</option>
-                                        <option value="https-token">HTTPS 令牌</option>
+                                        <option value="none">{t('cloudSync.authNone')}</option>
+                                        <option value="ssh-key">{t('cloudSync.authSshKey')}</option>
+                                        <option value="https-token">{t('cloudSync.authHttpsToken')}</option>
                                     </select>
                                 </Field>
                             </div>
 
                             {cfg.git.authType === 'ssh-key' && (
                                 <>
-                                    <Field label="私钥路径">
+                                    <Field label={t('cloudSync.privateKeyPath')}>
                                         <input
                                             value={cfg.git.privateKeyPath || ''}
                                             onChange={e => setCfg({
@@ -231,7 +228,7 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                                         />
                                     </Field>
                                     <SecretField
-                                        label="私钥口令（可选）"
+                                        label={t('cloudSync.keyPassphrase')}
                                         value={gitPassphrase}
                                         saved={!!cfg.git.passphraseSecretId}
                                         onChange={setGitPassphrase}
@@ -241,7 +238,7 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
 
                             {cfg.git.authType === 'https-token' && (
                                 <SecretField
-                                    label="访问令牌"
+                                    label={t('cloudSync.accessToken')}
                                     value={gitToken}
                                     saved={!!cfg.git.tokenSecretId}
                                     onChange={setGitToken}
@@ -250,7 +247,7 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                             )}
 
                             <div className="grid grid-cols-2 gap-3">
-                                <Field label="提交者名称">
+                                <Field label={t('cloudSync.committerName')}>
                                     <input
                                         value={cfg.git.userName || ''}
                                         onChange={e => setCfg({...cfg, git: {...cfg.git, userName: e.target.value}})}
@@ -258,7 +255,7 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                                         className={inputCls}
                                     />
                                 </Field>
-                                <Field label="提交者邮箱">
+                                <Field label={t('cloudSync.committerEmail')}>
                                     <input
                                         value={cfg.git.userEmail || ''}
                                         onChange={e => setCfg({...cfg, git: {...cfg.git, userEmail: e.target.value}})}
@@ -271,7 +268,7 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                     ) : (
                         <div className="space-y-3">
                             <div className="grid grid-cols-[1fr_100px] gap-3">
-                                <Field label="主机">
+                                <Field label={t('cloudSync.host')}>
                                     <input
                                         value={cfg.sftp.host}
                                         onChange={e => setCfg({...cfg, sftp: {...cfg.sftp, host: e.target.value}})}
@@ -279,7 +276,7 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                                         className={inputCls + ' font-mono'}
                                     />
                                 </Field>
-                                <Field label="端口">
+                                <Field label={t('cloudSync.port')}>
                                     <input
                                         type="number"
                                         value={cfg.sftp.port}
@@ -292,14 +289,14 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                                 </Field>
                             </div>
                             <div className="grid grid-cols-2 gap-3">
-                                <Field label="用户名">
+                                <Field label={t('cloudSync.username')}>
                                     <input
                                         value={cfg.sftp.username}
                                         onChange={e => setCfg({...cfg, sftp: {...cfg.sftp, username: e.target.value}})}
                                         className={inputCls}
                                     />
                                 </Field>
-                                <Field label="认证方式">
+                                <Field label={t('cloudSync.authType')}>
                                     <select
                                         value={cfg.sftp.authType}
                                         onChange={e => setCfg({
@@ -311,22 +308,22 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                                         })}
                                         className={inputCls}
                                     >
-                                        <option value="password">密码</option>
-                                        <option value="key">SSH 密钥</option>
+                                        <option value="password">{t('cloudSync.password')}</option>
+                                        <option value="key">{t('cloudSync.authSshKey')}</option>
                                     </select>
                                 </Field>
                             </div>
 
                             {cfg.sftp.authType === 'password' ? (
                                 <SecretField
-                                    label="密码"
+                                    label={t('cloudSync.password')}
                                     value={sftpPassword}
                                     saved={!!cfg.sftp.passwordSecretId}
                                     onChange={setSftpPassword}
                                 />
                             ) : (
                                 <>
-                                    <Field label="私钥路径">
+                                    <Field label={t('cloudSync.privateKeyPath')}>
                                         <input
                                             value={cfg.sftp.privateKeyPath || ''}
                                             onChange={e => setCfg({
@@ -338,7 +335,7 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                                         />
                                     </Field>
                                     <SecretField
-                                        label="私钥口令（可选）"
+                                        label={t('cloudSync.keyPassphrase')}
                                         value={sftpPassphrase}
                                         saved={!!cfg.sftp.passphraseSecretId}
                                         onChange={setSftpPassphrase}
@@ -346,7 +343,7 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                                 </>
                             )}
 
-                            <Field label="远程根目录">
+                            <Field label={t('cloudSync.remoteDir')}>
                                 <input
                                     value={cfg.sftp.remoteDir}
                                     onChange={e => setCfg({...cfg, sftp: {...cfg.sftp, remoteDir: e.target.value}})}
@@ -354,7 +351,7 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                                     className={inputCls + ' font-mono'}
                                 />
                                 <p className="text-[10px] text-[#636366] mt-1">
-                                    实际存储位置：<span
+                                    {t('cloudSync.storageLocation')}<span
                                     className="font-mono">{(cfg.sftp.remoteDir || '/').replace(/\/+$/, '')}/{CLOUD_ROOT_DIR}</span>
                                 </p>
                             </Field>
@@ -364,8 +361,11 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                     <div className="flex items-center justify-between mt-4 pt-3 border-t border-[#3a3a3c]">
                         <p className="text-[10px] text-[#636366]">
                             {cfg.lastSyncAt
-                                ? `上次同步：${new Date(cfg.lastSyncAt).toLocaleString()}${cfg.lastSyncMessage ? ` · ${cfg.lastSyncMessage}` : ''}`
-                                : '尚未同步过'}
+                                ? t('cloudSync.lastSync', {
+                                    time: new Date(cfg.lastSyncAt).toLocaleString(),
+                                    msg: cfg.lastSyncMessage ? ` · ${cfg.lastSyncMessage}` : ''
+                                })
+                                : t('cloudSync.neverSynced')}
                         </p>
                         <div className="flex gap-2">
                             <button
@@ -373,14 +373,14 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                                 disabled={testing || saving}
                                 className="px-3 py-1.5 rounded-md bg-[#3a3a3c] text-white text-[12px] hover:bg-[#3a3a3c]/80 transition-colors disabled:opacity-50"
                             >
-                                {testing ? '测试中…' : '测试连接'}
+                                {testing ? t('cloudSync.testing') : t('cloudSync.test')}
                             </button>
                             <button
                                 onClick={handleSave}
                                 disabled={saving || testing}
                                 className="px-3 py-1.5 rounded-md bg-[#0a84ff] text-white text-[12px] font-medium hover:bg-[#0a84ff]/90 transition-colors disabled:opacity-50"
                             >
-                                {saving ? '保存中…' : '保存'}
+                                {saving ? t('cloudSync.saving') : t('cloudSync.save')}
                             </button>
                         </div>
                     </div>
@@ -418,6 +418,7 @@ function SecretField({
     onChange: (v: string | undefined) => void;
     placeholder?: string;
 }) {
+    const {t} = useTranslation();
     const editing = value !== undefined;
     return (
         <div>
@@ -425,18 +426,18 @@ function SecretField({
                 <label className="text-[12px] text-[#98989d]">{label}</label>
                 {saved && !editing && (
                     <button onClick={() => onChange('')}
-                            className="text-[10px] text-[#ff453a] hover:underline">清除</button>
+                            className="text-[10px] text-[#ff453a] hover:underline">{t('cloudSync.clear')}</button>
                 )}
                 {editing && (
                     <button onClick={() => onChange(undefined)}
-                            className="text-[10px] text-[#98989d] hover:underline">取消修改</button>
+                            className="text-[10px] text-[#98989d] hover:underline">{t('cloudSync.cancelEdit')}</button>
                 )}
             </div>
             <input
                 type="password"
                 value={editing ? value : ''}
                 onChange={e => onChange(e.target.value)}
-                placeholder={saved && !editing ? SAVED_PLACEHOLDER : (placeholder || '')}
+                placeholder={saved && !editing ? t('cloudSync.savedPlaceholder') : (placeholder || '')}
                 className={inputCls + ' font-mono'}
             />
         </div>

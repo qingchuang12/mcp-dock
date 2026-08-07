@@ -6,6 +6,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import zlib from 'zlib';
 import {execFile} from 'child_process';
 import {SKILL_SUPPORTED_CLIENTS, SkillClientType} from './config-manager';
 
@@ -363,6 +364,103 @@ export class SkillsManager {
     }
 
     /**
+     * 从本地 .zip / .skill 文件解析 Skill（解包 ZIP，读取 SKILL.md 的 frontmatter + 正文）。
+     * 用于「我的库」中通过上传/拖拽文件快速创建 Skill。.skill 本质是 ZIP 归档。
+     */
+    async importFromFile(filePath: string): Promise<{
+        success: boolean;
+        name?: string;
+        description?: string;
+        body?: string;
+        error?: string;
+    }> {
+        try {
+            const buffer = await fs.readFile(filePath);
+            const entries = this.extractZipEntries(buffer);
+            // 选取 SKILL.md：优先路径层级最浅（根目录）的那个
+            let skillMdKey: string | undefined;
+            let bestDepth = Infinity;
+            for (const key of entries.keys()) {
+                if (/SKILL\.md$/i.test(key)) {
+                    const depth = key.split(/[\\/]/).length;
+                    if (depth < bestDepth) {
+                        bestDepth = depth;
+                        skillMdKey = key;
+                    }
+                }
+            }
+            if (!skillMdKey) {
+                return {success: false, error: '压缩包内未找到 SKILL.md'};
+            }
+            const text = entries.get(skillMdKey)!.toString('utf-8');
+            const match = text.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
+            let name: string | undefined;
+            let description = '';
+            let body = text.trim();
+            if (match) {
+                const fm: Record<string, string> = {};
+                match[1].split('\n').forEach(line => {
+                    const idx = line.indexOf(':');
+                    if (idx > 0) fm[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+                });
+                name = fm.name || undefined;
+                description = fm.description || '';
+                body = match[2].trim();
+            }
+            // 名称兜底：取 SKILL.md 所在目录名
+            if (!name) {
+                const parts = skillMdKey.split(/[\\/]/);
+                parts.pop();
+                name = parts[parts.length - 1] || undefined;
+            }
+            return {success: true, name, description, body};
+        } catch (error) {
+            return {success: false, error: (error as Error).message || '无法解析文件'};
+        }
+    }
+
+    /** 极简 ZIP 解包：读取中央目录，支持 Store(0) 与 Deflate(8)。返回 条目路径 -> 文件内容 */
+    private extractZipEntries(buffer: Buffer): Map<string, Buffer> {
+        const entries = new Map<string, Buffer>();
+        // 定位 EOCD（End of Central Directory）
+        let eocd = -1;
+        for (let i = buffer.length - 22; i >= 0; i--) {
+            if (buffer.readUInt32LE(i) === 0x06054b50) {
+                eocd = i;
+                break;
+            }
+        }
+        if (eocd < 0) throw new Error('不是有效的 ZIP / .skill 文件');
+        const cdOffset = buffer.readUInt32LE(eocd + 16);
+        const total = buffer.readUInt16LE(eocd + 10);
+        let p = cdOffset;
+        for (let n = 0; n < total; n++) {
+            if (buffer.readUInt32LE(p) !== 0x02014b50) break;
+            const method = buffer.readUInt16LE(p + 10);
+            const compSize = buffer.readUInt32LE(p + 20);
+            const nameLen = buffer.readUInt16LE(p + 28);
+            const extraLen = buffer.readUInt16LE(p + 30);
+            const commentLen = buffer.readUInt16LE(p + 32);
+            const localOffset = buffer.readUInt32LE(p + 42);
+            const name = buffer.toString('utf8', p + 46, p + 46 + nameLen);
+            const lNameLen = buffer.readUInt16LE(localOffset + 26);
+            const lExtraLen = buffer.readUInt16LE(localOffset + 28);
+            const dataStart = localOffset + 30 + lNameLen + lExtraLen;
+            const compData = buffer.subarray(dataStart, dataStart + compSize);
+            let content: Buffer;
+            if (method === 0) content = Buffer.from(compData);
+            else if (method === 8) content = zlib.inflateRawSync(compData);
+            else {
+                p += 46 + nameLen + extraLen + commentLen;
+                continue;
+            }
+            entries.set(name, content);
+            p += 46 + nameLen + extraLen + commentLen;
+        }
+        return entries;
+    }
+
+    /**
      * 创建自定义 Skill：在目标客户端的 skills/<name>/ 下写入 SKILL.md（不依赖网络，无 .source.json）
      */
     async createCustomSkill(
@@ -434,7 +532,23 @@ export class SkillsManager {
                     await fs.rm(oldPath, {recursive: true, force: true});
                 }
 
+                // 写文件前判断是否被修改：对比现有 SKILL.md 解析出的正文与用户编辑后的正文
+                let bodyChanged = true;
+                try {
+                    const current = await this.readSkillMd(newName, client);
+                    if (current && (current.body || '').trim() === (input.body || '').trim()) {
+                        bodyChanged = false;
+                    }
+                } catch {
+                    bodyChanged = true;
+                }
+
                 await fs.writeFile(path.join(newPath, 'SKILL.md'), content, 'utf-8');
+                // 仅当正文有变化时才视为用户接管该 Skill：删除来源标记，转为手动安装，
+                // 不再参与「全部更新 / 单个更新」从线上源覆盖；无修改则保留来源标记。
+                if (bodyChanged) {
+                    await fs.rm(path.join(newPath, '.source.json'), {force: true});
+                }
                 console.log(`[SkillsManager] Updated custom skill ${originalName} -> ${newName} on ${client}`);
             } catch (error) {
                 return {success: false, error: (error as Error).message};

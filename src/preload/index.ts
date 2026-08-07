@@ -139,6 +139,14 @@ export interface ImportParseResult {
     error?: string;
 }
 
+export interface ImportSkillFileResult {
+    success: boolean;
+    name?: string;
+    description?: string;
+    body?: string;
+    error?: string;
+}
+
 export interface AllSkillsResult {
     skills: Record<string, { name: string; clients: SkillClientType[] }>;
     byClient: Record<SkillClientType, InstalledSkill[]>;
@@ -222,6 +230,10 @@ const api = {
             ipcRenderer.invoke('config:uninstall-server', serverId, clients),
         updateServer: (serverId: string, serverConfig: McpServerConfig, client?: ClientType): Promise<void> =>
             ipcRenderer.invoke('config:update-server', serverId, serverConfig, client),
+        markServerManual: (serverId: string): Promise<void> =>
+            ipcRenderer.invoke('config:mark-server-manual', serverId),
+        getManualServers: (): Promise<string[]> =>
+            ipcRenderer.invoke('config:get-manual-servers'),
         syncServer: (serverId: string, sourceClient: ClientType, targetClients: ClientType[]): Promise<InstallResult> =>
             ipcRenderer.invoke('config:sync-server', serverId, sourceClient, targetClients),
         syncServersBatch: (items: {
@@ -307,6 +319,8 @@ const api = {
             body: string
         } | null> =>
             ipcRenderer.invoke('skills:read-skill-md', skillName, client),
+        importFromFile: (filePath: string): Promise<ImportSkillFileResult> =>
+            ipcRenderer.invoke('skills:import-file', filePath),
         getLocalDetail: (skillId: string): Promise<LocalSkillDetail | null> =>
             ipcRenderer.invoke('skills:get-local-detail', skillId),
         getRemoteDetail: (githubPath: string): Promise<{
