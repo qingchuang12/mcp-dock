@@ -2,7 +2,7 @@
 
 本文档面向需要从源码构建、调试或打包 AI-Tools 的开发者，覆盖项目结构、环境要求、依赖安装、各构建模式命令、构建输出位置、可用编译选项与常见编译问题排查。
 
-> 当前版本：**1.3.1**
+> 当前版本：**1.0.0**
 > 技术栈：Electron 28 + React 18 + TypeScript 5.3 + Vite 5 + Tailwind CSS 3.4 + electron-builder 24.9 + Zustand + Vitest
 
 ---
