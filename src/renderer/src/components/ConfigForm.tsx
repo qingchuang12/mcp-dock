@@ -84,7 +84,7 @@ export default function ConfigForm({
   if (properties.length === 0) {
     return (
       <div className="text-center py-6">
-        <p className="text-[13px] text-[#98989d] mb-4">No configuration required</p>
+        <p className="text-[13px] text-[var(--color-muted2)] mb-4">No configuration required</p>
         <div className="flex justify-center gap-2">
           <button
             type="button"
@@ -114,18 +114,18 @@ export default function ConfigForm({
         return (
           <div key={key}>
             <label className="block mb-1">
-              <span className="text-[12px] font-medium text-white">
+              <span className="text-[12px] font-medium text-[var(--color-text)]">
                 {key}
               </span>
               {isRequired ? (
-                <span className="ml-1 text-[10px] text-[#ff3b30]">*</span>
+                <span className="ml-1 text-[12px] text-[#ff3b30]">*</span>
               ) : (
-                <span className="ml-1 text-[10px] text-[#636366]">({t('detail.optional')})</span>
+                <span className="ml-1 text-[12px] text-[var(--color-muted)]">({t('detail.optional')})</span>
               )}
             </label>
             
             {prop.description && (
-              <p className="text-[11px] text-[#636366] mb-1.5">{prop.description}</p>
+              <p className="text-[12px] text-[var(--color-muted)] mb-1.5">{prop.description}</p>
             )}
 
             {prop.enum ? (
@@ -133,11 +133,11 @@ export default function ConfigForm({
                 value={values[key] || ''}
                 onChange={(e) => handleChange(key, e.target.value)}
                 className={`
-                  w-full px-3 py-2 rounded-md bg-[#1c1c1e] border text-[13px] text-white
+                  w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border text-[13px] text-[var(--color-text)]
                   transition-colors
                   ${hasError 
                     ? 'border-[#ff3b30]' 
-                    : 'border-[#3a3a3c] focus:border-[#0a84ff]'
+                    : 'border-[var(--color-border)] focus:border-[var(--color-accent)]'
                   }
                 `}
               >
@@ -152,9 +152,9 @@ export default function ConfigForm({
                   type="checkbox"
                   checked={values[key] || false}
                   onChange={(e) => handleChange(key, e.target.checked)}
-                  className="w-4 h-4 rounded border-[#3a3a3c] bg-[#1c1c1e] text-[#0a84ff] focus:ring-[#0a84ff]/50"
+                  className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-accent)] focus:ring-[#0a84ff]/50"
                 />
-                <span className="text-[12px] text-[#98989d]">Enable</span>
+                <span className="text-[12px] text-[var(--color-muted2)]">Enable</span>
               </label>
             ) : prop.type === 'number' || prop.type === 'integer' ? (
               <input
@@ -163,11 +163,11 @@ export default function ConfigForm({
                 onChange={(e) => handleChange(key, e.target.value ? Number(e.target.value) : '')}
                 placeholder={prop.default?.toString()}
                 className={`
-                  w-full px-3 py-2 rounded-md bg-[#1c1c1e] border text-[13px] text-white
-                  placeholder:text-[#636366] transition-colors
+                  w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border text-[13px] text-[var(--color-text)]
+                  placeholder:text-[var(--color-muted)] transition-colors
                   ${hasError 
                     ? 'border-[#ff3b30]' 
-                    : 'border-[#3a3a3c] focus:border-[#0a84ff]'
+                    : 'border-[var(--color-border)] focus:border-[var(--color-accent)]'
                   }
                 `}
               />
@@ -178,24 +178,24 @@ export default function ConfigForm({
                 onChange={(e) => handleChange(key, e.target.value)}
                 placeholder={prop.default?.toString() || `Enter ${key}...`}
                 className={`
-                  w-full px-3 py-2 rounded-md bg-[#1c1c1e] border text-[13px] text-white
-                  placeholder:text-[#636366] transition-colors
+                  w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border text-[13px] text-[var(--color-text)]
+                  placeholder:text-[var(--color-muted)] transition-colors
                   ${hasError 
                     ? 'border-[#ff3b30]' 
-                    : 'border-[#3a3a3c] focus:border-[#0a84ff]'
+                    : 'border-[var(--color-border)] focus:border-[var(--color-accent)]'
                   }
                 `}
               />
             )}
 
             {hasError && (
-              <p className="mt-1 text-[11px] text-[#ff3b30]">{errors[key]}</p>
+              <p className="mt-1 text-[12px] text-[#ff3b30]">{errors[key]}</p>
             )}
           </div>
         );
       })}
 
-      <div className="flex justify-end gap-2 pt-3 border-t border-[#3a3a3c]">
+      <div className="flex justify-end gap-2 pt-3 border-t border-[var(--color-border)]">
         <button
           type="button"
           onClick={onCancel}

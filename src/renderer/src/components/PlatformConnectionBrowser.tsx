@@ -4,6 +4,7 @@
  * 点击可将解析出的源安装到客户端（复用 installFromDiscovered）。
  */
 import {useCallback, useEffect, useRef, useState} from 'react';
+import {useTranslation} from 'react-i18next';
 import {
     type ApiConnection,
     type DirectSearchDiagnostics,
@@ -12,7 +13,7 @@ import {
     type SkillClientType,
     useElectronAPI,
 } from '../lib/electron';
-import {PLATFORM_META} from '../../../shared/platform-constants';
+import {platformLabel} from '../lib/platformLabel';
 import {toast} from './Toast';
 
 /** 每页条数 */
@@ -39,6 +40,7 @@ export default function PlatformConnectionBrowser({
     connection?: ApiConnection;
     query: string;
 }) {
+    const {t} = useTranslation();
     const api = useElectronAPI();
     const [items, setItems] = useState<PlatformSkillListItem[]>([]);
     const [loading, setLoading] = useState(false);
@@ -132,28 +134,28 @@ export default function PlatformConnectionBrowser({
     return (
         <div className="p-4">
             <div className="flex items-center gap-2 mb-3">
-        <span className="text-[12px] text-[#98989d]">
-          直连来源：<span className="text-white">{sourceName}</span>
+        <span className="text-[12px] text-[var(--color-muted2)]">
+          直连来源：<span className="text-[var(--color-text)]">{sourceName}</span>
           <span
-              className="ml-1 px-1.5 py-0.5 rounded bg-[#0a84ff]/15 text-[#0a84ff] text-[10px]">{PLATFORM_META[platformType]?.label ?? platformType}</span>
+              className="ml-1 px-1.5 py-0.5 rounded bg-[var(--color-accent)]/15 text-[var(--color-accent)] text-[12px]">{platformLabel(t, platformType)}</span>
         </span>
                 {query && (
-                    <span className="text-[11px] text-[#636366]">关键词：<span className="text-[#98989d]">{query}</span></span>
+                    <span className="text-[12px] text-[var(--color-muted)]">关键词：<span className="text-[var(--color-muted2)]">{query}</span></span>
                 )}
             </div>
 
             {loading ? (
                 <div className="flex items-center justify-center py-10">
-                    <div className="w-7 h-7 border-2 border-[#3a3a3c] border-t-[#0a84ff] rounded-full animate-spin"/>
+                    <div className="w-7 h-7 border-2 border-[var(--color-border)] border-t-[#0a84ff] rounded-full animate-spin"/>
                 </div>
             ) : items.length === 0 ? (
                 <div className="py-8 px-4 text-center">
                     <div
-                        className={`w-10 h-10 mx-auto mb-3 rounded-full flex items-center justify-center ${unsupported ? 'bg-[#0a84ff]/15' : 'bg-[#ff9f0a]/15'}`}>
+                        className={`w-10 h-10 mx-auto mb-3 rounded-full flex items-center justify-center ${unsupported ? 'bg-[var(--color-accent)]/15' : 'bg-[#ff9f0a]/15'}`}>
                         <span
-                            className={`text-[18px] leading-none ${unsupported ? 'text-[#0a84ff]' : 'text-[#ff9f0a]'}`}>!</span>
+                            className={`text-[18px] leading-none ${unsupported ? 'text-[var(--color-accent)]' : 'text-[#ff9f0a]'}`}>!</span>
                     </div>
-                    <p className="text-[12px] text-[#98989d] max-w-md mx-auto">
+                    <p className="text-[12px] text-[var(--color-muted2)] max-w-md mx-auto">
                         {unsupported
                             ? `「${sourceName}」是 SPA 站点，未开放公开的 skills 列表接口，无法在此直接浏览。如需安装其技能，请用「粘贴 GitHub 仓库链接」方式导入。`
                             : (diag?.hint || (page > 1 ? `第 ${page} 页没有更多技能了。` : '暂无结果。'))}
@@ -162,7 +164,7 @@ export default function PlatformConnectionBrowser({
                     {page > 1 && (
                         <button
                             onClick={() => goToPage(1)}
-                            className="mt-3 px-2.5 py-1 rounded bg-[#0a84ff] text-white text-[11px] font-medium hover:bg-[#0a84ff]/90 cursor-pointer transition-colors"
+                            className="mt-3 px-2.5 py-1 rounded bg-[var(--color-accent)] text-white text-[12px] font-medium hover:bg-[var(--color-accent)]/90 cursor-pointer transition-colors"
                         >
                             返回第 1 页
                         </button>
@@ -172,26 +174,26 @@ export default function PlatformConnectionBrowser({
                         <>
                             <button
                                 onClick={() => setShowDiag(v => !v)}
-                                className="mt-3 text-[11px] text-[#0a84ff] hover:underline cursor-pointer"
+                                className="mt-3 text-[12px] text-[var(--color-accent)] hover:underline cursor-pointer"
                             >
                                 {showDiag ? '收起调用链路' : `查看调用链路（${diag.attempts.length} 个端点，耗时 ${diag.totalDurationMs}ms）`}
                             </button>
 
                             {showDiag && (
                                 <div
-                                    className="mt-3 text-left rounded-md bg-[#1c1c1e] border border-[#3a3a3c] overflow-hidden">
-                                    <div className="px-3 py-2 border-b border-[#3a3a3c] text-[10px] text-[#636366]">
+                                    className="mt-3 text-left rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] overflow-hidden">
+                                    <div className="px-3 py-2 border-b border-[var(--color-border)] text-[12px] text-[var(--color-muted)]">
                                         平台 {diag.platform} · Base {diag.baseUrl} ·
                                         令牌 {diag.authorized ? '已附带' : '未附带'}
                                     </div>
                                     {diag.attempts.map((a, i) => (
-                                        <div key={i} className="px-3 py-2 border-b border-[#3a3a3c] last:border-0">
+                                        <div key={i} className="px-3 py-2 border-b border-[var(--color-border)] last:border-0">
                                             <div className="flex items-start gap-2">
                                                 <span
                                                     className={a.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}>{a.ok ? '✓' : '✗'}</span>
                                                 <div className="min-w-0 flex-1">
-                                                    <div className="text-[10px] text-[#98989d] break-all">{a.url}</div>
-                                                    <div className="text-[10px] text-[#636366] mt-0.5">
+                                                    <div className="text-[12px] text-[var(--color-muted2)] break-all">{a.url}</div>
+                                                    <div className="text-[12px] text-[var(--color-muted)] mt-0.5">
                                                         {a.status ? `HTTP ${a.status}` : a.errorCode || '—'}
                                                         {a.contentType ? ` · ${a.contentType.split(';')[0]}` : ''}
                                                         {typeof a.bytes === 'number' ? ` · ${a.bytes}B` : ''}
@@ -200,7 +202,7 @@ export default function PlatformConnectionBrowser({
                                                     </div>
                                                     {a.message && (
                                                         <div
-                                                            className="text-[10px] text-[#ff9f0a] mt-0.5">{a.message}</div>
+                                                            className="text-[12px] text-[#ff9f0a] mt-0.5">{a.message}</div>
                                                     )}
                                                 </div>
                                             </div>
@@ -215,20 +217,20 @@ export default function PlatformConnectionBrowser({
                 <>
                     <div className="grid grid-cols-2 gap-3">
                         {items.map(it => (
-                            <div key={it.id} className="p-3 rounded-md bg-[#3a3a3c]/40">
+                            <div key={it.id} className="p-3 rounded-md bg-[var(--color-surface-hover)]/40">
                                 <div className="flex items-start justify-between gap-2">
                                     <div className="min-w-0">
-                                        <h4 className="text-[12px] font-medium text-white truncate">{it.name}</h4>
-                                        <p className="text-[11px] text-[#98989d] mt-1 line-clamp-2">{it.description}</p>
+                                        <h4 className="text-[12px] font-medium text-[var(--color-text)] truncate">{it.name}</h4>
+                                        <p className="text-[12px] text-[var(--color-muted2)] mt-1 line-clamp-2">{it.description}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center justify-between mt-3">
                                     <span
-                                        className="text-[10px] text-[#636366] truncate max-w-[60%]">{it.sourceUrl}</span>
+                                        className="text-[12px] text-[var(--color-muted)] truncate max-w-[60%]">{it.sourceUrl}</span>
                                     <button
                                         disabled={installing === it.id}
                                         onClick={() => handleAdd(it)}
-                                        className="px-2.5 py-1 rounded bg-[#0a84ff] text-white text-[11px] font-medium hover:bg-[#0a84ff]/90 transition-colors disabled:opacity-50"
+                                        className="px-2.5 py-1 rounded bg-[var(--color-accent)] text-white text-[12px] font-medium hover:bg-[var(--color-accent)]/90 transition-colors disabled:opacity-50"
                                     >
                                         {installing === it.id ? '安装中…' : '添加'}
                                     </button>
@@ -239,8 +241,8 @@ export default function PlatformConnectionBrowser({
 
                     {/* 分页：有 total 时显示精确页码，否则按 hasMore 提供上一页/下一页 */}
                     {pageInfo && (pageInfo.hasMore || page > 1) && (
-                        <div className="flex items-center justify-between mt-4 pt-3 border-t border-[#3a3a3c]">
-            <span className="text-[11px] text-[#636366]">
+                        <div className="flex items-center justify-between mt-4 pt-3 border-t border-[var(--color-border)]">
+            <span className="text-[12px] text-[var(--color-muted)]">
               {pageInfo.total !== null
                   ? `${(page - 1) * pageInfo.pageSize + 1}-${(page - 1) * pageInfo.pageSize + items.length} / ${pageInfo.total}`
                   : `第 ${page} 页 · ${items.length} 条`}
@@ -250,7 +252,7 @@ export default function PlatformConnectionBrowser({
                                 <button
                                     onClick={() => goToPage(page - 1)}
                                     disabled={page === 1 || loading}
-                                    className="p-1 rounded text-[#98989d] hover:text-white hover:bg-[#3a3a3c] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[#98989d] disabled:cursor-not-allowed cursor-pointer transition-colors"
+                                    className="p-1 rounded text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[var(--color-muted2)] disabled:cursor-not-allowed cursor-pointer transition-colors"
                                     aria-label="上一页"
                                 >
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
@@ -260,14 +262,14 @@ export default function PlatformConnectionBrowser({
                                     </svg>
                                 </button>
 
-                                <span className="text-[11px] text-[#98989d] min-w-[60px] text-center">
+                                <span className="text-[12px] text-[var(--color-muted2)] min-w-[60px] text-center">
                 {pageInfo.totalPages !== null ? `${page} / ${pageInfo.totalPages}` : `${page}`}
               </span>
 
                                 <button
                                     onClick={() => goToPage(page + 1)}
                                     disabled={!pageInfo.hasMore || loading}
-                                    className="p-1 rounded text-[#98989d] hover:text-white hover:bg-[#3a3a3c] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[#98989d] disabled:cursor-not-allowed cursor-pointer transition-colors"
+                                    className="p-1 rounded text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[var(--color-muted2)] disabled:cursor-not-allowed cursor-pointer transition-colors"
                                     aria-label="下一页"
                                 >
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"

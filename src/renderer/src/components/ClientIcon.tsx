@@ -87,7 +87,7 @@ export default function ClientIcon({
                 className={`inline-flex items-center justify-center rounded bg-[#8b5cf6] ${className}`}
                 style={{width: size, height: size}}
             >
-                <svg className="w-1/2 h-1/2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                <svg className="w-1/2 h-1/2 text-[var(--color-text)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                      strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round"
                           d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
@@ -104,7 +104,7 @@ export default function ClientIcon({
                 style={{width: size, height: size}}
             >
         <span
-            className="font-bold text-white leading-none"
+            className="font-bold text-[var(--color-text)] leading-none"
             style={{fontSize: size * 0.42}}
         >
           CB
@@ -121,7 +121,7 @@ export default function ClientIcon({
                 style={{width: size, height: size}}
             >
         <span
-            className="font-bold text-white leading-none"
+            className="font-bold text-[var(--color-text)] leading-none"
             style={{fontSize: size * 0.42}}
         >
           WB
@@ -138,7 +138,7 @@ export default function ClientIcon({
                 style={{width: size, height: size}}
             >
         <span
-            className="font-bold text-white leading-none"
+            className="font-bold text-[var(--color-text)] leading-none"
             style={{fontSize: size * 0.42}}
         >
           Q
@@ -154,7 +154,7 @@ export default function ClientIcon({
                 className={`inline-flex items-center justify-center rounded bg-gradient-to-br from-[#0a84ff] to-[#5e5ce6] ${className}`}
                 style={{width: size, height: size}}
             >
-                <svg className="w-3/5 h-3/5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                <svg className="w-3/5 h-3/5 text-[var(--color-text)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                      strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round"
                           d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z"/>
@@ -169,7 +169,7 @@ export default function ClientIcon({
             className={`inline-flex items-center justify-center rounded bg-[#636366] ${className}`}
             style={{width: size, height: size}}
         >
-            <svg className="w-1/2 h-1/2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+            <svg className="w-1/2 h-1/2 text-[var(--color-text)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                  strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round"
                       d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>

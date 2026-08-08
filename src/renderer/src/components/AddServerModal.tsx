@@ -193,22 +193,22 @@ export default function AddServerModal({
       <div className="space-y-4">
         {/* Display Name */}
         <div>
-          <label className="block text-[12px] text-[#98989d] mb-1.5">
+          <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">
             {t('addServer.displayName') || 'Display Name'} 
-            <span className="text-[#636366] ml-1">({t('common.optional') || 'optional'})</span>
+            <span className="text-[var(--color-muted)] ml-1">({t('common.optional') || 'optional'})</span>
           </label>
           <input
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder={t('addServer.displayNamePlaceholder') || 'My Custom Server'}
-            className="w-full px-3 py-2 bg-[#1c1c1e] border border-[#3a3a3c] rounded-lg text-[13px] text-white placeholder-[#636366] focus:outline-none focus:border-[#0a84ff]"
+            className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)]"
           />
         </div>
 
         {/* Command */}
         <div>
-          <label className="block text-[12px] text-[#98989d] mb-1.5">
+          <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">
             {t('addServer.command') || 'Command'} <span className="text-[#ff3b30]">*</span>
           </label>
           <input
@@ -216,13 +216,13 @@ export default function AddServerModal({
             value={command}
             onChange={(e) => setCommand(e.target.value)}
             placeholder="npx, uvx, node, python..."
-            className="w-full px-3 py-2 bg-[#1c1c1e] border border-[#3a3a3c] rounded-lg text-[13px] text-white placeholder-[#636366] focus:outline-none focus:border-[#0a84ff]"
+            className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)]"
           />
         </div>
 
         {/* Arguments */}
         <div>
-          <label className="block text-[12px] text-[#98989d] mb-1.5">
+          <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">
             {t('addServer.arguments') || 'Arguments'}
           </label>
           <input
@@ -230,9 +230,9 @@ export default function AddServerModal({
             value={args}
             onChange={(e) => setArgs(e.target.value)}
             placeholder="-y @modelcontextprotocol/server-filesystem /path/to/dir"
-            className="w-full px-3 py-2 bg-[#1c1c1e] border border-[#3a3a3c] rounded-lg text-[13px] text-white placeholder-[#636366] focus:outline-none focus:border-[#0a84ff]"
+            className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)]"
           />
-          <p className="text-[11px] text-[#636366] mt-1">
+          <p className="text-[12px] text-[var(--color-muted)] mt-1">
             {t('addServer.argumentsHint') || 'Space-separated arguments'}
           </p>
         </div>
@@ -240,18 +240,18 @@ export default function AddServerModal({
         {/* Environment Variables */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <label className="text-[12px] text-[#98989d]">
+            <label className="text-[12px] text-[var(--color-muted2)]">
               {t('addServer.envVars') || 'Environment Variables'}
             </label>
             <button
               onClick={addEnvVar}
-              className="text-[12px] text-[#0a84ff] hover:text-[#5ac8fa]"
+              className="text-[12px] text-[var(--color-accent)] hover:text-[#5ac8fa]"
             >
               + {t('common.add') || 'Add'}
             </button>
           </div>
           {envVars.length === 0 ? (
-            <p className="text-[12px] text-[#636366]">
+            <p className="text-[12px] text-[var(--color-muted)]">
               {t('addServer.noEnvVars') || 'No environment variables'}
             </p>
           ) : (
@@ -263,14 +263,14 @@ export default function AddServerModal({
                     value={env.key}
                     onChange={(e) => updateEnvVar(index, 'key', e.target.value)}
                     placeholder="KEY"
-                    className="flex-1 px-3 py-2 bg-[#1c1c1e] border border-[#3a3a3c] rounded-lg text-[13px] text-white placeholder-[#636366] focus:outline-none focus:border-[#0a84ff]"
+                    className="flex-1 px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)]"
                   />
                   <input
                     type="text"
                     value={env.value}
                     onChange={(e) => updateEnvVar(index, 'value', e.target.value)}
                     placeholder="value"
-                    className="flex-1 px-3 py-2 bg-[#1c1c1e] border border-[#3a3a3c] rounded-lg text-[13px] text-white placeholder-[#636366] focus:outline-none focus:border-[#0a84ff]"
+                    className="flex-1 px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)]"
                   />
                   <button
                     onClick={() => removeEnvVar(index)}
@@ -288,11 +288,11 @@ export default function AddServerModal({
 
         {/* Target Clients */}
         <div>
-          <label className="block text-[12px] text-[#98989d] mb-1.5">
+          <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">
             {t('addServer.targetClients') || 'Target Clients'} <span className="text-[#ff3b30]">*</span>
           </label>
           {availableClients.length === 0 ? (
-            <p className="text-[12px] text-[#636366]">
+            <p className="text-[12px] text-[var(--color-muted)]">
               {t('addServer.noClients') || 'No MCP clients installed'}
             </p>
           ) : (
@@ -304,15 +304,15 @@ export default function AddServerModal({
                   className={`
                     flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors
                     ${selectedClients.includes(client.id)
-                      ? 'border-[#0a84ff] bg-[#0a84ff]/10'
-                      : 'border-[#3a3a3c] hover:border-[#636366]'
+                      ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10'
+                      : 'border-[var(--color-border)] hover:border-[var(--color-muted)]'
                     }
                   `}
                 >
                   <ClientIcon clientId={client.id} size={20} />
-                  <span className="text-[13px] text-white">{client.name}</span>
+                  <span className="text-[13px] text-[var(--color-text)]">{client.name}</span>
                   {selectedClients.includes(client.id) && (
-                    <svg className="w-4 h-4 text-[#0a84ff] ml-auto" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-4 h-4 text-[var(--color-accent)] ml-auto" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
                   )}
@@ -323,10 +323,10 @@ export default function AddServerModal({
         </div>
 
         {/* Paste JSON Section */}
-        <div className="border-t border-[#3a3a3c] pt-4">
+        <div className="border-t border-[var(--color-border)] pt-4">
           <button
             onClick={() => setShowJsonInput(!showJsonInput)}
-            className="flex items-center gap-2 text-[13px] text-[#0a84ff] hover:text-[#5ac8fa]"
+            className="flex items-center gap-2 text-[13px] text-[var(--color-accent)] hover:text-[#5ac8fa]"
           >
             <svg className={`w-4 h-4 transition-transform ${showJsonInput ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -346,14 +346,14 @@ export default function AddServerModal({
     "API_KEY": "xxx"
   }
 }`}
-                className="w-full h-32 px-3 py-2 bg-[#1c1c1e] border border-[#3a3a3c] rounded-lg text-[12px] text-white font-mono placeholder-[#636366] focus:outline-none focus:border-[#0a84ff] resize-none"
+                className="w-full h-32 px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[12px] text-[var(--color-text)] font-mono placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] resize-none"
               />
               {parseError && (
                 <p className="text-[12px] text-[#ff3b30]">{parseError}</p>
               )}
               <button
                 onClick={parseJson}
-                className="px-3 py-1.5 bg-[#3a3a3c] text-white rounded-lg text-[12px] hover:bg-[#4a4a4c] transition-colors"
+                className="px-3 py-1.5 bg-[var(--color-surface-hover)] text-[var(--color-text)] rounded-lg text-[12px] hover:bg-[var(--color-surface-active)] transition-colors"
               >
                 {t('addServer.parseAndFill') || 'Parse & Fill Form'}
               </button>

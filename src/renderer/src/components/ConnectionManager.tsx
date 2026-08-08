@@ -7,6 +7,7 @@ import {useEffect, useMemo, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {type ApiConnection, type PlatformType, type TokenMeta, useElectronAPI} from '../lib/electron';
 import {BUILTIN_SKILL_SOURCE_IDS, PLATFORM_META, SKILL_PLATFORM_TYPES} from '../../../shared/platform-constants';
+import {platformLabel} from '../lib/platformLabel';
 import {useStore} from '../store/useStore';
 import Modal from './Modal';
 import {toast} from './Toast';
@@ -75,7 +76,7 @@ export default function ConnectionManager({onChanged}: Props) {
         if (!q) return conns;
         return conns.filter(c =>
             c.name.toLowerCase().includes(q) ||
-            PLATFORM_META[c.platformType].label.toLowerCase().includes(q) ||
+            platformLabel(t, c.platformType).toLowerCase().includes(q) ||
             (c.detail || '').toLowerCase().includes(q)
         );
     }, [conns, query]);
@@ -178,25 +179,25 @@ export default function ConnectionManager({onChanged}: Props) {
     return (
         <div className="card p-4">
             <div className="flex items-center justify-between mb-1">
-                <h2 className="text-[13px] font-semibold text-white">{t('skillSource.title')}</h2>
+                <h2 className="text-[13px] font-semibold text-[var(--color-text)]">{t('skillSource.title')}</h2>
                 <div className="flex items-center gap-2">
                     {missingBuiltin && (
                         <button
                             onClick={handleRestoreBuiltin}
-                            className="px-2.5 py-1 rounded-md bg-[#3a3a3c] text-white text-[12px] hover:bg-[#3a3a3c]/80 transition-colors"
+                            className="px-2.5 py-1 rounded-md bg-[var(--color-surface-hover)] text-[var(--color-text)] text-[12px] hover:bg-[var(--color-surface-hover)]/80 transition-colors"
                         >
                             {t('skillSource.restoreBuiltin')}
                         </button>
                     )}
                     <button
                         onClick={openCreate}
-                        className="px-2.5 py-1 rounded-md bg-[#0a84ff] text-white text-[12px] font-medium hover:bg-[#0a84ff]/90 transition-colors"
+                        className="px-2.5 py-1 rounded-md bg-[var(--color-accent)] text-white text-[12px] font-medium hover:bg-[var(--color-accent)]/90 transition-colors"
                     >
                         {t('skillSource.newSource')}
                     </button>
                 </div>
             </div>
-            <p className="text-[12px] text-[#98989d] mb-3">
+            <p className="text-[12px] text-[var(--color-muted2)] mb-3">
                 {t('skillSource.desc')}
             </p>
 
@@ -205,15 +206,15 @@ export default function ConnectionManager({onChanged}: Props) {
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder={t('skillSource.search')}
-                className="w-full px-3 py-2 mb-3 rounded-md bg-[#1c1c1e] border border-[#3a3a3c] text-white text-[12px] focus:border-[#0a84ff] transition-colors"
+                className="w-full px-3 py-2 mb-3 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] text-[12px] focus:border-[var(--color-accent)] transition-colors"
             />
 
             {loading ? (
                 <div className="space-y-2">
-                    {[0, 1].map(i => <div key={i} className="h-16 rounded-md bg-[#3a3a3c]/40 animate-pulse"/>)}
+                    {[0, 1].map(i => <div key={i} className="h-16 rounded-md bg-[var(--color-surface-hover)]/40 animate-pulse"/>)}
                 </div>
             ) : filtered.length === 0 ? (
-                <div className="text-[12px] text-[#636366] py-3 text-center">
+                <div className="text-[12px] text-[var(--color-muted)] py-3 text-center">
                     {conns.length === 0 ? t('skillSource.emptyNoSource') : t('skillSource.emptyNoMatch')}
                 </div>
             ) : (
@@ -225,7 +226,7 @@ export default function ConnectionManager({onChanged}: Props) {
                         const enabled = c.enabled ?? true;
                         const isBuiltin = BUILTIN_SKILL_IDS.includes(c.id);
                         return (
-                            <div key={c.id} className={`p-3 rounded-md bg-[#3a3a3c]/40 ${enabled ? '' : 'opacity-50'}`}>
+                            <div key={c.id} className={`p-3 rounded-md bg-[var(--color-surface-hover)]/40 ${enabled ? '' : 'opacity-50'}`}>
                                 <div className="flex items-center justify-between gap-2">
                                     <div className="flex items-center gap-2 min-w-0">
                                         <span className={`w-2.5 h-2.5 rounded-full ${st.dot} flex-shrink-0`}
@@ -233,25 +234,25 @@ export default function ConnectionManager({onChanged}: Props) {
                                         <div className="min-w-0">
                                             <div className="flex items-center gap-2">
                                                 <span
-                                                    className="text-[12px] font-medium text-white truncate">{c.name}</span>
+                                                    className="text-[12px] font-medium text-[var(--color-text)] truncate">{c.name}</span>
                                                 <span
-                                                    className="text-[10px] px-1.5 py-0.5 rounded bg-[#0a84ff]/15 text-[#0a84ff] flex-shrink-0">
-                          {PLATFORM_META[c.platformType].label}
+                                                    className="text-[12px] px-1.5 py-0.5 rounded bg-[var(--color-accent)]/15 text-[var(--color-accent)] flex-shrink-0">
+                          {platformLabel(t, c.platformType)}
                         </span>
                                                 {c.isDefault && (
                                                     <span
-                                                        className="text-[10px] px-1.5 py-0.5 rounded bg-[#ff9f0a]/15 text-[#ff9f0a] flex-shrink-0">{t('skillSource.default')}</span>
+                                                        className="text-[12px] px-1.5 py-0.5 rounded bg-[#ff9f0a]/15 text-[#ff9f0a] flex-shrink-0">{t('skillSource.default')}</span>
                                                 )}
                                                 {isBuiltin && (
                                                     <span
-                                                        className="text-[10px] px-1.5 py-0.5 rounded bg-[#98989d]/15 text-[#98989d] flex-shrink-0">{t('skillSource.builtin')}</span>
+                                                        className="text-[12px] px-1.5 py-0.5 rounded bg-[#98989d]/15 text-[var(--color-muted2)] flex-shrink-0">{t('skillSource.builtin')}</span>
                                                 )}
                                                 {!enabled && (
                                                     <span
-                                                        className="text-[10px] px-1.5 py-0.5 rounded bg-[#ff9f0a]/15 text-[#ff9f0a] flex-shrink-0">{t('skillSource.disabledBadge')}</span>
+                                                        className="text-[12px] px-1.5 py-0.5 rounded bg-[#ff9f0a]/15 text-[#ff9f0a] flex-shrink-0">{t('skillSource.disabledBadge')}</span>
                                                 )}
                                             </div>
-                                            <p className="text-[10px] text-[#636366] mt-0.5 truncate">{c.baseUrl}</p>
+                                            <p className="text-[12px] text-[var(--color-muted)] mt-0.5 truncate">{c.baseUrl}</p>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-1 flex-shrink-0">
@@ -259,10 +260,10 @@ export default function ConnectionManager({onChanged}: Props) {
                                         <button
                                             title={enabled ? t('skillSource.disableTitle') : t('skillSource.enableTitle')}
                                             onClick={() => handleToggleEnabled(c)}
-                                            className={`relative w-8 h-[18px] rounded-full transition-colors flex-shrink-0 mr-1 ${enabled ? 'bg-[#34c759]' : 'bg-[#3a3a3c]'}`}
+                                            className={`relative w-8 h-[18px] rounded-full transition-colors flex-shrink-0 mr-1 ${enabled ? 'bg-[#34c759]' : 'bg-[var(--color-surface-hover)]'}`}
                                         >
                       <span
-                          className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all ${enabled ? 'left-[16px]' : 'left-[2px]'}`}
+                          className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-[var(--color-surface)] transition-all ${enabled ? 'left-[16px]' : 'left-[2px]'}`}
                       />
                                         </button>
                                         <IconBtn title={t('skillSource.testConn')} onClick={() => handleVerify(c.id)}>
@@ -308,21 +309,21 @@ export default function ConnectionManager({onChanged}: Props) {
                                 </div>
                                 {/* 关联说明副文本 */}
                                 <div className="mt-2 flex items-start gap-1.5">
-                                    <svg className="w-3 h-3 text-[#636366] mt-0.5 flex-shrink-0" fill="none"
+                                    <svg className="w-3 h-3 text-[var(--color-muted)] mt-0.5 flex-shrink-0" fill="none"
                                          viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                         <path strokeLinecap="round" strokeLinejoin="round"
                                               d="M13.19 8.688a4.5 4.5 0 011.242 7.247l-4.44 4.439a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.79-6.061a4.5 4.5 0 00-6.364 6.364"/>
                                     </svg>
-                                    <p className="text-[10px] text-[#636366] leading-relaxed">
+                                    <p className="text-[12px] text-[var(--color-muted)] leading-relaxed">
                                         {t('skillSource.tokenBound')}
                                         {tk
                                             ? <span
-                                                className="text-[#98989d]"> {tk.name}（{t('skillSource.scope')} {tk.scopes.join(', ')} · {t('skillSource.expiry')} {tk.expiresAt ? new Date(tk.expiresAt).toLocaleDateString() : t('skillSource.noExpiry')} · {tk.revoked ? t('skillSource.revoked') : t('skillSource.normal')}）</span>
+                                                className="text-[var(--color-muted2)]"> {tk.name}（{t('skillSource.scope')} {tk.scopes.join(', ')} · {t('skillSource.expiry')} {tk.expiresAt ? new Date(tk.expiresAt).toLocaleDateString() : t('skillSource.noExpiry')} · {tk.revoked ? t('skillSource.revoked') : t('skillSource.normal')}）</span>
                                             : <span className="text-[#ff9f0a]"> {t('skillSource.noToken')}</span>}
                                     </p>
                                 </div>
                                 {c.detail &&
-                                    <p className="text-[10px] text-[#636366] mt-1 truncate">{t('skillSource.detailPrefix')}{c.detail}</p>}
+                                    <p className="text-[12px] text-[var(--color-muted)] mt-1 truncate">{t('skillSource.detailPrefix')}{c.detail}</p>}
                             </div>
                         );
                     })}
@@ -335,16 +336,16 @@ export default function ConnectionManager({onChanged}: Props) {
                 {editing && (
                     <div className="space-y-4">
                         <div>
-                            <label className="block text-[12px] text-[#98989d] mb-1.5">{t('skillSource.name')}</label>
+                            <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">{t('skillSource.name')}</label>
                             <input
                                 value={editing.name || ''}
                                 onChange={e => setEditing({...editing, name: e.target.value})}
-                                className="w-full px-3 py-2 rounded-md bg-[#1c1c1e] border border-[#3a3a3c] text-white text-[12px] focus:border-[#0a84ff] transition-colors"
+                                className="w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] text-[12px] focus:border-[var(--color-accent)] transition-colors"
                             />
                         </div>
                         <div>
                             <label
-                                className="block text-[12px] text-[#98989d] mb-1.5">{t('skillSource.platformType')}</label>
+                                className="block text-[12px] text-[var(--color-muted2)] mb-1.5">{t('skillSource.platformType')}</label>
                             {SKILL_PLATFORM_TYPES.includes(editing.platformType as PlatformType) ? (
                                 <select
                                     value={editing.platformType}
@@ -356,34 +357,34 @@ export default function ConnectionManager({onChanged}: Props) {
                                             baseUrl: PLATFORM_META[p].defaultBaseUrl || editing.baseUrl || ''
                                         });
                                     }}
-                                    className="w-full px-3 py-2 rounded-md bg-[#1c1c1e] border border-[#3a3a3c] text-white text-[12px] focus:border-[#0a84ff] transition-colors"
+                                    className="w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] text-[12px] focus:border-[var(--color-accent)] transition-colors"
                                 >
                                     {SKILL_PLATFORM_TYPES.map(k => (
-                                        <option key={k} value={k}>{PLATFORM_META[k].label}</option>
+                                        <option key={k} value={k}>{platformLabel(t, k)}</option>
                                     ))}
                                 </select>
                             ) : (
                                 <div
-                                    className="w-full px-3 py-2 rounded-md bg-[#1c1c1e] border border-[#3a3a3c] text-white text-[12px]">
-                                    {PLATFORM_META[editing.platformType as PlatformType]?.label || editing.platformType}
+                                    className="w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] text-[12px]">
+                                    {platformLabel(t, editing.platformType as PlatformType)}
                                 </div>
                             )}
                         </div>
                         <div>
-                            <label className="block text-[12px] text-[#98989d] mb-1.5">Base URL</label>
+                            <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">Base URL</label>
                             <input
                                 value={editing.baseUrl || ''}
                                 onChange={e => setEditing({...editing, baseUrl: e.target.value})}
-                                className="w-full px-3 py-2 rounded-md bg-[#1c1c1e] border border-[#3a3a3c] text-white text-[12px] font-mono focus:border-[#0a84ff] transition-colors"
+                                className="w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] text-[12px] font-mono focus:border-[var(--color-accent)] transition-colors"
                             />
                         </div>
                         <div>
                             <label
-                                className="block text-[12px] text-[#98989d] mb-1.5">{t('skillSource.bindToken')}</label>
+                                className="block text-[12px] text-[var(--color-muted2)] mb-1.5">{t('skillSource.bindToken')}</label>
                             <select
                                 value={editing.tokenId || ''}
                                 onChange={e => setEditing({...editing, tokenId: e.target.value || undefined})}
-                                className="w-full px-3 py-2 rounded-md bg-[#1c1c1e] border border-[#3a3a3c] text-white text-[12px] focus:border-[#0a84ff] transition-colors"
+                                className="w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] text-[12px] focus:border-[var(--color-accent)] transition-colors"
                             >
                                 <option value="">{t('skillSource.unbound')}</option>
                                 {tokens.map(tok => (
@@ -394,31 +395,31 @@ export default function ConnectionManager({onChanged}: Props) {
                         </div>
                         <div>
                             <label
-                                className="block text-[12px] text-[#98989d] mb-1.5">{t('skillSource.detailOptional')}</label>
+                                className="block text-[12px] text-[var(--color-muted2)] mb-1.5">{t('skillSource.detailOptional')}</label>
                             <input
                                 value={editing.detail || ''}
                                 onChange={e => setEditing({...editing, detail: e.target.value})}
                                 placeholder={t('skillSource.detailPlaceholder')}
-                                className="w-full px-3 py-2 rounded-md bg-[#1c1c1e] border border-[#3a3a3c] text-white text-[12px] focus:border-[#0a84ff] transition-colors"
+                                className="w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] text-[12px] focus:border-[var(--color-accent)] transition-colors"
                             />
                         </div>
                         <div className="flex items-center justify-between">
-                            <label className="text-[12px] text-[#98989d]">{t('skillSource.enableSource')}</label>
+                            <label className="text-[12px] text-[var(--color-muted2)]">{t('skillSource.enableSource')}</label>
                             <button
                                 onClick={() => setEditing({...editing, enabled: !(editing.enabled ?? true)})}
-                                className={`relative w-9 h-5 rounded-full transition-colors ${(editing.enabled ?? true) ? 'bg-[#34c759]' : 'bg-[#3a3a3c]'}`}
+                                className={`relative w-9 h-5 rounded-full transition-colors ${(editing.enabled ?? true) ? 'bg-[#34c759]' : 'bg-[var(--color-surface-hover)]'}`}
                             >
                 <span
-                    className={`absolute top-[2px] w-4 h-4 rounded-full bg-white transition-all ${(editing.enabled ?? true) ? 'left-[18px]' : 'left-[2px]'}`}
+                    className={`absolute top-[2px] w-4 h-4 rounded-full bg-[var(--color-surface)] transition-all ${(editing.enabled ?? true) ? 'left-[18px]' : 'left-[2px]'}`}
                 />
                             </button>
                         </div>
                         <div className="flex justify-end gap-2 pt-2">
                             <button onClick={() => setShowEdit(false)}
-                                    className="px-3 py-1.5 rounded-md bg-[#3a3a3c] text-white text-[12px] hover:bg-[#3a3a3c]/80 transition-colors">{t('common.cancel')}
+                                    className="px-3 py-1.5 rounded-md bg-[var(--color-surface-hover)] text-[var(--color-text)] text-[12px] hover:bg-[var(--color-surface-hover)]/80 transition-colors">{t('common.cancel')}
                             </button>
                             <button onClick={handleSave}
-                                    className="px-3 py-1.5 rounded-md bg-[#0a84ff] text-white text-[12px] font-medium hover:bg-[#0a84ff]/90 transition-colors">{t('common.save')}
+                                    className="px-3 py-1.5 rounded-md bg-[var(--color-accent)] text-white text-[12px] font-medium hover:bg-[var(--color-accent)]/90 transition-colors">{t('common.save')}
                             </button>
                         </div>
                     </div>
@@ -441,7 +442,7 @@ function IconBtn({children, onClick, title, danger, disabled}: {
             onClick={disabled ? () => {
             } : onClick}
             disabled={disabled}
-            className={`p-1.5 rounded transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : danger ? 'text-[#98989d] hover:text-[#ff3b30] hover:bg-[#ff3b30]/10' : 'text-[#98989d] hover:text-white hover:bg-[#3a3a3c]'}`}
+            className={`p-1.5 rounded transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : danger ? 'text-[var(--color-muted2)] hover:text-[#ff3b30] hover:bg-[#ff3b30]/10' : 'text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)]'}`}
         >
             {children}
         </button>

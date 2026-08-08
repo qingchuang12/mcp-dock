@@ -163,20 +163,20 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
 
     return (
         <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-bg)]/50 backdrop-blur-sm"
             onClick={e => {
                 if (e.target === e.currentTarget) requestClose();
             }}
         >
             <div
-                className="w-[640px] max-w-[92vw] max-h-[88vh] overflow-y-auto rounded-2xl border border-[#3a3a3c] bg-[#2c2c2e] shadow-2xl"
+                className="w-[640px] max-w-[92vw] max-h-[88vh] overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl"
             >
-                <div className="flex items-center justify-between border-b border-[#3a3a3c] px-6 py-4">
-                    <h2 className="text-[14px] font-semibold text-white">
+                <div className="flex items-center justify-between border-b border-[var(--color-border)] px-6 py-4">
+                    <h2 className="text-[14px] font-semibold text-[var(--color-text)]">
                         {isEdit ? (t('library.editSkill') || '编辑 Skill') : (t('library.createCustomSkill') || '新建自定义 Skill')}
                     </h2>
                     <button onClick={requestClose}
-                            className="rounded-md p-1 text-[#98989d] transition-colors hover:bg-[#3a3a3c] hover:text-white">
+                            className="rounded-md p-1 text-[var(--color-muted2)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                              strokeWidth="2" strokeLinecap="round">
                             <path d="M18 6 6 18M6 6l12 12"/>
@@ -208,8 +208,8 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
                             onDrop={handleDrop}
                             className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors ${
                                 dragActive
-                                    ? 'border-[#0a84ff] bg-[#0a84ff]/10'
-                                    : 'border-[#3a3a3c] bg-[#1c1c1e] hover:border-[#636366]'
+                                    ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10'
+                                    : 'border-[var(--color-border)] bg-[var(--color-bg)] hover:border-[var(--color-muted)]'
                             } ${uploading ? 'pointer-events-none opacity-60' : ''}`}
                         >
                             <input
@@ -221,21 +221,21 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
                             />
                             {uploading ? (
                                 <>
-                                    <svg className="h-6 w-6 animate-spin text-[#0a84ff]" fill="none" viewBox="0 0 24 24"
+                                    <svg className="h-6 w-6 animate-spin text-[var(--color-accent)]" fill="none" viewBox="0 0 24 24"
                                          stroke="currentColor" strokeWidth={2}>
                                         <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
                                     </svg>
-                                    <p className="text-[12px] text-[#98989d]">{t('library.uploadParsing') || '正在解析…'}</p>
+                                    <p className="text-[12px] text-[var(--color-muted2)]">{t('library.uploadParsing') || '正在解析…'}</p>
                                 </>
                             ) : (
                                 <>
-                                    <svg className="h-6 w-6 text-[#636366]" fill="none" viewBox="0 0 24 24"
+                                    <svg className="h-6 w-6 text-[var(--color-muted)]" fill="none" viewBox="0 0 24 24"
                                          stroke="currentColor" strokeWidth={1.5}>
                                         <path strokeLinecap="round" strokeLinejoin="round"
                                               d="M12 16.5V9m0 0L8.25 12.75M12 9l3.75 3.75M3 15v1.5A2.25 2.25 0 0 0 5.25 19.5h13.5A2.25 2.25 0 0 0 21 16.5V15"/>
                                     </svg>
-                                    <p className="text-[12px] font-medium text-white">{t('library.uploadSkillHint') || '拖入 Skill 文件，或点击选择'}</p>
-                                    <p className="text-[11px] text-[#636366]">{t('library.uploadFormats') || '支持 .zip / .skill 格式'}</p>
+                                    <p className="text-[12px] font-medium text-[var(--color-text)]">{t('library.uploadSkillHint') || '拖入 Skill 文件，或点击选择'}</p>
+                                    <p className="text-[12px] text-[var(--color-muted)]">{t('library.uploadFormats') || '支持 .zip / .skill 格式'}</p>
                                 </>
                             )}
                         </div>
@@ -243,43 +243,43 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
 
                     <div>
                         <label
-                            className="mb-1.5 block text-[12px] font-medium text-[#98989d]">{t('library.name') || '名称'}</label>
+                            className="mb-1.5 block text-[12px] font-medium text-[var(--color-muted2)]">{t('library.name') || '名称'}</label>
                         <input
                             ref={nameRef}
                             value={name}
                             onChange={e => setName(e.target.value)}
                             placeholder={t('library.skillNamePlaceholder') || 'my-custom-skill'}
-                            className="w-full rounded-lg border border-[#3a3a3c] bg-[#1c1c1e] px-3 py-2 text-[13px] text-white outline-none transition-colors focus:border-[#0a84ff]"
+                            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
                         />
-                        <p className="mt-1 text-[11px] text-[#636366]">{t('library.skillNameHint') || '仅允许字母、数字、点、中划线、下划线，将作为目录名'}</p>
+                        <p className="mt-1 text-[12px] text-[var(--color-muted)]">{t('library.skillNameHint') || '仅允许字母、数字、点、中划线、下划线，将作为目录名'}</p>
                     </div>
 
                     <div>
                         <label
-                            className="mb-1.5 block text-[12px] font-medium text-[#98989d]">{t('library.description') || '描述'}</label>
+                            className="mb-1.5 block text-[12px] font-medium text-[var(--color-muted2)]">{t('library.description') || '描述'}</label>
                         <input
                             value={description}
                             onChange={e => setDescription(e.target.value)}
                             placeholder={t('library.skillDescPlaceholder') || '一句话描述这个 Skill 的用途'}
-                            className="w-full rounded-lg border border-[#3a3a3c] bg-[#1c1c1e] px-3 py-2 text-[13px] text-white outline-none transition-colors focus:border-[#0a84ff]"
+                            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
                         />
                     </div>
 
                     <div>
                         <label
-                            className="mb-1.5 block text-[12px] font-medium text-[#98989d]">SKILL.md {t('library.content') || '正文'}</label>
+                            className="mb-1.5 block text-[12px] font-medium text-[var(--color-muted2)]">SKILL.md {t('library.content') || '正文'}</label>
                         <textarea
                             value={body}
                             onChange={e => setBody(e.target.value)}
                             rows={10}
                             placeholder={t('library.skillBodyPlaceholder') || '描述 Skill 的用途、使用场景与示例……'}
-                            className="w-full resize-y rounded-lg border border-[#3a3a3c] bg-[#1c1c1e] px-3 py-2 font-mono text-[12px] leading-relaxed text-white outline-none transition-colors focus:border-[#0a84ff]"
+                            className="w-full resize-y rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 font-mono text-[12px] leading-relaxed text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
                         />
                     </div>
 
                     <div>
                         <label
-                            className="mb-2 block text-[12px] font-medium text-[#98989d]">{t('library.targetClients') || '目标客户端'}</label>
+                            className="mb-2 block text-[12px] font-medium text-[var(--color-muted2)]">{t('library.targetClients') || '目标客户端'}</label>
                         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                             {skillClients.map(client => {
                                 const checked = selectedClients.includes(client.id as SkillClientType);
@@ -290,13 +290,13 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
                                         onClick={() => toggleClient(client.id as SkillClientType)}
                                         className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] transition-colors ${
                                             checked
-                                                ? 'border-[#0a84ff] bg-[#0a84ff]/15 text-white'
-                                                : 'border-[#3a3a3c] bg-[#1c1c1e] text-[#98989d] hover:border-[#636366]'
+                                                ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/15 text-white'
+                                                : 'border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-muted2)] hover:border-[var(--color-muted)]'
                                         }`}
                                     >
                     <span
                         className={`flex h-3.5 w-3.5 items-center justify-center rounded-[4px] border ${
-                            checked ? 'border-[#0a84ff] bg-[#0a84ff]' : 'border-[#636366]'
+                            checked ? 'border-[var(--color-accent)] bg-[var(--color-accent)]' : 'border-[#636366]'
                         }`}
                     >
                       {checked && (
@@ -315,17 +315,17 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
                     </div>
                 </div>
 
-                <div className="flex justify-end gap-3 border-t border-[#3a3a3c] px-6 py-4">
+                <div className="flex justify-end gap-3 border-t border-[var(--color-border)] px-6 py-4">
                     <button
                         onClick={requestClose}
-                        className="rounded-lg border border-[#3a3a3c] px-4 py-2 text-[13px] text-[#98989d] transition-colors hover:bg-[#3a3a3c] hover:text-white"
+                        className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-[13px] text-[var(--color-muted2)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
                     >
                         {t('common.cancel') || '取消'}
                     </button>
                     <button
                         onClick={handleSubmit}
                         disabled={submitting}
-                        className="flex items-center gap-2 rounded-lg bg-[#0a84ff] px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#0a84ff]/85 disabled:opacity-50"
+                        className="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[var(--color-accent)]/85 disabled:opacity-50"
                     >
                         {submitting && (
                             <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none"
@@ -340,19 +340,19 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
 
             {confirmDiscard && (
                 <div
-                    className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60"
+                    className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--color-bg)]/60"
                     onClick={e => {
                         if (e.target === e.currentTarget) setConfirmDiscard(false);
                     }}
                 >
                     <div
-                        className="w-[380px] max-w-[88vw] rounded-2xl border border-[#3a3a3c] bg-[#2c2c2e] p-5 shadow-2xl">
-                        <h3 className="text-[14px] font-semibold text-white">{t('library.discardTitle') || '放弃编辑内容？'}</h3>
-                        <p className="mt-2 text-[12px] leading-relaxed text-[#98989d]">{t('library.discardHint') || '您已修改内容但尚未保存，关闭后将丢失这些改动。'}</p>
+                        className="w-[380px] max-w-[88vw] rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-2xl">
+                        <h3 className="text-[14px] font-semibold text-[var(--color-text)]">{t('library.discardTitle') || '放弃编辑内容？'}</h3>
+                        <p className="mt-2 text-[12px] leading-relaxed text-[var(--color-muted2)]">{t('library.discardHint') || '您已修改内容但尚未保存，关闭后将丢失这些改动。'}</p>
                         <div className="mt-5 flex justify-end gap-3">
                             <button
                                 onClick={() => setConfirmDiscard(false)}
-                                className="rounded-lg border border-[#3a3a3c] px-4 py-2 text-[13px] text-[#98989d] transition-colors hover:bg-[#3a3a3c] hover:text-white"
+                                className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-[13px] text-[var(--color-muted2)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
                             >
                                 {t('library.keepEditing') || '继续编辑'}
                             </button>

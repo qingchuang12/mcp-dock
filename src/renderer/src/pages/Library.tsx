@@ -132,7 +132,7 @@ function ServerIcon({server, serverInfo}: { server: InstalledServer; serverInfo?
     // 最后使用首字母图标
     return (
         <div
-            className={`w-9 h-9 rounded-lg ${colors[colorIndex]} flex items-center justify-center text-white font-semibold text-sm`}>
+            className={`w-9 h-9 rounded-lg ${colors[colorIndex]} flex items-center justify-center text-[var(--color-text)] font-semibold text-sm`}>
             {initial}
         </div>
     );
@@ -170,7 +170,7 @@ function SkillIcon({skill}: { skill: InstalledSkill }) {
 
     return (
         <div
-            className={`w-9 h-9 rounded-lg ${colors[colorIndex]} flex items-center justify-center text-white font-semibold text-sm`}>
+            className={`w-9 h-9 rounded-lg ${colors[colorIndex]} flex items-center justify-center text-[var(--color-text)] font-semibold text-sm`}>
             {initial}
         </div>
     );
@@ -792,10 +792,10 @@ export default function Library() {
             <div className="card overflow-hidden divide-y divide-[#3a3a3c]">
                 {[0, 1, 2].map(i => (
                     <div key={i} className="flex items-center gap-3 px-4 py-3">
-                        <div className="w-8 h-8 rounded bg-[#3a3a3c] animate-pulse"/>
+                        <div className="w-8 h-8 rounded bg-[var(--color-surface-hover)] animate-pulse"/>
                         <div className="flex-1 space-y-2">
-                            <div className="h-3 w-32 bg-[#3a3a3c] rounded animate-pulse"/>
-                            <div className="h-2.5 w-20 bg-[#3a3a3c] rounded animate-pulse"/>
+                            <div className="h-3 w-32 bg-[var(--color-surface-hover)] rounded animate-pulse"/>
+                            <div className="h-2.5 w-20 bg-[var(--color-surface-hover)] rounded animate-pulse"/>
                         </div>
                     </div>
                 ))}
@@ -804,23 +804,23 @@ export default function Library() {
     );
 
     return (
-        <div className="flex flex-col h-full bg-[#1c1c1e]">
+        <div className="flex flex-col h-full bg-[var(--color-bg)]">
             {/* 头部工具栏（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
             <div
-                className={`flex items-center justify-between px-4 h-[38px] drag-region relative border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
+                className={`flex items-center justify-between px-4 h-[38px] drag-region relative border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-xl ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
                 <div className="flex items-center gap-4 no-drag">
-                    <h1 className="text-[14px] font-semibold text-white tracking-tight">
+                    <h1 className="text-[14px] font-semibold text-[var(--color-text)] tracking-tight">
                         {t('nav.library') || 'Library'}
                     </h1>
 
                     {/* Tab 切换 */}
-                    <div className="flex items-center bg-[#3a3a3c] rounded-lg p-0.5">
+                    <div className="flex items-center bg-[var(--color-surface-hover)] rounded-lg p-0.5">
                         <button
                             onClick={() => changeTab('mcp')}
                             className={`px-3 py-1 rounded-md text-[12px] font-medium transition-colors ${
                                 activeTab === 'mcp'
-                                    ? 'bg-[#636366] text-white'
-                                    : 'text-[#98989d] hover:text-white'
+                                    ? 'bg-[var(--color-surface-active)] text-[var(--color-text)]'
+                                    : 'text-[var(--color-muted2)] hover:text-[var(--color-text)]'
                             }`}
                         >
                             MCP Servers ({servers.length})
@@ -829,8 +829,8 @@ export default function Library() {
                             onClick={() => changeTab('skills')}
                             className={`px-3 py-1 rounded-md text-[12px] font-medium transition-colors ${
                                 activeTab === 'skills'
-                                    ? 'bg-[#636366] text-white'
-                                    : 'text-[#98989d] hover:text-white'
+                                    ? 'bg-[var(--color-surface-active)] text-[var(--color-text)]'
+                                    : 'text-[var(--color-muted2)] hover:text-[var(--color-text)]'
                             }`}
                         >
                             Skills ({skills.length})
@@ -846,7 +846,7 @@ export default function Library() {
                                 onClick={handleCloudDownload}
                                 disabled={cloudBusy !== null}
                                 title="从云端拉取 ai-tool 目录到本地暂存区"
-                                className="flex items-center gap-1.5 px-3 py-1 bg-[#3a3a3c] text-white rounded-md text-[12px] font-medium hover:bg-[#4a4a4c] transition-colors disabled:opacity-50"
+                                className="flex items-center gap-1.5 px-3 py-1 bg-[var(--color-surface-hover)] text-[var(--color-text)] rounded-md text-[12px] font-medium hover:bg-[var(--color-surface-active)] transition-colors disabled:opacity-50"
                             >
                                 <svg className={`w-3.5 h-3.5 ${cloudBusy === 'pull' ? 'animate-pulse' : ''}`}
                                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -859,7 +859,7 @@ export default function Library() {
                                 onClick={handleCloudUpload}
                                 disabled={cloudBusy !== null}
                                 title="把当前库的 MCP 与 Skill 上传到云端 ai-tool 目录"
-                                className="flex items-center gap-1.5 px-3 py-1 bg-[#3a3a3c] text-white rounded-md text-[12px] font-medium hover:bg-[#4a4a4c] transition-colors disabled:opacity-50"
+                                className="flex items-center gap-1.5 px-3 py-1 bg-[var(--color-surface-hover)] text-[var(--color-text)] rounded-md text-[12px] font-medium hover:bg-[var(--color-surface-active)] transition-colors disabled:opacity-50"
                             >
                                 <svg className={`w-3.5 h-3.5 ${cloudBusy === 'push' ? 'animate-pulse' : ''}`}
                                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -868,7 +868,7 @@ export default function Library() {
                                 </svg>
                                 {cloudBusy === 'push' ? '上传中…' : '云上传'}
                             </button>
-                            <span className="w-px h-4 bg-[#3a3a3c]"/>
+                            <span className="w-px h-4 bg-[var(--color-surface-hover)]"/>
                         </>
                     )}
                     {activeTab === 'mcp' && (
@@ -878,8 +878,8 @@ export default function Library() {
                                     onClick={toggleServerSelectMode}
                                     className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium transition-colors ${
                                         serverSelectMode
-                                            ? 'bg-[#0a84ff] text-white hover:bg-[#0a84ff]/80'
-                                            : 'bg-[#3a3a3c] text-white hover:bg-[#4a4a4c]'
+                                            ? 'bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent)]/80'
+                                            : 'bg-[var(--color-surface-hover)] text-[var(--color-text)] hover:bg-[var(--color-surface-active)]'
                                     }`}
                                 >
                                     {serverSelectMode
@@ -890,7 +890,7 @@ export default function Library() {
                             {serverSelectMode && selectedServers.length > 0 && (
                                 <button
                                     onClick={handleOpenServerBatchSync}
-                                    className="flex items-center gap-1.5 px-3 py-1 bg-[#0a84ff] text-white rounded-md text-[12px] font-medium hover:bg-[#0a84ff]/80 transition-colors"
+                                    className="flex items-center gap-1.5 px-3 py-1 bg-[var(--color-accent)] text-white rounded-md text-[12px] font-medium hover:bg-[var(--color-accent)]/80 transition-colors"
                                 >
                                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                                          strokeWidth={2}>
@@ -902,7 +902,7 @@ export default function Library() {
                             )}
                             <button
                                 onClick={() => setShowAddModal(true)}
-                                className="flex items-center gap-1.5 px-3 py-1 bg-[#0a84ff] text-white rounded-md text-[12px] font-medium hover:bg-[#0a84ff]/80 transition-colors"
+                                className="flex items-center gap-1.5 px-3 py-1 bg-[var(--color-accent)] text-white rounded-md text-[12px] font-medium hover:bg-[var(--color-accent)]/80 transition-colors"
                             >
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                                      strokeWidth={2}>
@@ -919,8 +919,8 @@ export default function Library() {
                                     onClick={toggleSelectMode}
                                     className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium transition-colors ${
                                         selectMode
-                                            ? 'bg-[#0a84ff] text-white hover:bg-[#0a84ff]/80'
-                                            : 'bg-[#3a3a3c] text-white hover:bg-[#4a4a4c]'
+                                            ? 'bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent)]/80'
+                                            : 'bg-[var(--color-surface-hover)] text-[var(--color-text)] hover:bg-[var(--color-surface-active)]'
                                     }`}
                                 >
                                     {selectMode
@@ -931,7 +931,7 @@ export default function Library() {
                             {selectMode && selectedSkills.length > 0 && (
                                 <button
                                     onClick={handleOpenBatchSync}
-                                    className="flex items-center gap-1.5 px-3 py-1 bg-[#0a84ff] text-white rounded-md text-[12px] font-medium hover:bg-[#0a84ff]/80 transition-colors"
+                                    className="flex items-center gap-1.5 px-3 py-1 bg-[var(--color-accent)] text-white rounded-md text-[12px] font-medium hover:bg-[var(--color-accent)]/80 transition-colors"
                                 >
                                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                                          strokeWidth={2}>
@@ -943,7 +943,7 @@ export default function Library() {
                             )}
                             <button
                                 onClick={() => setShowCreateSkill(true)}
-                                className="flex items-center gap-1.5 px-3 py-1 bg-[#0a84ff] text-white rounded-md text-[12px] font-medium hover:bg-[#0a84ff]/80 transition-colors"
+                                className="flex items-center gap-1.5 px-3 py-1 bg-[var(--color-accent)] text-white rounded-md text-[12px] font-medium hover:bg-[var(--color-accent)]/80 transition-colors"
                             >
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                                      strokeWidth={2}>
@@ -955,7 +955,7 @@ export default function Library() {
                                 <button
                                     onClick={handleUpdateAllSkills}
                                     disabled={isRefreshing}
-                                    className="flex items-center gap-1.5 px-3 py-1 bg-[#3a3a3c] text-white rounded-md text-[12px] font-medium hover:bg-[#4a4a4c] transition-colors disabled:opacity-50"
+                                    className="flex items-center gap-1.5 px-3 py-1 bg-[var(--color-surface-hover)] text-[var(--color-text)] rounded-md text-[12px] font-medium hover:bg-[var(--color-surface-active)] transition-colors disabled:opacity-50"
                                 >
                                     <svg
                                         className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`}
@@ -984,15 +984,15 @@ export default function Library() {
                         <LoadingSkeleton/>
                     ) : servers.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full">
-                            <div className="w-12 h-12 rounded-full bg-[#3a3a3c] flex items-center justify-center mb-3">
-                                <svg className="w-6 h-6 text-[#636366]" fill="none" viewBox="0 0 24 24"
+                            <div className="w-12 h-12 rounded-full bg-[var(--color-surface-hover)] flex items-center justify-center mb-3">
+                                <svg className="w-6 h-6 text-[var(--color-muted)]" fill="none" viewBox="0 0 24 24"
                                      stroke="currentColor" strokeWidth={1.5}>
                                     <path strokeLinecap="round" strokeLinejoin="round"
                                           d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>
                                 </svg>
                             </div>
-                            <p className="text-[13px] text-white mb-1">{t('installed.empty')}</p>
-                            <p className="text-[12px] text-[#636366] mb-4">{t('installed.emptyHint')}</p>
+                            <p className="text-[13px] text-[var(--color-text)] mb-1">{t('installed.empty')}</p>
+                            <p className="text-[12px] text-[var(--color-muted)] mb-4">{t('installed.emptyHint')}</p>
                             <button onClick={() => navigate('/store')} className="btn btn-primary text-[13px]">
                                 {t('installed.goToStore')}
                             </button>
@@ -1008,10 +1008,10 @@ export default function Library() {
                                             key={server.id}
                                             className={`
                         flex items-center gap-3 px-4 py-3
-                        ${serverSelectMode ? 'cursor-pointer' : server.isMcpDock ? 'cursor-pointer hover:bg-[#3a3a3c]/50' : ''}
+                        ${serverSelectMode ? 'cursor-pointer' : server.isMcpDock ? 'cursor-pointer hover:bg-[var(--color-surface-hover)]/50' : ''}
                         transition-colors
-                        ${index !== servers.length - 1 ? 'border-b border-[#3a3a3c]' : ''}
-                        ${serverSelectMode && isServerSelected ? 'bg-[#0a84ff]/10' : ''}
+                        ${index !== servers.length - 1 ? 'border-b border-[var(--color-border)]' : ''}
+                        ${serverSelectMode && isServerSelected ? 'bg-[var(--color-accent)]/10' : ''}
                       `}
                                             onClick={() => serverSelectMode ? toggleServerSelect(server.id) : handleServerClick(server)}
                                         >
@@ -1019,9 +1019,9 @@ export default function Library() {
                                             {serverSelectMode ? (
                                                 <div className="flex-shrink-0">
                           <span
-                              className={`w-4 h-4 rounded border flex items-center justify-center ${isServerSelected ? 'bg-[#0a84ff] border-[#0a84ff]' : 'border-[#636366]'}`}>
+                              className={`w-4 h-4 rounded border flex items-center justify-center ${isServerSelected ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'border-[var(--color-border)]'}`}>
                             {isServerSelected && (
-                                <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <svg className="w-3 h-3 text-[var(--color-text)]" fill="currentColor" viewBox="0 0 20 20">
                                     <path fillRule="evenodd"
                                           d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
                                           clipRule="evenodd"/>
@@ -1037,14 +1037,14 @@ export default function Library() {
 
                                             {/* 内容 */}
                                             <div className="flex-1 min-w-0">
-                                                <h3 className="text-[13px] font-medium text-white truncate">
+                                                <h3 className="text-[13px] font-medium text-[var(--color-text)] truncate">
                                                     {getDisplayName(server.id)}
                                                 </h3>
                                                 {/* 已安装的客户端 */}
                                                 <div className="flex items-center gap-2 mt-1">
                                                     {server.clients.map(clientId => (
                                                         <span key={clientId}
-                                                              className="text-[11px] text-[#98989d] flex items-center gap-1">
+                                                              className="text-[12px] text-[var(--color-muted2)] flex items-center gap-1">
                               <ClientIcon clientId={clientId} size={14}/>
                                                             {clients.find(c => c.id === clientId)?.name}
                             </span>
@@ -1071,7 +1071,7 @@ export default function Library() {
                                                             const configStr = encodeURIComponent(JSON.stringify(config));
                                                             navigate(`/inspector?config=${configStr}`);
                                                         }}
-                                                        className="p-1.5 rounded text-[#98989d] hover:text-[#0a84ff] hover:bg-[#0a84ff]/10 transition-colors"
+                                                        className="p-1.5 rounded text-[var(--color-muted2)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 transition-colors"
                                                         title={t('installed.inspect') || 'Inspect'}
                                                     >
                                                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
@@ -1083,7 +1083,7 @@ export default function Library() {
 
                                                     <button
                                                         onClick={() => handleEdit(server)}
-                                                        className="p-1.5 rounded text-[#98989d] hover:text-white hover:bg-[#3a3a3c] transition-colors"
+                                                        className="p-1.5 rounded text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors"
                                                         title={t('installed.edit')}
                                                     >
                                                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
@@ -1096,7 +1096,7 @@ export default function Library() {
                                                     {/* 同步到其他客户端（多客户端复用） */}
                                                     <button
                                                         onClick={() => handleOpenSync(server)}
-                                                        className="p-1.5 rounded text-[#98989d] hover:text-[#0a84ff] hover:bg-[#0a84ff]/10 transition-colors"
+                                                        className="p-1.5 rounded text-[var(--color-muted2)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 transition-colors"
                                                         title={t('installed.sync') || 'Sync'}
                                                     >
                                                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
@@ -1131,15 +1131,15 @@ export default function Library() {
                         <LoadingSkeleton/>
                     ) : skills.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full">
-                            <div className="w-12 h-12 rounded-full bg-[#3a3a3c] flex items-center justify-center mb-3">
-                                <svg className="w-6 h-6 text-[#636366]" fill="none" viewBox="0 0 24 24"
+                            <div className="w-12 h-12 rounded-full bg-[var(--color-surface-hover)] flex items-center justify-center mb-3">
+                                <svg className="w-6 h-6 text-[var(--color-muted)]" fill="none" viewBox="0 0 24 24"
                                      stroke="currentColor" strokeWidth={1.5}>
                                     <path strokeLinecap="round" strokeLinejoin="round"
                                           d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
                                 </svg>
                             </div>
-                            <p className="text-[13px] text-white mb-1">{t('library.noSkills') || 'No skills installed'}</p>
-                            <p className="text-[12px] text-[#636366] mb-4">{t('library.noSkillsHint') || 'Visit the store to discover and install skills'}</p>
+                            <p className="text-[13px] text-[var(--color-text)] mb-1">{t('library.noSkills') || 'No skills installed'}</p>
+                            <p className="text-[12px] text-[var(--color-muted)] mb-4">{t('library.noSkillsHint') || 'Visit the store to discover and install skills'}</p>
                             <button onClick={() => navigate('/store')} className="btn btn-primary text-[13px]">
                                 {t('installed.goToStore')}
                             </button>
@@ -1155,10 +1155,10 @@ export default function Library() {
                                             key={skill.name}
                                             className={`
                       flex items-center gap-3 px-4 py-3
-                      ${selectMode ? 'cursor-pointer' : 'cursor-pointer hover:bg-[#3a3a3c]/50'}
+                      ${selectMode ? 'cursor-pointer' : 'cursor-pointer hover:bg-[var(--color-surface-hover)]/50'}
                       transition-colors
-                      ${index !== skills.length - 1 ? 'border-b border-[#3a3a3c]' : ''}
-                      ${selectMode && isSelected ? 'bg-[#0a84ff]/10' : ''}
+                      ${index !== skills.length - 1 ? 'border-b border-[var(--color-border)]' : ''}
+                      ${selectMode && isSelected ? 'bg-[var(--color-accent)]/10' : ''}
                     `}
                                             onClick={() => selectMode ? toggleSkillSelect(skill.name) : handleSkillClick(skill)}
                                         >
@@ -1166,9 +1166,9 @@ export default function Library() {
                                             {selectMode ? (
                                                 <div className="flex-shrink-0">
                         <span
-                            className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? 'bg-[#0a84ff] border-[#0a84ff]' : 'border-[#636366]'}`}>
+                            className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'border-[var(--color-border)]'}`}>
                           {isSelected && (
-                              <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                              <svg className="w-3 h-3 text-[var(--color-text)]" fill="currentColor" viewBox="0 0 20 20">
                                   <path fillRule="evenodd"
                                         d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
                                         clipRule="evenodd"/>
@@ -1184,14 +1184,14 @@ export default function Library() {
 
                                             {/* 内容 */}
                                             <div className="flex-1 min-w-0">
-                                                <h3 className="text-[13px] font-medium text-white truncate">
+                                                <h3 className="text-[13px] font-medium text-[var(--color-text)] truncate">
                                                     {skill.name}
                                                 </h3>
                                                 {/* 已安装的客户端 */}
                                                 <div className="flex items-center gap-2 mt-1">
                                                     {installedClients.map(clientId => (
                                                         <span key={clientId}
-                                                              className="text-[11px] text-[#98989d] flex items-center gap-1">
+                                                              className="text-[12px] text-[var(--color-muted2)] flex items-center gap-1">
                             <ClientIcon clientId={clientId} size={14}/>
                                                             {clients.find(c => c.id === clientId)?.name}
                           </span>
@@ -1216,7 +1216,7 @@ export default function Library() {
                                                         <button
                                                             onClick={() => handleUpdateSkill(skill.name)}
                                                             disabled={refreshingSkill === skill.name}
-                                                            className="p-1.5 rounded text-[#98989d] hover:text-[#0a84ff] hover:bg-[#0a84ff]/10 transition-colors disabled:opacity-50"
+                                                            className="p-1.5 rounded text-[var(--color-muted2)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 transition-colors disabled:opacity-50"
                                                             title={t('library.update') || 'Update'}
                                                         >
                                                             <svg
@@ -1235,7 +1235,7 @@ export default function Library() {
                                                     {/* 编辑按钮（商店来源的 Skill 也可编辑；保存后转为手动安装） */}
                                                     <button
                                                         onClick={() => handleEditSkill(skill.name)}
-                                                        className="p-1.5 rounded text-[#98989d] hover:text-white hover:bg-[#3a3a3c] transition-colors"
+                                                        className="p-1.5 rounded text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors"
                                                         title={t('installed.edit')}
                                                     >
                                                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
@@ -1249,7 +1249,7 @@ export default function Library() {
                                                     {installedClients.length > 0 && (
                                                         <button
                                                             onClick={() => handleOpenSkillSync(skill.name)}
-                                                            className="p-1.5 rounded text-[#98989d] hover:text-[#0a84ff] hover:bg-[#0a84ff]/10 transition-colors"
+                                                            className="p-1.5 rounded text-[var(--color-muted2)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 transition-colors"
                                                             title={t('library.sync') || 'Sync to clients'}
                                                         >
                                                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
@@ -1290,13 +1290,13 @@ export default function Library() {
                 title={`${t('installed.edit')}: ${editingServer ? getDisplayName(editingServer.id) : ''}`}
             >
                 <div className="space-y-4">
-                    <p className="text-[12px] text-[#98989d]">
+                    <p className="text-[12px] text-[var(--color-muted2)]">
                         {t('installed.editHint')}
                     </p>
                     <textarea
                         value={editedConfig}
                         onChange={(e) => setEditedConfig(e.target.value)}
-                        className="w-full h-48 px-3 py-2 rounded-md bg-[#1c1c1e] border border-[#3a3a3c] text-white font-mono text-[12px] resize-none focus:border-[#0a84ff] transition-colors"
+                        className="w-full h-48 px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] font-mono text-[12px] resize-none focus:border-[var(--color-accent)] transition-colors"
                         spellCheck={false}
                     />
                     <div className="flex justify-end gap-2">
@@ -1317,7 +1317,7 @@ export default function Library() {
                 title={t('installed.syncTitle') || 'Sync to Other Clients'}
             >
                 <div className="space-y-4">
-                    <p className="text-[12px] text-[#98989d]">{t('installed.syncHint')}</p>
+                    <p className="text-[12px] text-[var(--color-muted2)]">{t('installed.syncHint')}</p>
 
                     <div className="space-y-2">
                         {clients
@@ -1331,8 +1331,8 @@ export default function Library() {
                                         className={`
                       w-full flex items-center gap-3 p-3 rounded-md border transition-all text-left
                       ${isSelected
-                                            ? 'bg-[#0a84ff]/10 border-[#0a84ff]/30 text-[#0a84ff]'
-                                            : 'bg-[#3a3a3c] border-[#3a3a3c] text-white hover:border-[#636366]'
+                                            ? 'bg-[var(--color-accent)]/10 border-[var(--color-accent)]/30 text-[var(--color-accent)]'
+                                            : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-muted)]'
                                         }
                     `}
                                     >
@@ -1372,7 +1372,7 @@ export default function Library() {
                 title={t('installed.batchSyncTitle') || 'Sync Servers to Other Clients'}
             >
                 <div className="space-y-4">
-                    <p className="text-[12px] text-[#98989d]">
+                    <p className="text-[12px] text-[var(--color-muted2)]">
                         {t('installed.batchSyncHint', {count: serverSyncList.length}) ||
                             `选择要将 ${serverSyncList.length} 个服务器同步到的客户端：`}
                     </p>
@@ -1394,8 +1394,8 @@ export default function Library() {
                                         className={`
                       w-full flex items-center gap-3 p-3 rounded-md border transition-all text-left
                       ${isSelected
-                                            ? 'bg-[#0a84ff]/10 border-[#0a84ff]/30 text-[#0a84ff]'
-                                            : 'bg-[#3a3a3c] border-[#3a3a3c] text-white hover:border-[#636366]'
+                                            ? 'bg-[var(--color-accent)]/10 border-[var(--color-accent)]/30 text-[var(--color-accent)]'
+                                            : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-muted)]'
                                         }
                     `}
                                     >
@@ -1437,7 +1437,7 @@ export default function Library() {
                 title={t('library.syncTitle') || 'Sync Skill to Other Clients'}
             >
                 <div className="space-y-4">
-                    <p className="text-[12px] text-[#98989d]">
+                    <p className="text-[12px] text-[var(--color-muted2)]">
                         {t('library.syncHint', {count: syncModalSkills.length}) ||
                             `选择要将 ${syncModalSkills.length} 个 Skill 同步到的客户端：`}
                     </p>
@@ -1461,8 +1461,8 @@ export default function Library() {
                                         className={`
                       w-full flex items-center gap-3 p-3 rounded-md border transition-all text-left
                       ${isSelected
-                                            ? 'bg-[#0a84ff]/10 border-[#0a84ff]/30 text-[#0a84ff]'
-                                            : 'bg-[#3a3a3c] border-[#3a3a3c] text-white hover:border-[#636366]'
+                                            ? 'bg-[var(--color-accent)]/10 border-[var(--color-accent)]/30 text-[var(--color-accent)]'
+                                            : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-muted)]'
                                         }
                     `}
                                     >
@@ -1531,7 +1531,7 @@ export default function Library() {
                 title={uninstallTarget?.type === 'skill' ? (t('library.uninstallTitle') || '卸载 Skill') : (t('installed.uninstallTitle') || '卸载服务器')}
             >
                 <div className="space-y-4">
-                    <p className="text-[12px] text-[#98989d]">
+                    <p className="text-[12px] text-[var(--color-muted2)]">
                         {uninstallTarget?.type === 'skill'
                             ? (t('library.uninstallHint') || '选择要从哪些客户端卸载此 Skill：')
                             : (t('installed.uninstallHint') || '选择要从哪些客户端卸载此服务器：')}
@@ -1539,10 +1539,10 @@ export default function Library() {
 
                     <div className="flex items-center justify-between">
                         <span
-                            className="text-[13px] text-white font-medium truncate">{uninstallTarget?.displayName}</span>
+                            className="text-[13px] text-[var(--color-text)] font-medium truncate">{uninstallTarget?.displayName}</span>
                         <button
                             onClick={() => uninstallTarget && setSelectedUninstallClients([...uninstallTarget.clients])}
-                            className="text-[12px] text-[#0a84ff] hover:underline flex-shrink-0 ml-2"
+                            className="text-[12px] text-[var(--color-accent)] hover:underline flex-shrink-0 ml-2"
                         >
                             {t('installed.selectAll') || '全选'}
                         </button>
@@ -1564,7 +1564,7 @@ export default function Library() {
                     w-full flex items-center gap-3 p-3 rounded-md border transition-all text-left
                     ${isSelected
                                         ? 'bg-[#ff3b30]/10 border-[#ff3b30]/30 text-[#ff3b30]'
-                                        : 'bg-[#3a3a3c] border-[#3a3a3c] text-white hover:border-[#636366]'
+                                        : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-muted)]'
                                     }
                   `}
                                 >

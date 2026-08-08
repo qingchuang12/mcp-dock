@@ -229,7 +229,7 @@ export default function OfficialConfigForm({
       {/* 安装类型选择（如果同时有包和远程服务器） */}
       {hasPackages && hasRemotes && (
         <div>
-          <label className="block text-[12px] font-medium text-white mb-2">
+          <label className="block text-[12px] font-medium text-[var(--color-text)] mb-2">
             {t('detail.installType')}
           </label>
           <div className="flex gap-2">
@@ -244,8 +244,8 @@ export default function OfficialConfigForm({
               className={`
                 flex-1 px-3 py-2 rounded-md border text-[12px] font-medium transition-colors
                 ${installType === 'package'
-                  ? 'bg-[#0a84ff]/10 border-[#0a84ff]/30 text-[#0a84ff]'
-                  : 'bg-[#3a3a3c] border-[#3a3a3c] text-white hover:border-[#636366]'
+                  ? 'bg-[var(--color-accent)]/10 border-[var(--color-accent)]/30 text-[var(--color-accent)]'
+                  : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-muted)]'
                 }
               `}
             >
@@ -263,7 +263,7 @@ export default function OfficialConfigForm({
                 flex-1 px-3 py-2 rounded-md border text-[12px] font-medium transition-colors
                 ${installType === 'remote'
                   ? 'bg-[#34c759]/10 border-[#34c759]/30 text-[#34c759]'
-                  : 'bg-[#3a3a3c] border-[#3a3a3c] text-white hover:border-[#636366]'
+                  : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-muted)]'
                 }
               `}
             >
@@ -280,7 +280,7 @@ export default function OfficialConfigForm({
             <span className="text-[#ff9f0a]">⚠️</span>
             <div>
               <p className="text-[12px] font-medium text-[#ff9f0a] mb-1">{t('detail.dockerRequired')}</p>
-              <p className="text-[11px] text-[#98989d]">{t('detail.dockerRequiredDesc')}</p>
+              <p className="text-[12px] text-[var(--color-muted2)]">{t('detail.dockerRequiredDesc')}</p>
             </div>
           </div>
         </div>
@@ -293,12 +293,12 @@ export default function OfficialConfigForm({
             <span className="text-[#ff3b30]">⚠️</span>
             <div>
               <p className="text-[12px] font-medium text-[#ff3b30] mb-1">{t('detail.mcpbNotSupported')}</p>
-              <p className="text-[11px] text-[#98989d] mb-2">{t('detail.mcpbNotSupportedDesc')}</p>
+              <p className="text-[12px] text-[var(--color-muted2)] mb-2">{t('detail.mcpbNotSupportedDesc')}</p>
               <a
                 href={selectedPackage.identifier}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[11px] text-[#0a84ff] hover:underline break-all"
+                className="text-[12px] text-[var(--color-accent)] hover:underline break-all"
               >
                 {selectedPackage.identifier}
               </a>
@@ -310,7 +310,7 @@ export default function OfficialConfigForm({
       {/* 包选择 (如果有多个包且选择了本地安装) */}
       {installType === 'package' && packages.length > 1 && (
         <div>
-          <label className="block text-[12px] font-medium text-white mb-2">
+          <label className="block text-[12px] font-medium text-[var(--color-text)] mb-2">
             {t('detail.selectPackage')}
           </label>
           <div className="space-y-2">
@@ -322,13 +322,13 @@ export default function OfficialConfigForm({
                 className={`
                   w-full flex items-center gap-3 p-3 rounded-md border text-left transition-colors
                   ${selectedPackage === pkg
-                    ? 'bg-[#0a84ff]/10 border-[#0a84ff]/30'
-                    : 'bg-[#3a3a3c] border-[#3a3a3c] hover:border-[#636366]'
+                    ? 'bg-[var(--color-accent)]/10 border-[var(--color-accent)]/30'
+                    : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] hover:border-[var(--color-muted)]'
                   }
                 `}
               >
                 <span className={`
-                  px-1.5 py-0.5 rounded text-[10px] font-medium
+                  px-1.5 py-0.5 rounded text-[12px] font-medium
                   ${pkg.registryType === 'npm' ? 'bg-[#cb3837]/15 text-[#cb3837]' :
                     pkg.registryType === 'pypi' ? 'bg-[#3776ab]/15 text-[#3776ab]' :
                     pkg.registryType === 'mcpb' ? 'bg-[#ff9f0a]/15 text-[#ff9f0a]' :
@@ -337,13 +337,13 @@ export default function OfficialConfigForm({
                   {pkg.registryType}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12px] font-mono text-white truncate">{pkg.identifier}</div>
+                  <div className="text-[12px] font-mono text-[var(--color-text)] truncate">{pkg.identifier}</div>
                   {pkg.runtimeHint && (
-                    <div className="text-[10px] text-[#636366]">via {pkg.runtimeHint}</div>
+                    <div className="text-[12px] text-[var(--color-muted)]">via {pkg.runtimeHint}</div>
                   )}
                 </div>
                 {selectedPackage === pkg && (
-                  <svg className="w-4 h-4 text-[#0a84ff]" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-4 h-4 text-[var(--color-accent)]" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
                 )}
@@ -356,7 +356,7 @@ export default function OfficialConfigForm({
       {/* 远程服务器选择 (如果有多个远程服务器且选择了远程安装) */}
       {installType === 'remote' && remotes.length > 1 && (
         <div>
-          <label className="block text-[12px] font-medium text-white mb-2">
+          <label className="block text-[12px] font-medium text-[var(--color-text)] mb-2">
             {t('detail.selectRemote')}
           </label>
           <div className="space-y-2">
@@ -369,15 +369,15 @@ export default function OfficialConfigForm({
                   w-full flex items-center gap-3 p-3 rounded-md border text-left transition-colors
                   ${selectedRemote === remote
                     ? 'bg-[#34c759]/10 border-[#34c759]/30'
-                    : 'bg-[#3a3a3c] border-[#3a3a3c] hover:border-[#636366]'
+                    : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] hover:border-[var(--color-muted)]'
                   }
                 `}
               >
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#34c759]/15 text-[#34c759]">
+                <span className="px-1.5 py-0.5 rounded text-[12px] font-medium bg-[#34c759]/15 text-[#34c759]">
                   {remote.type}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12px] font-mono text-white truncate">{remote.url}</div>
+                  <div className="text-[12px] font-mono text-[var(--color-text)] truncate">{remote.url}</div>
                 </div>
                 {selectedRemote === remote && (
                   <svg className="w-4 h-4 text-[#34c759]" fill="currentColor" viewBox="0 0 20 20">
@@ -394,12 +394,12 @@ export default function OfficialConfigForm({
       {installType === 'remote' && remotes.length === 1 && selectedRemote && (
         <div className="p-3 rounded-md bg-[#34c759]/10 border border-[#34c759]/30">
           <div className="flex items-center gap-2 mb-1">
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#34c759]/15 text-[#34c759]">
+            <span className="px-1.5 py-0.5 rounded text-[12px] font-medium bg-[#34c759]/15 text-[#34c759]">
               {selectedRemote.type}
             </span>
-            <span className="text-[10px] text-[#34c759]">{t('detail.remoteServer')}</span>
+            <span className="text-[12px] text-[#34c759]">{t('detail.remoteServer')}</span>
           </div>
-          <div className="text-[12px] font-mono text-white break-all">{selectedRemote.url}</div>
+          <div className="text-[12px] font-mono text-[var(--color-text)] break-all">{selectedRemote.url}</div>
         </div>
       )}
 
@@ -409,14 +409,14 @@ export default function OfficialConfigForm({
           {/* 无配置项提示 */}
           {!hasPackageConfig && (
             <div className="text-center py-4">
-              <p className="text-[13px] text-[#98989d]">{t('detail.noConfigRequired')}</p>
+              <p className="text-[13px] text-[var(--color-muted2)]">{t('detail.noConfigRequired')}</p>
             </div>
           )}
 
           {/* 环境变量 */}
           {envVars.length > 0 && (
             <div>
-              <h3 className="text-[12px] font-medium text-white mb-3">{t('detail.envVars')}</h3>
+              <h3 className="text-[12px] font-medium text-[var(--color-text)] mb-3">{t('detail.envVars')}</h3>
               <div className="space-y-3">
                 {envVars.map((env) => {
                   const hasError = !!errors[`env_${env.name}`];
@@ -425,21 +425,21 @@ export default function OfficialConfigForm({
                   return (
                     <div key={env.name}>
                       <label className="block mb-1">
-                        <span className="text-[12px] font-medium text-white">
+                        <span className="text-[12px] font-medium text-[var(--color-text)]">
                           {env.name}
                         </span>
                         {env.isRequired ? (
-                          <span className="ml-1 text-[10px] text-[#ff3b30]">*</span>
+                          <span className="ml-1 text-[12px] text-[#ff3b30]">*</span>
                         ) : (
-                          <span className="ml-1 text-[10px] text-[#636366]">({t('detail.optional')})</span>
+                          <span className="ml-1 text-[12px] text-[var(--color-muted)]">({t('detail.optional')})</span>
                         )}
                         {isSecret && (
-                          <span className="ml-1 text-[10px] text-[#ff9f0a]">🔒</span>
+                          <span className="ml-1 text-[12px] text-[#ff9f0a]">🔒</span>
                         )}
                       </label>
                       
                       {env.description && (
-                        <p className="text-[11px] text-[#636366] mb-1.5">{env.description}</p>
+                        <p className="text-[12px] text-[var(--color-muted)] mb-1.5">{env.description}</p>
                       )}
 
                       {env.choices && env.choices.length > 0 ? (
@@ -447,11 +447,11 @@ export default function OfficialConfigForm({
                           value={envValues[env.name] || ''}
                           onChange={(e) => handleEnvChange(env.name, e.target.value)}
                           className={`
-                            w-full px-3 py-2 rounded-md bg-[#1c1c1e] border text-[13px] text-white
+                            w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border text-[13px] text-[var(--color-text)]
                             transition-colors
                             ${hasError 
                               ? 'border-[#ff3b30]' 
-                              : 'border-[#3a3a3c] focus:border-[#0a84ff]'
+                              : 'border-[var(--color-border)] focus:border-[var(--color-accent)]'
                             }
                           `}
                         >
@@ -467,18 +467,18 @@ export default function OfficialConfigForm({
                           onChange={(e) => handleEnvChange(env.name, e.target.value)}
                           placeholder={env.default || `Enter ${env.name}...`}
                           className={`
-                            w-full px-3 py-2 rounded-md bg-[#1c1c1e] border text-[13px] text-white
-                            placeholder:text-[#636366] transition-colors
+                            w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border text-[13px] text-[var(--color-text)]
+                            placeholder:text-[var(--color-muted)] transition-colors
                             ${hasError 
                               ? 'border-[#ff3b30]' 
-                              : 'border-[#3a3a3c] focus:border-[#0a84ff]'
+                              : 'border-[var(--color-border)] focus:border-[var(--color-accent)]'
                             }
                           `}
                         />
                       )}
 
                       {hasError && (
-                        <p className="mt-1 text-[11px] text-[#ff3b30]">{errors[`env_${env.name}`]}</p>
+                        <p className="mt-1 text-[12px] text-[#ff3b30]">{errors[`env_${env.name}`]}</p>
                       )}
                     </div>
                   );
@@ -490,7 +490,7 @@ export default function OfficialConfigForm({
           {/* 参数 */}
           {pkgArgs.length > 0 && (
             <div>
-              <h3 className="text-[12px] font-medium text-white mb-3">{t('detail.args')}</h3>
+              <h3 className="text-[12px] font-medium text-[var(--color-text)] mb-3">{t('detail.args')}</h3>
               <div className="space-y-3">
                 {pkgArgs.map((arg) => {
                   const hasError = !!errors[`arg_${arg.name}`];
@@ -498,21 +498,21 @@ export default function OfficialConfigForm({
                   return (
                     <div key={arg.name}>
                       <label className="block mb-1">
-                        <span className="text-[12px] font-medium text-white font-mono">
+                        <span className="text-[12px] font-medium text-[var(--color-text)] font-mono">
                           {arg.name}
                         </span>
                         {arg.isRequired ? (
-                          <span className="ml-1 text-[10px] text-[#ff3b30]">*</span>
+                          <span className="ml-1 text-[12px] text-[#ff3b30]">*</span>
                         ) : (
-                          <span className="ml-1 text-[10px] text-[#636366]">({t('detail.optional')})</span>
+                          <span className="ml-1 text-[12px] text-[var(--color-muted)]">({t('detail.optional')})</span>
                         )}
-                        <span className="ml-2 text-[10px] text-[#636366]">
+                        <span className="ml-2 text-[12px] text-[var(--color-muted)]">
                           ({arg.type})
                         </span>
                       </label>
                       
                       {arg.description && (
-                        <p className="text-[11px] text-[#636366] mb-1.5">{arg.description}</p>
+                        <p className="text-[12px] text-[var(--color-muted)] mb-1.5">{arg.description}</p>
                       )}
 
                       <input
@@ -521,17 +521,17 @@ export default function OfficialConfigForm({
                         onChange={(e) => handleArgChange(arg.name, e.target.value)}
                         placeholder={arg.default || `Enter value...`}
                         className={`
-                          w-full px-3 py-2 rounded-md bg-[#1c1c1e] border text-[13px] text-white font-mono
-                          placeholder:text-[#636366] transition-colors
+                          w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border text-[13px] text-[var(--color-text)] font-mono
+                          placeholder:text-[var(--color-muted)] transition-colors
                           ${hasError 
                             ? 'border-[#ff3b30]' 
-                            : 'border-[#3a3a3c] focus:border-[#0a84ff]'
+                            : 'border-[var(--color-border)] focus:border-[var(--color-accent)]'
                           }
                         `}
                       />
 
                       {hasError && (
-                        <p className="mt-1 text-[11px] text-[#ff3b30]">{errors[`arg_${arg.name}`]}</p>
+                        <p className="mt-1 text-[12px] text-[#ff3b30]">{errors[`arg_${arg.name}`]}</p>
                       )}
                     </div>
                   );
@@ -548,14 +548,14 @@ export default function OfficialConfigForm({
           {/* 无配置项提示 */}
           {!hasRemoteConfig && (
             <div className="text-center py-4">
-              <p className="text-[13px] text-[#98989d]">{t('detail.noConfigRequired')}</p>
+              <p className="text-[13px] text-[var(--color-muted2)]">{t('detail.noConfigRequired')}</p>
             </div>
           )}
 
           {/* Headers */}
           {headers.length > 0 && (
             <div>
-              <h3 className="text-[12px] font-medium text-white mb-3">{t('detail.headers')}</h3>
+              <h3 className="text-[12px] font-medium text-[var(--color-text)] mb-3">{t('detail.headers')}</h3>
               <div className="space-y-3">
                 {headers.map((header) => {
                   const hasError = !!errors[`header_${header.name}`];
@@ -564,21 +564,21 @@ export default function OfficialConfigForm({
                   return (
                     <div key={header.name}>
                       <label className="block mb-1">
-                        <span className="text-[12px] font-medium text-white">
+                        <span className="text-[12px] font-medium text-[var(--color-text)]">
                           {header.name}
                         </span>
                         {header.isRequired ? (
-                          <span className="ml-1 text-[10px] text-[#ff3b30]">*</span>
+                          <span className="ml-1 text-[12px] text-[#ff3b30]">*</span>
                         ) : (
-                          <span className="ml-1 text-[10px] text-[#636366]">({t('detail.optional')})</span>
+                          <span className="ml-1 text-[12px] text-[var(--color-muted)]">({t('detail.optional')})</span>
                         )}
                         {isSecret && (
-                          <span className="ml-1 text-[10px] text-[#ff9f0a]">🔒</span>
+                          <span className="ml-1 text-[12px] text-[#ff9f0a]">🔒</span>
                         )}
                       </label>
                       
                       {header.description && (
-                        <p className="text-[11px] text-[#636366] mb-1.5">{header.description}</p>
+                        <p className="text-[12px] text-[var(--color-muted)] mb-1.5">{header.description}</p>
                       )}
 
                       <input
@@ -587,17 +587,17 @@ export default function OfficialConfigForm({
                         onChange={(e) => handleHeaderChange(header.name, e.target.value)}
                         placeholder={header.default || `Enter ${header.name}...`}
                         className={`
-                          w-full px-3 py-2 rounded-md bg-[#1c1c1e] border text-[13px] text-white
-                          placeholder:text-[#636366] transition-colors
+                          w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border text-[13px] text-[var(--color-text)]
+                          placeholder:text-[var(--color-muted)] transition-colors
                           ${hasError 
                             ? 'border-[#ff3b30]' 
-                            : 'border-[#3a3a3c] focus:border-[#0a84ff]'
+                            : 'border-[var(--color-border)] focus:border-[var(--color-accent)]'
                           }
                         `}
                       />
 
                       {hasError && (
-                        <p className="mt-1 text-[11px] text-[#ff3b30]">{errors[`header_${header.name}`]}</p>
+                        <p className="mt-1 text-[12px] text-[#ff3b30]">{errors[`header_${header.name}`]}</p>
                       )}
                     </div>
                   );
@@ -609,7 +609,7 @@ export default function OfficialConfigForm({
       )}
 
       {/* 按钮 */}
-      <div className="flex justify-end gap-2 pt-3 border-t border-[#3a3a3c]">
+      <div className="flex justify-end gap-2 pt-3 border-t border-[var(--color-border)]">
         <button
           type="button"
           onClick={onCancel}

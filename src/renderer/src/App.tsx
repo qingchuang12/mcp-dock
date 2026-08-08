@@ -8,8 +8,12 @@ import Library from './pages/Library';
 import Inspector from './pages/Inspector';
 import History from './pages/History';
 import Settings from './pages/Settings';
+import { useApplyTheme } from './lib/useTheme';
 
 function App() {
+  // 根据主题（浅/暗/自动）在 <html> 切换 dark 类，自动模式随系统配色变化
+  useApplyTheme();
+
   return (
     <>
       <Layout>

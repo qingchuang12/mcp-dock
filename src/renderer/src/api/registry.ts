@@ -364,6 +364,44 @@ async function fetchSmitheryServers(signal?: AbortSignal): Promise<ServerListIte
   } as ServerListItem));
 }
 
+/**
+ * Smithery 单页查询（服务端分页），供商店按需按页拉取，避免进入即全量加载。
+ * 返回当前页条目与上游真实总数（pagination.totalCount / totalPages）。
+ * 关键词可选透传（q），由服务端过滤；若上游不识别则该参数被忽略，前端再做一次客户端兜底过滤。
+ */
+export interface SmitheryPageResult {
+  items: ServerListItem[];
+  total: number;
+  totalPages: number;
+}
+
+export async function fetchSmitheryServersPaged(
+  page: number,
+  pageSize: number,
+  query = '',
+  signal?: AbortSignal,
+): Promise<SmitheryPageResult> {
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const safeSize = Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : 20;
+  const qs = [`page=${safePage}`, `pageSize=${safeSize}`];
+  if (query.trim()) qs.push(`q=${encodeURIComponent(query.trim())}`);
+  const res = await getJson<SmitheryResponse>(`${SMITHERY_API}?${qs.join('&')}`, signal);
+  const items = (res.servers || []).map(s => ({
+    id: `smithery-${s.qualifiedName}`,
+    displayName: s.displayName || s.qualifiedName,
+    description: s.description || '',
+    iconUrl: s.iconUrl,
+    source: 'smithery',
+    repository: s.homepage || `https://smithery.ai/server/${s.qualifiedName}`,
+    homepage: s.homepage,
+    downloads: s.useCount ?? 0,
+    verified: s.verified,
+  } as ServerListItem));
+  const total = res.pagination?.totalCount ?? items.length;
+  const totalPages = res.pagination?.totalPages ?? Math.ceil(items.length / safeSize);
+  return {items, total, totalPages};
+}
+
 // ---------------------------------------------------------------------------
 // Skills (GitHub 索引：anthropics/skills 的 skills/ 目录)
 // ---------------------------------------------------------------------------
@@ -430,7 +468,11 @@ async function fetchGithubSkills(signal?: AbortSignal): Promise<SkillListItem[]>
 // ---------------------------------------------------------------------------
 // 公开 API（可被自建后端 VITE_REGISTRY_API_URL 覆盖）
 // ---------------------------------------------------------------------------
-export async function fetchServerList(source: DataSource, signal?: AbortSignal): Promise<ServerListItem[]> {
+export async function fetchServerList(
+  source: DataSource,
+  signal?: AbortSignal,
+  noCache = false,
+): Promise<ServerListItem[]> {
   const custom = import.meta.env.VITE_REGISTRY_API_URL as string | undefined;
   if (custom) {
     // 自建后端模式：直接代理
@@ -440,36 +482,43 @@ export async function fetchServerList(source: DataSource, signal?: AbortSignal):
   const diskKey = source === 'official' ? 'official-index' : 'smithery-index';
   const api = getElectronAPI();
 
-  // SWR：优先返回落盘缓存，首屏秒开；后台静默刷新。
-  const cachedEntry = api ? await api.cache.get<ServerListItem[]>(diskKey) : null;
-  if (cachedEntry?.data) {
-    const cached = cachedEntry.data;
-    // 后台 revalidate（不阻塞首屏）
-    revalidateServerList(source, diskKey, signal).catch(() => {});
-    return cached;
+  // SWR：优先返回落盘缓存，首屏秒开；后台静默刷新（noCache 时跳过缓存，直走网络）。
+  if (!noCache) {
+    const cachedEntry = api ? await api.cache.get<ServerListItem[]>(diskKey) : null;
+    if (cachedEntry?.data) {
+      const cached = cachedEntry.data;
+      // 后台 revalidate（不阻塞首屏）
+      revalidateServerList(source, diskKey, signal).catch(() => {});
+      return cached;
+    }
   }
 
-  // 无缓存：走网络（已带 12s 超时）
-  return revalidateServerList(source, diskKey, signal);
+  // 无缓存（或 noCache 强制走网络）：走网络（已带 12s 超时）
+  return revalidateServerList(source, diskKey, signal, noCache);
 }
 
 async function revalidateServerList(
   source: DataSource,
   diskKey: string,
   signal?: AbortSignal,
+  noCache = false,
 ): Promise<ServerListItem[]> {
   try {
     const data = source === 'official'
       ? await fetchOfficialServers(signal)
       : await fetchSmitheryServers(signal);
     const api = getElectronAPI();
-    if (api) await api.cache.set(diskKey, data);
-    setCache(`servers:${source}`, data);
+    // noCache 模式下不回写磁盘/内存缓存，保证商店数据始终最新
+    if (api && !noCache) await api.cache.set(diskKey, data);
+    if (!noCache) setCache(`servers:${source}`, data);
     return data;
   } catch (err) {
-    // 网络失败时降级到内存缓存，否则继续抛出（让 React Query 走 error 态）
-    const mem = getCached<ServerListItem[]>(`servers:${source}`);
-    if (mem) return mem;
+    // 网络失败时降级到内存缓存，否则继续抛出（让 React Query 走 error 态）。
+    // noCache 模式下不回退任何缓存（哪怕来自其它页面），保证商店数据始终最新。
+    if (!noCache) {
+      const mem = getCached<ServerListItem[]>(`servers:${source}`);
+      if (mem) return mem;
+    }
     throw err;
   }
 }
@@ -686,7 +735,7 @@ export async function fetchReadmeFromGitHub(repository: {
   return null;
 }
 
-export async function fetchSkillsList(signal?: AbortSignal): Promise<SkillListItem[]> {
+export async function fetchSkillsList(signal?: AbortSignal, noCache = false): Promise<SkillListItem[]> {
   const custom = import.meta.env.VITE_REGISTRY_API_URL as string | undefined;
   if (custom) {
     return getJson<SkillListItem[]>(`${custom}/skills`, signal);
@@ -695,30 +744,38 @@ export async function fetchSkillsList(signal?: AbortSignal): Promise<SkillListIt
   const diskKey = 'skills-index';
   const api = getElectronAPI();
 
-  // SWR：优先返回落盘缓存，首屏秒开；后台静默刷新。
-  const cachedEntry = api ? await api.cache.get<SkillListItem[]>(diskKey) : null;
-  if (cachedEntry?.data) {
-    const cached = cachedEntry.data;
-    revalidateSkillsList(diskKey, signal).catch(() => {});
-    return cached;
+  // SWR：优先返回落盘缓存，首屏秒开；后台静默刷新（noCache 时跳过缓存，直走网络）。
+  if (!noCache) {
+    const cachedEntry = api ? await api.cache.get<SkillListItem[]>(diskKey) : null;
+    if (cachedEntry?.data) {
+      const cached = cachedEntry.data;
+      revalidateSkillsList(diskKey, signal).catch(() => {});
+      return cached;
+    }
   }
 
-  return revalidateSkillsList(diskKey, signal);
+  return revalidateSkillsList(diskKey, signal, noCache);
 }
 
 async function revalidateSkillsList(
   diskKey: string,
   signal?: AbortSignal,
+  noCache = false,
 ): Promise<SkillListItem[]> {
   try {
     const data = await fetchGithubSkills(signal);
     const api = getElectronAPI();
-    if (api) await api.cache.set(diskKey, data);
-    setCache('skills:github', data);
+    // noCache 模式下不回写磁盘/内存缓存，保证商店数据始终最新
+    if (api && !noCache) await api.cache.set(diskKey, data);
+    if (!noCache) setCache('skills:github', data);
     return data;
   } catch (err) {
-    const mem = getCached<SkillListItem[]>('skills:github');
-    if (mem) return mem;
+    // 网络失败时降级到内存缓存，否则继续抛出（让 React Query 走 error 态）。
+    // noCache 模式下不回退任何缓存（哪怕来自其它页面），保证商店数据始终最新。
+    if (!noCache) {
+      const mem = getCached<SkillListItem[]>('skills:github');
+      if (mem) return mem;
+    }
     throw err;
   }
 }

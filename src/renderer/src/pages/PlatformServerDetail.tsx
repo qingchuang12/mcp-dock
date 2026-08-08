@@ -66,7 +66,7 @@ function PlatformIcon({name, iconUrl}: { name: string; iconUrl?: string }) {
     const colorIndex = name.charCodeAt(0) % colors.length;
     return (
         <div
-            className={`w-12 h-12 rounded-xl ${colors[colorIndex]} flex items-center justify-center text-white font-bold text-lg`}>
+            className={`w-12 h-12 rounded-xl ${colors[colorIndex]} flex items-center justify-center text-[var(--color-text)] font-bold text-lg`}>
             {initial}
         </div>
     );
@@ -236,15 +236,15 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
 
     if (isLoading) {
         return (
-            <div className="flex items-center justify-center h-full bg-[#1c1c1e]">
-                <div className="w-8 h-8 border-2 border-[#3a3a3c] border-t-[#0a84ff] rounded-full animate-spin"/>
+            <div className="flex items-center justify-center h-full bg-[var(--color-bg)]">
+                <div className="w-8 h-8 border-2 border-[var(--color-border)] border-t-[#0a84ff] rounded-full animate-spin"/>
             </div>
         );
     }
 
     if (error || !detail) {
         return (
-            <div className="flex flex-col items-center justify-center h-full bg-[#1c1c1e]">
+            <div className="flex flex-col items-center justify-center h-full bg-[var(--color-bg)]">
                 <div className="w-12 h-12 rounded-full bg-[#ff3b30]/10 flex items-center justify-center mb-3">
                     <svg className="w-6 h-6 text-[#ff3b30]" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                          strokeWidth={1.5}>
@@ -252,8 +252,8 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                               d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
                     </svg>
                 </div>
-                <p className="text-[13px] text-white mb-1">{t('detail.loadFailed')}</p>
-                <p className="text-[12px] text-[#636366] mb-4 max-w-sm text-center">{(error as Error)?.message || t('detail.loadFailedHint')}</p>
+                <p className="text-[13px] text-[var(--color-text)] mb-1">{t('detail.loadFailed')}</p>
+                <p className="text-[12px] text-[var(--color-muted)] mb-4 max-w-sm text-center">{(error as Error)?.message || t('detail.loadFailedHint')}</p>
                 <button onClick={() => navigate('/store')} className="btn btn-secondary">
                     {t('detail.back')}
                 </button>
@@ -266,19 +266,19 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
     const canInstall = !!detail.install;
 
     return (
-        <div className="flex flex-col h-full bg-[#1c1c1e]">
+        <div className="flex flex-col h-full bg-[var(--color-bg)]">
             {/* 头部导航（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
             <div
-                className={`flex items-center gap-2 px-4 h-[32px] drag-region relative border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl text-[12px] text-[#636366] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
-                <button onClick={() => navigate(-1)} className="no-drag hover:text-white transition-colors">
+                className={`flex items-center gap-2 px-4 h-[32px] drag-region relative border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-xl text-[12px] text-[var(--color-muted)] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
+                <button onClick={() => navigate(-1)} className="no-drag hover:text-[var(--color-text)] transition-colors">
                     <BackIcon className="w-4 h-4"/>
                 </button>
-                <span className="no-drag hover:text-white cursor-pointer" onClick={() => navigate('/store')}>Store</span>
+                <span className="no-drag hover:text-[var(--color-text)] cursor-pointer" onClick={() => navigate('/store')}>Store</span>
                 <span>/</span>
-                <span className="no-drag hover:text-white cursor-pointer"
+                <span className="no-drag hover:text-[var(--color-text)] cursor-pointer"
                       onClick={() => navigate('/store')}>{t('store.mcpPlatform') || '平台源'}</span>
                 <span>/</span>
-                <span className="text-white">{detail.displayName}</span>
+                <span className="text-[var(--color-text)]">{detail.displayName}</span>
                 <WindowControls />
             </div>
 
@@ -295,31 +295,31 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                        <h1 className="text-2xl font-bold text-white">{detail.displayName}</h1>
+                                        <h1 className="text-2xl font-bold text-[var(--color-text)]">{detail.displayName}</h1>
                                         {detail.isVerified && (
                                             <span
-                                                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#0a84ff]/10 text-[#0a84ff] border border-[#0a84ff]/20">
+                                                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[12px] font-medium bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20">
                         <VerifiedIcon className="w-3 h-3"/>
                                                 {t('detail.verified') || 'Verified'}
                       </span>
                                         )}
                                         {detail.isHosted && (
                                             <span
-                                                className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#34c759]/15 text-[#34c759] border border-[#34c759]/20">
+                                                className="px-1.5 py-0.5 rounded text-[12px] font-medium bg-[#34c759]/15 text-[#34c759] border border-[#34c759]/20">
                         {t('detail.hosted') || 'Hosted'}
                       </span>
                                         )}
                                     </div>
-                                    <p className="text-[12px] text-[#636366] font-mono break-all">{detail.id}</p>
+                                    <p className="text-[12px] text-[var(--color-muted)] font-mono break-all">{detail.id}</p>
                                 </div>
                             </div>
 
-                            <p className="text-[14px] text-[#98989d] leading-relaxed mb-4">
+                            <p className="text-[14px] text-[var(--color-muted2)] leading-relaxed mb-4">
                                 {detail.description || t('detail.noDescription')}
                             </p>
 
                             {/* 统计信息 */}
-                            <div className="flex items-center gap-4 text-[13px] text-[#98989d] flex-wrap">
+                            <div className="flex items-center gap-4 text-[13px] text-[var(--color-muted2)] flex-wrap">
                                 {typeof detail.stars === 'number' && (
                                     <span className="flex items-center gap-1">
                     <StarIcon className="w-4 h-4 text-yellow-400"/>
@@ -337,7 +337,7 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                                     {detail.categories.map(cat => (
                                         <span
                                             key={cat}
-                                            className="px-2 py-0.5 rounded-full text-[10px] bg-[#0a84ff]/10 text-[#0a84ff] border border-[#0a84ff]/20"
+                                            className="px-2 py-0.5 rounded-full text-[12px] bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20"
                                         >
                       {t(`mcpCategory.${cat}`) || cat}
                     </span>
@@ -353,7 +353,7 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                                     <span className="text-xl">{runtime === 'node' ? '⬢' : '🐍'}</span>
                                     <div className="flex-1">
                                         <h3 className="text-[13px] font-semibold text-[#ff9f0a] mb-1">{t('detail.runtimeRequired')}</h3>
-                                        <p className="text-[12px] text-[#98989d] mb-3">
+                                        <p className="text-[12px] text-[var(--color-muted2)] mb-3">
                                             {t('detail.runtimeRequiredDesc', {
                                                 runtime: runtime === 'node' ? 'Node.js' : 'Python',
                                             })}
@@ -364,11 +364,11 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                         )}
 
                         {/* README */}
-                        <h2 className="text-[15px] font-semibold text-white mb-4">README.md</h2>
+                        <h2 className="text-[15px] font-semibold text-[var(--color-text)] mb-4">README.md</h2>
                         <div className="card p-4 mb-6 overflow-x-auto">
                             {detail.readme ? (
                                 <pre
-                                    className="text-[12px] text-[#e6edf3] font-mono leading-relaxed whitespace-pre-wrap">
+                                    className="text-[12px] text-[var(--color-text)] font-mono leading-relaxed whitespace-pre-wrap">
                   <code>{detail.readme}</code>
                 </pre>
                             ) : (
@@ -379,7 +379,7 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                 </div>
 
                 {/* 右侧边栏 */}
-                <div className="w-[280px] flex-shrink-0 border-l border-[#3a3a3c] overflow-y-auto p-4">
+                <div className="w-[280px] flex-shrink-0 border-l border-[var(--color-border)] overflow-y-auto p-4">
                     {/* 安装按钮 */}
                     <div className="mb-4 space-y-2">
                         {canInstall && runtimeAvailable && (
@@ -421,14 +421,14 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
 
                     {/* 已安装的客户端 */}
                     {installedClients.length > 0 && (
-                        <div className="mb-4 p-3 bg-[#3a3a3c]/30 rounded-lg">
-                            <p className="text-[11px] text-[#636366] mb-2">{t('detail.installedIn')}</p>
+                        <div className="mb-4 p-3 bg-[var(--color-surface-hover)]/30 rounded-lg">
+                            <p className="text-[12px] text-[var(--color-muted)] mb-2">{t('detail.installedIn')}</p>
                             <div className="flex flex-wrap gap-1">
                                 {installedClients.map(clientId => {
                                     const client = clients.find(c => c.id === clientId);
                                     return (
                                         <span key={clientId}
-                                              className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#3a3a3c] text-[10px] text-[#98989d]">
+                                              className="flex items-center gap-1 px-2 py-0.5 rounded bg-[var(--color-surface-hover)] text-[12px] text-[var(--color-muted2)]">
                       <ClientIcon clientId={clientId} size={12}/>
                                             {client?.name || clientId}
                     </span>
@@ -440,7 +440,7 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
 
                     {/* Source 卡片 */}
                     <div className="card p-4 space-y-3 mb-4">
-                        <h3 className="text-[13px] font-semibold text-white">Source</h3>
+                        <h3 className="text-[13px] font-semibold text-[var(--color-text)]">Source</h3>
                         {detail.sourceUrl && (
                             <a
                                 href="#"
@@ -448,7 +448,7 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                                     e.preventDefault();
                                     api.system.openExternal(detail.sourceUrl!);
                                 }}
-                                className="flex items-center justify-between text-[12px] text-[#98989d] hover:text-[#0a84ff] transition-colors"
+                                className="flex items-center justify-between text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-accent)] transition-colors"
                             >
                 <span className="flex items-center gap-2">
                   <GitHubIcon className="w-4 h-4"/>
@@ -463,7 +463,7 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                                 e.preventDefault();
                                 api.system.openExternal(`https://modelscope.cn/mcp?name=${encodeURIComponent(serverId)}`);
                             }}
-                            className="flex items-center justify-between text-[12px] text-[#98989d] hover:text-[#0a84ff] transition-colors"
+                            className="flex items-center justify-between text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-accent)] transition-colors"
                         >
               <span className="flex items-center gap-2">
                 <ExternalLinkIcon className="w-4 h-4"/>
@@ -475,33 +475,33 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
 
                     {/* Details 卡片 */}
                     <div className="card p-4">
-                        <h3 className="text-[13px] font-semibold text-white mb-3">Details</h3>
+                        <h3 className="text-[13px] font-semibold text-[var(--color-text)] mb-3">Details</h3>
                         <div className="space-y-2 text-[12px]">
                             <div className="flex justify-between">
-                                <span className="text-[#636366]">Platform</span>
-                                <span className="text-white capitalize">{detail.source}</span>
+                                <span className="text-[var(--color-muted)]">Platform</span>
+                                <span className="text-[var(--color-text)] capitalize">{detail.source}</span>
                             </div>
                             {detail.install && (
                                 <div className="flex justify-between">
-                                    <span className="text-[#636366]">{t('detail.runtime') || 'Runtime'}</span>
+                                    <span className="text-[var(--color-muted)]">{t('detail.runtime') || 'Runtime'}</span>
                                     <div className="flex items-center gap-1">
                                         <span
                                             className={`w-2 h-2 rounded-full ${runtimeAvailable || runtime === 'docker' ? 'bg-[#34c759]' : 'bg-[#ff9f0a]'}`}/>
-                                        <span className="text-white capitalize">{detail.install.command}</span>
+                                        <span className="text-[var(--color-text)] capitalize">{detail.install.command}</span>
                                     </div>
                                 </div>
                             )}
                             {detail.publisher && (
                                 <div className="flex justify-between">
-                                    <span className="text-[#636366]">{t('detail.publisher') || 'Publisher'}</span>
-                                    <span className="text-white">{detail.publisher}</span>
+                                    <span className="text-[var(--color-muted)]">{t('detail.publisher') || 'Publisher'}</span>
+                                    <span className="text-[var(--color-text)]">{detail.publisher}</span>
                                 </div>
                             )}
                             {detail.tags.length > 0 && (
                                 <div className="flex justify-between">
-                                    <span className="text-[#636366]">Tags</span>
+                                    <span className="text-[var(--color-muted)]">Tags</span>
                                     <span
-                                        className="text-white text-right max-w-[160px] truncate">{detail.tags.join(', ')}</span>
+                                        className="text-[var(--color-text)] text-right max-w-[160px] truncate">{detail.tags.join(', ')}</span>
                                 </div>
                             )}
                         </div>
@@ -527,11 +527,11 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                         </div>
                     )}
 
-                    <div className="flex items-center gap-3 p-3 bg-[#3a3a3c]/30 rounded-lg">
+                    <div className="flex items-center gap-3 p-3 bg-[var(--color-surface-hover)]/30 rounded-lg">
                         <PlatformIcon name={detail.displayName} iconUrl={iconError ? undefined : detail.iconUrl}/>
                         <div>
-                            <h3 className="text-[14px] font-medium text-white">{detail.displayName}</h3>
-                            <p className="text-[12px] text-[#636366] font-mono break-all">{detail.id}</p>
+                            <h3 className="text-[14px] font-medium text-[var(--color-text)]">{detail.displayName}</h3>
+                            <p className="text-[12px] text-[var(--color-muted)] font-mono break-all">{detail.id}</p>
                         </div>
                     </div>
 
@@ -539,18 +539,18 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                     {hasEnvForm && (
                         <div>
                             <label
-                                className="block text-[12px] font-medium text-white mb-2">{t('detail.envVars') || 'Environment Variables'}</label>
+                                className="block text-[12px] font-medium text-[var(--color-text)] mb-2">{t('detail.envVars') || 'Environment Variables'}</label>
                             <div className="space-y-2">
                                 {Object.entries(envProps).map(([key, schema]) => {
                                     const isRequired = requiredEnv.includes(key);
                                     return (
                                         <div key={key}>
                                             <div className="flex items-center gap-2 mb-1">
-                                                <span className="text-[12px] font-mono text-white">{key}</span>
-                                                {isRequired && <span className="text-[#ff3b30] text-[10px]">*</span>}
+                                                <span className="text-[12px] font-mono text-[var(--color-text)]">{key}</span>
+                                                {isRequired && <span className="text-[#ff3b30] text-[12px]">*</span>}
                                                 {schema?.description && (
                                                     <span
-                                                        className="text-[10px] text-[#636366] truncate">{(schema.description as string)}</span>
+                                                        className="text-[12px] text-[var(--color-muted)] truncate">{(schema.description as string)}</span>
                                                 )}
                                             </div>
                                             <input
@@ -561,7 +561,7 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                                                     [key]: e.target.value
                                                 }))}
                                                 placeholder={isRequired ? (t('detail.required') || 'required') : ''}
-                                                className="w-full px-2.5 py-1.5 rounded-md bg-[#3a3a3c] text-[12px] text-white placeholder:text-[#636366] border-none focus:ring-1 focus:ring-[#0a84ff]"
+                                                className="w-full px-2.5 py-1.5 rounded-md bg-[var(--color-surface-hover)] text-[12px] text-[var(--color-text)] placeholder:text-[var(--color-muted)] border-none focus:ring-1 focus:ring-[#0a84ff]"
                                             />
                                         </div>
                                     );
@@ -573,7 +573,7 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                     {/* 客户端选择 */}
                     <div>
                         <label
-                            className="block text-[12px] font-medium text-white mb-2">{t('detail.selectClients')}</label>
+                            className="block text-[12px] font-medium text-[var(--color-text)] mb-2">{t('detail.selectClients')}</label>
                         <div className="grid grid-cols-2 gap-2">
                             {clients.filter(c => c.installed).map(client => {
                                 const isSelected = selectedClients.includes(client.id);
@@ -588,15 +588,15 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                       ${isAlreadyInstalled
                                             ? 'bg-[#34c759]/10 border-[#34c759]/30 text-[#34c759]'
                                             : isSelected
-                                                ? 'bg-[#0a84ff]/10 border-[#0a84ff]/30 text-[#0a84ff]'
-                                                : 'bg-[#3a3a3c] border-[#3a3a3c] text-white hover:border-[#636366]'
+                                                ? 'bg-[var(--color-accent)]/10 border-[var(--color-accent)]/30 text-[var(--color-accent)]'
+                                                : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[#636366]'
                                         }
                     `}
                                     >
                                         <ClientIcon clientId={client.id} size={20}/>
                                         <div className="flex-1 min-w-0">
                                             <div className="text-[12px] font-medium">{client.name}</div>
-                                            <div className="text-[10px] opacity-60">
+                                            <div className="text-[12px] opacity-60">
                                                 {isAlreadyInstalled ? t('detail.alreadyInstalled') : t('detail.available')}
                                             </div>
                                         </div>
@@ -606,7 +606,7 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                             })}
                         </div>
                         {clients.filter(c => c.installed).length === 0 && (
-                            <p className="text-center text-[#636366] text-[13px] py-4">
+                            <p className="text-center text-[var(--color-muted)] text-[13px] py-4">
                                 {t('detail.noClientsInstalled') || 'No installed clients support MCP'}
                             </p>
                         )}

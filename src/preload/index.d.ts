@@ -236,6 +236,9 @@ declare const api: {
         isMaximized: () => Promise<boolean>;
         onMaximizeChange: (callback: (maximized: boolean) => void) => () => void;
     };
+    theme: {
+        onSystemThemeChange: (callback: (shouldUseDarkColors: boolean) => void) => () => void;
+    };
 };
 
 export type ElectronAPI = typeof api;

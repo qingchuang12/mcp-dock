@@ -70,6 +70,10 @@ interface StoreState {
     inspectorState: InspectorState;
     setInspectorState: (state: Partial<InspectorState>) => void;
 
+    // 主题（浅色 / 暗色 / 跟随系统）
+    theme: ThemeMode;
+    setTheme: (theme: ThemeMode) => void;
+
     // 重置分页
     resetPagination: () => void;
 
@@ -77,9 +81,13 @@ interface StoreState {
     getCurrentServerList: () => ServerListItem[];
 }
 
+// 主题模式
+export type ThemeMode = 'light' | 'dark' | 'auto';
+
 // 有效的数据源值
 const VALID_DATA_SOURCES = ['official', 'smithery'] as const;
 const VALID_RESOURCE_TYPES = ['mcp', 'skills'] as const;
+const VALID_THEMES = ['light', 'dark', 'auto'] as const;
 
 export const useStore = create<StoreState>()(
     persist(
@@ -179,6 +187,10 @@ export const useStore = create<StoreState>()(
                 },
             })),
 
+            // 主题 - 默认跟随系统（auto）
+            theme: 'auto',
+            setTheme: (theme) => set({theme}),
+
             // 重置分页
             resetPagination: () => set({currentPage: 1, searchQuery: ''}),
 
@@ -191,12 +203,13 @@ export const useStore = create<StoreState>()(
         {
             name: 'mcp-dock-store',
             partialize: (state) => ({
-                // 持久化数据源选择、资源类型和页面大小
+                // 持久化数据源选择、资源类型、页面大小和主题
                 dataSource: state.dataSource,
                 resourceType: state.resourceType,
                 pageSize: state.pageSize,
                 mcpConnId: state.mcpConnId,
                 selectedSkillSourceId: state.selectedSkillSourceId,
+                theme: state.theme,
             }),
             // 合并恢复的状态时验证值的有效性
             merge: (persistedState, currentState) => {
@@ -215,6 +228,10 @@ export const useStore = create<StoreState>()(
                     pageSize: persisted?.pageSize && typeof persisted.pageSize === 'number' && persisted.pageSize > 0
                         ? persisted.pageSize
                         : 20,
+                    // 验证 theme
+                    theme: persisted?.theme && VALID_THEMES.includes(persisted.theme as any)
+                        ? persisted.theme
+                        : 'auto',
                 };
             },
         }

@@ -110,7 +110,7 @@ function ServerIcon({ server }: { server: ServerListItem }) {
   
   // 最后使用首字母图标
   return (
-    <div className={`w-9 h-9 rounded-xl ${colors[colorIndex]} flex items-center justify-center text-white font-semibold text-sm`}>
+    <div className={`w-9 h-9 rounded-xl ${colors[colorIndex]} flex items-center justify-center text-[var(--color-text)] font-semibold text-sm`}>
       {initial}
     </div>
   );
@@ -137,7 +137,7 @@ export default function ServerCard({ server, dataSource, isInstalled, platformCo
   return (
     <div
       onClick={handleClick}
-      className="card p-3 cursor-pointer hover:bg-[#3a3a3c]/30 transition-colors flex flex-col h-[115px]"
+      className="card p-3 cursor-pointer hover:bg-[var(--color-surface-hover)]/30 transition-colors flex flex-col h-[115px]"
     >
       {/* 顶部内容区域 */}
       <div className="flex items-start gap-2.5 flex-1 min-h-0">
@@ -149,7 +149,7 @@ export default function ServerCard({ server, dataSource, isInstalled, platformCo
         {/* 内容 */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <h3 className="text-[13px] font-medium text-white truncate">
+            <h3 className="text-[13px] font-medium text-[var(--color-text)] truncate">
               {server.displayName}
             </h3>
             {isInstalled && (
@@ -158,24 +158,24 @@ export default function ServerCard({ server, dataSource, isInstalled, platformCo
               </span>
             )}
           </div>
-          <p className="text-[11px] text-[#98989d] line-clamp-2 mt-0.5 leading-relaxed">
+          <p className="text-[12px] text-[var(--color-muted2)] line-clamp-2 mt-0.5 leading-relaxed">
             {server.description || 'No description'}
           </p>
         </div>
       </div>
 
       {/* 底部信息 - 紧凑设计 */}
-      <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-[#3a3a3c]/50">
+      <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-[var(--color-border)]/50">
         {isOfficialListItem(server) ? (
           // Official 数据源
           <>
-            <div className="flex items-center gap-2 text-[10px] text-[#636366]">
+            <div className="flex items-center gap-2 text-[12px] text-[var(--color-muted)]">
               <span className="font-mono">v{(server as any).version}</span>
               {(server as any).author && (
                 <span>@{(server as any).author}</span>
               )}
             </div>
-            <div className="flex items-center gap-2 text-[10px] text-[#636366]">
+            <div className="flex items-center gap-2 text-[12px] text-[var(--color-muted)]">
               {/* Star 数 */}
               {(server as any).stars > 0 && (
                 <span className="flex items-center gap-0.5">
@@ -198,13 +198,13 @@ export default function ServerCard({ server, dataSource, isInstalled, platformCo
           // Smithery 数据源
           <>
             {typeof server.downloads === 'number' && server.downloads > 0 && (
-              <span className="text-[10px] text-[#636366] flex items-center gap-1">
+              <span className="text-[12px] text-[var(--color-muted)] flex items-center gap-1">
                 <DownloadIcon className="w-3 h-3" />
                 {formatNumber(server.downloads)}
               </span>
             )}
             {server.verified && (
-              <VerifiedIcon className="w-3.5 h-3.5 text-[#0a84ff]" />
+              <VerifiedIcon className="w-3.5 h-3.5 text-[var(--color-accent)]" />
             )}
           </>
         ) : null}

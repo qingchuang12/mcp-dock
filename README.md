@@ -5,11 +5,11 @@
 </p>
 
 <p align="center">
-  <strong>MCP Server & Config Manager for 14 AI Clients</strong>
+  <strong>MCP Server & Config Manager for 19 AI Clients</strong>
 </p>
 
 <p align="center">
-  Manage MCP server configurations across Cursor, VS Code, Claude Code, Gemini CLI, Codex CLI, Windsurf, Zed, TRAE, Kiro, JetBrains, and more — all from one app.
+  Manage MCP server configurations across Cursor, VS Code, Claude Code, Gemini CLI, Codex CLI, Windsurf, Zed, TRAE, Kiro, JetBrains, CodeBuddy, WorkBuddy, Qoder, and more — all from one app.
 </p>
 
 <p align="center">
@@ -26,12 +26,13 @@
 ## Features
 
 - **MCP Store** - Browse and search 8500+ MCP Servers from Official Registry and Smithery
-- **Skills Store** - Discover 4400+ AI Skills for Cursor, Claude Code, Gemini CLI, Codex CLI, and Opencode
-- **One-Click Install** - Auto-configure to Cursor, VS Code, Claude Code, Gemini CLI, Codex CLI, Windsurf, Zed, TRAE, TRAE CN, TRAE Plugin (MarsCode), Kiro, Opencode, JetBrains, Antigravity, OpenClaw
+- **Skills Store** - Discover 4400+ AI Skills for Cursor, Claude Code, Gemini CLI, Codex CLI, Opencode, and more
+- **One-Click Install** - Auto-configure to Cursor, VS Code, Claude Code, Gemini CLI, Codex CLI, Windsurf, Zed, TRAE, TRAE CN, TRAE Plugin (MarsCode), Kiro, Opencode, JetBrains, Antigravity, OpenClaw, CodeBuddy, WorkBuddy, Qoder, Cloud
 - **Agent Skills Standard** - Support for `~/.agents/skills/` unified standard ([skills.sh](https://skills.sh/))
 - **MCP Inspector** - Interactive debugging tool for testing MCP Server tools
 - **Config Management** - Unified management of MCP configurations across all clients
 - **Multi-Client Sync** - Sync MCP configurations to multiple clients
+- **Cloud Sync** - Push/pull MCP and Skills configs to cloud storage for backup and cross-device sync
 - **History & Rollback** - Auto-backup configurations with one-click rollback
 - **Multi-Language** - English and Simplified Chinese
 
@@ -49,22 +50,22 @@ brew upgrade --cask mcp-dock
 
 ### macOS (Manual Download)
 
-- [Apple Silicon (M1/M2/M3)](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.3.2-arm64.dmg)
-- [Intel](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.3.2.dmg)
+- [Apple Silicon (M1/M2/M3)](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.0.0-arm64.dmg)
+- [Intel](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.0.0.dmg)
 
 > Note: The app is not signed. If you see "damaged" or "can't be opened" message, run: `xattr -cr /Applications/MCP\ Dock.app`
 
 ### Windows
 
-- [Installer](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock.Setup.1.3.2.exe)
-- [Portable](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock.1.3.2.exe)
+- [Installer](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock.Setup.1.0.0.exe)
+- [Portable](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.0.0.exe)
 
 ### Linux
 
-- [AppImage (x64)](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.3.2.AppImage)
-- [AppImage (arm64)](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.3.2-arm64.AppImage)
-- [Debian/Ubuntu (x64)](https://github.com/OldJii/mcp-dock/releases/latest/download/mcp-dock_1.3.2_amd64.deb)
-- [Debian/Ubuntu (arm64)](https://github.com/OldJii/mcp-dock/releases/latest/download/mcp-dock_1.3.2_arm64.deb)
+- [AppImage (x64)](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.0.0.AppImage)
+- [AppImage (arm64)](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.0.0-arm64.AppImage)
+- [Debian/Ubuntu (x64)](https://github.com/OldJii/mcp-dock/releases/latest/download/mcp-dock_1.0.0_amd64.deb)
+- [Debian/Ubuntu (arm64)](https://github.com/OldJii/mcp-dock/releases/latest/download/mcp-dock_1.0.0_arm64.deb)
 
 ## Supported Clients
 
@@ -87,6 +88,10 @@ brew upgrade --cask mcp-dock
 | JetBrains (IntelliJ, WebStorm, PyCharm, etc.) | Supported |
 | Antigravity | Supported |
 | OpenClaw | Supported |
+| CodeBuddy | Supported |
+| WorkBuddy | Supported |
+| Qoder | Supported |
+| Cloud (云端存储) | Supported |
 
 ### Skills Clients
 
@@ -98,6 +103,11 @@ brew upgrade --cask mcp-dock
 | Codex CLI | Supported |
 | Opencode | Supported |
 | Agent Skills (.agents) | Supported |
+| CodeBuddy | Supported |
+| WorkBuddy | Supported |
+| Qoder | Supported |
+| TRAE Plugin (MarsCode) | Supported |
+| Cloud (云端存储) | Supported |
 
 ## Data Sources
 
@@ -150,10 +160,11 @@ This repository includes the full source code of AI-Tools (Community Edition). Y
 
 ### Tech Stack
 
-- **Framework**: Electron + React 18 + TypeScript
-- **Styling**: Tailwind CSS
-- **State**: Zustand
-- **Build**: Vite + electron-builder
+- **Framework**: Electron 43 + React 18 + TypeScript 5.3
+- **Styling**: Tailwind CSS 3.4
+- **State**: Zustand 4
+- **Build**: Vite 7 + electron-builder 24
+- **Testing**: Vitest 4
 - **Protocol**: MCP JSON-RPC over stdio
 
 ### Development
@@ -183,13 +194,16 @@ src/
 │   │   └── locales/    # i18n (English + Chinese)
 │   └── assets/         # Icons and static assets
 ├── main/               # Electron main process
-│   ├── config-manager  # Multi-client config read/write (14 clients)
+│   ├── config-manager  # Multi-client config read/write (19 clients)
 │   ├── mcp-client      # MCP JSON-RPC client for Inspector
 │   ├── skills-manager  # Skills installation and management
 │   ├── history-manager # Config backup and rollback
 │   ├── env-manager     # Runtime environment detection
-│   └── cache-manager   # Local data caching
+│   ├── cache-manager   # Local data caching
+│   ├── cloud-sync-store # Cloud sync config persistence
+│   └── cloud-sync-service # Cloud push/pull for config sync
 ├── preload/            # Electron preload (secure IPC bridge)
+├── shared/             # Shared constants (cloud-sync, platform, frontmatter)
 └── __tests__/          # Unit tests
 ```
 
@@ -197,7 +211,7 @@ src/
 
 | Feature | Community | Full |
 |---------|-----------|------|
-| Manual server install to 14 clients | ✅ | ✅ |
+| Manual server install to 19 clients | ✅ | ✅ |
 | MCP Inspector | ✅ | ✅ |
 | Config history & rollback | ✅ | ✅ |
 | Multi-client sync | ✅ | ✅ |

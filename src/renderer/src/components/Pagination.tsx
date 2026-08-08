@@ -52,7 +52,7 @@ export default function Pagination({
 
   return (
     <div className="flex items-center gap-3">
-      <span className="text-[11px] text-[#636366] whitespace-nowrap">
+      <span className="text-[12px] text-[var(--color-muted)] whitespace-nowrap">
         {startIndex + 1}-{endIndex} / {totalItems}
       </span>
 
@@ -62,7 +62,7 @@ export default function Pagination({
             onClick={() => go(currentPage - 1)}
             disabled={currentPage === 1}
             aria-label="上一页"
-            className="p-1 rounded text-[#98989d] hover:text-white hover:bg-[#3a3a3c] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[#98989d] transition-colors"
+            className="p-1 rounded text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[var(--color-muted2)] transition-colors"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
@@ -71,7 +71,7 @@ export default function Pagination({
 
           {buildPageList(currentPage, totalPages).map((p, i) =>
             p === -1 ? (
-              <span key={`e-${i}`} className="text-[11px] text-[#636366] px-1">
+              <span key={`e-${i}`} className="text-[12px] text-[var(--color-muted)] px-1">
                 …
               </span>
             ) : (
@@ -79,10 +79,10 @@ export default function Pagination({
                 key={p}
                 onClick={() => go(p)}
                 className={
-                  'min-w-[24px] h-[24px] px-1.5 rounded text-[11px] transition-colors ' +
+                  'min-w-[24px] h-[24px] px-1.5 rounded text-[12px] transition-colors ' +
                   (p === currentPage
-                    ? 'bg-[#0a84ff] text-white'
-                    : 'text-[#98989d] hover:text-white hover:bg-[#3a3a3c]')
+                    ? 'bg-[var(--color-accent)] text-white'
+                    : 'text-[var(--color-muted2)] hover:text-white hover:bg-[var(--color-surface-active)]')
                 }
               >
                 {p}
@@ -94,7 +94,7 @@ export default function Pagination({
             onClick={() => go(currentPage + 1)}
             disabled={currentPage === totalPages}
             aria-label="下一页"
-            className="p-1 rounded text-[#98989d] hover:text-white hover:bg-[#3a3a3c] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[#98989d] transition-colors"
+            className="p-1 rounded text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[var(--color-muted2)] transition-colors"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />

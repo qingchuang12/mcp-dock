@@ -143,21 +143,21 @@ export default function History() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full bg-[#1c1c1e]">
-        <div className="w-8 h-8 border-2 border-[#3a3a3c] border-t-[#0a84ff] rounded-full animate-spin" />
+      <div className="flex items-center justify-center h-full bg-[var(--color-bg)]">
+        <div className="w-8 h-8 border-2 border-[var(--color-border)] border-t-[#0a84ff] rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full bg-[#1c1c1e]">
+    <div className="flex flex-col h-full bg-[var(--color-bg)]">
       {/* 头部 */}
-      <div className={`flex items-center justify-between px-4 py-2 drag-region relative border-b border-[#3a3a3c] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
+      <div className={`flex items-center justify-between px-4 py-2 drag-region relative border-b border-[var(--color-border)] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
         <div className="flex items-center gap-4">
-          <h1 className="text-[15px] font-semibold text-white">
+          <h1 className="text-[15px] font-semibold text-[var(--color-text)]">
             {t('history.title')}
           </h1>
-          <span className="text-[12px] text-[#98989d]">
+          <span className="text-[12px] text-[var(--color-muted2)]">
             {backups.length} {t('history.backups') || 'backups'}
           </span>
         </div>
@@ -174,7 +174,7 @@ export default function History() {
           )}
           <button
             onClick={() => loadBackups(true)}
-            className="p-1.5 rounded text-[#98989d] hover:text-white hover:bg-[#3a3a3c] transition-colors"
+            className="p-1.5 rounded text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
@@ -188,13 +188,13 @@ export default function History() {
       <div className="flex-1 overflow-y-auto">
         {backups.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full">
-            <div className="w-12 h-12 rounded-full bg-[#3a3a3c] flex items-center justify-center mb-3">
-              <svg className="w-6 h-6 text-[#636366]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <div className="w-12 h-12 rounded-full bg-[var(--color-surface-hover)] flex items-center justify-center mb-3">
+              <svg className="w-6 h-6 text-[var(--color-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <p className="text-[13px] text-white mb-1">{t('history.empty')}</p>
-            <p className="text-[12px] text-[#636366]">{t('history.emptyHint')}</p>
+            <p className="text-[13px] text-[var(--color-text)] mb-1">{t('history.empty')}</p>
+            <p className="text-[12px] text-[var(--color-muted)]">{t('history.emptyHint')}</p>
           </div>
         ) : (
           <div className="p-4">
@@ -204,39 +204,39 @@ export default function History() {
                   key={backup.timestamp}
                   className={`
                     flex items-center gap-3 px-4 py-3
-                    ${index !== backups.length - 1 ? 'border-b border-[#3a3a3c]' : ''}
+                    ${index !== backups.length - 1 ? 'border-b border-[var(--color-border)]' : ''}
                   `}
                 >
                   {/* 内容 */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-[13px] font-medium text-white">
+                      <span className="text-[13px] font-medium text-[var(--color-text)]">
                         {formatTime(backup.timestamp)}
                       </span>
-                      <span className="text-[11px] text-[#636366]">
+                      <span className="text-[12px] text-[var(--color-muted)]">
                         {formatRelativeTime(backup.timestamp)}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[11px] text-[#98989d]">
+                      <span className="text-[12px] text-[var(--color-muted2)]">
                         {backup.serverCount} {t('history.servers')}
                       </span>
                       {(backup.skillCount || 0) > 0 && (
                         <>
-                          <span className="text-[11px] text-[#636366]">•</span>
-                          <span className="text-[11px] text-[#98989d]">
+                          <span className="text-[12px] text-[var(--color-muted)]">•</span>
+                          <span className="text-[12px] text-[var(--color-muted2)]">
                             {backup.skillCount} {t('history.skills') || 'Skills'}
                           </span>
                         </>
                       )}
-                      <span className="text-[11px] text-[#636366]">•</span>
-                      <span className="text-[11px] text-[#636366]">
+                      <span className="text-[12px] text-[var(--color-muted)]">•</span>
+                      <span className="text-[12px] text-[var(--color-muted)]">
                         {formatSize(backup.size)}
                       </span>
                       {backup.clients && backup.clients.length > 0 && (
                         <>
-                          <span className="text-[11px] text-[#636366]">•</span>
-                          <span className="text-[11px] text-[#636366] flex items-center gap-1">
+                          <span className="text-[12px] text-[var(--color-muted)]">•</span>
+                          <span className="text-[12px] text-[var(--color-muted)] flex items-center gap-1">
                             {backup.clients.map(c => (
                               <ClientIcon key={c} clientId={c} size={12} />
                             ))}
@@ -250,14 +250,14 @@ export default function History() {
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <button
                       onClick={() => handleViewDiff(backup.timestamp)}
-                      className="px-2.5 py-1 rounded text-[12px] text-[#98989d] hover:text-white hover:bg-[#3a3a3c] transition-colors"
+                      className="px-2.5 py-1 rounded text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors"
                     >
                       {t('history.view')}
                     </button>
                     <button
                       onClick={() => handleRestore(backup.timestamp)}
                       disabled={isRestoring}
-                      className="px-2.5 py-1 rounded text-[12px] text-[#0a84ff] hover:bg-[#0a84ff]/10 transition-colors disabled:opacity-50"
+                      className="px-2.5 py-1 rounded text-[12px] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 transition-colors disabled:opacity-50"
                     >
                       {t('history.restore')}
                     </button>
@@ -280,7 +280,7 @@ export default function History() {
           <div className="space-y-4">
             {/* MCP Servers 变更统计 */}
             <div>
-              <p className="text-[11px] text-[#636366] mb-2">MCP Servers</p>
+              <p className="text-[12px] text-[var(--color-muted)] mb-2">MCP Servers</p>
               <div className="flex gap-2 flex-wrap">
                 {selectedDiff.added.length > 0 && (
                   <span className="tag tag-success">
@@ -288,7 +288,7 @@ export default function History() {
                   </span>
                 )}
                 {selectedDiff.removed.length > 0 && (
-                  <span className="px-2 py-0.5 rounded text-[11px] bg-[#ff3b30]/15 text-[#ff3b30]">
+                  <span className="px-2 py-0.5 rounded text-[12px] bg-[#ff3b30]/15 text-[#ff3b30]">
                     -{selectedDiff.removed.length} {t('history.removed')}
                   </span>
                 )}
@@ -300,7 +300,7 @@ export default function History() {
                 {selectedDiff.added.length === 0 && 
                  selectedDiff.removed.length === 0 && 
                  selectedDiff.modified.length === 0 && (
-                  <span className="text-[12px] text-[#636366]">
+                  <span className="text-[12px] text-[var(--color-muted)]">
                     {t('history.noChanges')}
                   </span>
                 )}
@@ -310,7 +310,7 @@ export default function History() {
             {/* Skills 变更统计 */}
             {((selectedDiff.skillsAdded?.length || 0) > 0 || (selectedDiff.skillsRemoved?.length || 0) > 0) && (
               <div>
-                <p className="text-[11px] text-[#636366] mb-2">Skills</p>
+                <p className="text-[12px] text-[var(--color-muted)] mb-2">Skills</p>
                 <div className="flex gap-2 flex-wrap">
                   {(selectedDiff.skillsAdded?.length || 0) > 0 && (
                     <span className="tag tag-success">
@@ -318,7 +318,7 @@ export default function History() {
                     </span>
                   )}
                   {(selectedDiff.skillsRemoved?.length || 0) > 0 && (
-                    <span className="px-2 py-0.5 rounded text-[11px] bg-[#ff3b30]/15 text-[#ff3b30]">
+                    <span className="px-2 py-0.5 rounded text-[12px] bg-[#ff3b30]/15 text-[#ff3b30]">
                       -{selectedDiff.skillsRemoved.length} {t('history.removed')}
                     </span>
                   )}
@@ -332,22 +332,22 @@ export default function History() {
                 {selectedDiff.added.map((id) => (
                   <div key={id} className="flex items-center gap-2 px-3 py-2 rounded-md bg-[#34c759]/10 border border-[#34c759]/20">
                     <span className="text-[#34c759] text-[12px]">+</span>
-                    <span className="text-white font-mono text-[12px]">{id}</span>
-                    <span className="text-[10px] text-[#636366]">Server</span>
+                    <span className="text-[var(--color-text)] font-mono text-[12px]">{id}</span>
+                    <span className="text-[12px] text-[var(--color-muted)]">Server</span>
                   </div>
                 ))}
                 {selectedDiff.removed.map((id) => (
                   <div key={id} className="flex items-center gap-2 px-3 py-2 rounded-md bg-[#ff3b30]/10 border border-[#ff3b30]/20">
                     <span className="text-[#ff3b30] text-[12px]">-</span>
-                    <span className="text-white font-mono text-[12px]">{id}</span>
-                    <span className="text-[10px] text-[#636366]">Server</span>
+                    <span className="text-[var(--color-text)] font-mono text-[12px]">{id}</span>
+                    <span className="text-[12px] text-[var(--color-muted)]">Server</span>
                   </div>
                 ))}
                 {selectedDiff.modified.map((id) => (
                   <div key={id} className="flex items-center gap-2 px-3 py-2 rounded-md bg-[#ff9f0a]/10 border border-[#ff9f0a]/20">
                     <span className="text-[#ff9f0a] text-[12px]">~</span>
-                    <span className="text-white font-mono text-[12px]">{id}</span>
-                    <span className="text-[10px] text-[#636366]">Server</span>
+                    <span className="text-[var(--color-text)] font-mono text-[12px]">{id}</span>
+                    <span className="text-[12px] text-[var(--color-muted)]">Server</span>
                   </div>
                 ))}
               </div>
@@ -359,15 +359,15 @@ export default function History() {
                 {selectedDiff.skillsAdded?.map((name) => (
                   <div key={name} className="flex items-center gap-2 px-3 py-2 rounded-md bg-[#34c759]/10 border border-[#34c759]/20">
                     <span className="text-[#34c759] text-[12px]">+</span>
-                    <span className="text-white font-mono text-[12px]">{name}</span>
-                    <span className="text-[10px] text-[#636366]">Skill</span>
+                    <span className="text-[var(--color-text)] font-mono text-[12px]">{name}</span>
+                    <span className="text-[12px] text-[var(--color-muted)]">Skill</span>
                   </div>
                 ))}
                 {selectedDiff.skillsRemoved?.map((name) => (
                   <div key={name} className="flex items-center gap-2 px-3 py-2 rounded-md bg-[#ff3b30]/10 border border-[#ff3b30]/20">
                     <span className="text-[#ff3b30] text-[12px]">-</span>
-                    <span className="text-white font-mono text-[12px]">{name}</span>
-                    <span className="text-[10px] text-[#636366]">Skill</span>
+                    <span className="text-[var(--color-text)] font-mono text-[12px]">{name}</span>
+                    <span className="text-[12px] text-[var(--color-muted)]">Skill</span>
                   </div>
                 ))}
               </div>

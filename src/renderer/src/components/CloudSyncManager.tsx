@@ -136,22 +136,22 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
     return (
         <div className="card p-4">
             <div className="flex items-center justify-between mb-1">
-                <h2 className="text-[13px] font-semibold text-white">{t('cloudSync.title')}</h2>
+                <h2 className="text-[13px] font-semibold text-[var(--color-text)]">{t('cloudSync.title')}</h2>
                 <button
                     onClick={() => setCfg({...cfg, enabled: !cfg.enabled})}
-                    className={`relative w-9 h-5 rounded-full transition-colors ${cfg.enabled ? 'bg-[#34c759]' : 'bg-[#3a3a3c]'}`}
+                    className={`relative w-9 h-5 rounded-full transition-colors ${cfg.enabled ? 'bg-[#34c759]' : 'bg-[var(--color-surface-hover)]'}`}
                     title={cfg.enabled ? t('cloudSync.disableTitle') : t('cloudSync.enableTitle')}
                 >
                     <span
-                        className={`absolute top-[2px] w-4 h-4 rounded-full bg-white transition-all ${cfg.enabled ? 'left-[18px]' : 'left-[2px]'}`}/>
+                        className={`absolute top-[2px] w-4 h-4 rounded-full bg-[var(--color-surface)] transition-all ${cfg.enabled ? 'left-[18px]' : 'left-[2px]'}`}/>
                 </button>
             </div>
-            <p className="text-[12px] text-[#98989d] mb-3">
+            <p className="text-[12px] text-[var(--color-muted2)] mb-3">
                 {t('cloudSync.desc', {dir: CLOUD_ROOT_DIR})}
             </p>
 
             {loading ? (
-                <div className="h-24 rounded-md bg-[#3a3a3c]/40 animate-pulse"/>
+                <div className="h-24 rounded-md bg-[var(--color-surface-hover)]/40 animate-pulse"/>
             ) : (
                 <div className={cfg.enabled ? '' : 'opacity-50 pointer-events-none'}>
                     {/* 通道切换 */}
@@ -161,7 +161,7 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                                 key={p}
                                 onClick={() => setCfg({...cfg, provider: p})}
                                 className={`flex-1 px-3 py-2 rounded-md text-[12px] font-medium transition-colors ${
-                                    cfg.provider === p ? 'bg-[#0a84ff] text-white' : 'bg-[#3a3a3c] text-[#98989d] hover:text-white'
+                                    cfg.provider === p ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-surface-hover)] text-[var(--color-muted2)] hover:text-[var(--color-text)]'
                                 }`}
                             >
                                 {p === 'git' ? t('cloudSync.gitChannel') : t('cloudSync.sftpChannel')}
@@ -171,7 +171,7 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
 
                     {gitMissing && (
                         <div
-                            className="mb-3 px-3 py-2 rounded-md bg-[#ff9f0a]/10 border border-[#ff9f0a]/30 text-[11px] text-[#ff9f0a]">
+                            className="mb-3 px-3 py-2 rounded-md bg-[#ff9f0a]/10 border border-[#ff9f0a]/30 text-[12px] text-[#ff9f0a]">
                             {t('cloudSync.gitMissing')}
                         </div>
                     )}
@@ -350,7 +350,7 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                                     placeholder="/home/user/backup"
                                     className={inputCls + ' font-mono'}
                                 />
-                                <p className="text-[10px] text-[#636366] mt-1">
+                                <p className="text-[12px] text-[var(--color-muted)] mt-1">
                                     {t('cloudSync.storageLocation')}<span
                                     className="font-mono">{(cfg.sftp.remoteDir || '/').replace(/\/+$/, '')}/{CLOUD_ROOT_DIR}</span>
                                 </p>
@@ -358,8 +358,8 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                         </div>
                     )}
 
-                    <div className="flex items-center justify-between mt-4 pt-3 border-t border-[#3a3a3c]">
-                        <p className="text-[10px] text-[#636366]">
+                    <div className="flex items-center justify-between mt-4 pt-3 border-t border-[var(--color-border)]">
+                        <p className="text-[12px] text-[var(--color-muted)]">
                             {cfg.lastSyncAt
                                 ? t('cloudSync.lastSync', {
                                     time: new Date(cfg.lastSyncAt).toLocaleString(),
@@ -371,14 +371,14 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                             <button
                                 onClick={handleTest}
                                 disabled={testing || saving}
-                                className="px-3 py-1.5 rounded-md bg-[#3a3a3c] text-white text-[12px] hover:bg-[#3a3a3c]/80 transition-colors disabled:opacity-50"
+                                className="px-3 py-1.5 rounded-md bg-[var(--color-surface-hover)] text-[var(--color-text)] text-[12px] hover:bg-[var(--color-surface-hover)]/80 transition-colors disabled:opacity-50"
                             >
                                 {testing ? t('cloudSync.testing') : t('cloudSync.test')}
                             </button>
                             <button
                                 onClick={handleSave}
                                 disabled={saving || testing}
-                                className="px-3 py-1.5 rounded-md bg-[#0a84ff] text-white text-[12px] font-medium hover:bg-[#0a84ff]/90 transition-colors disabled:opacity-50"
+                                className="px-3 py-1.5 rounded-md bg-[var(--color-accent)] text-white text-[12px] font-medium hover:bg-[var(--color-accent)]/90 transition-colors disabled:opacity-50"
                             >
                                 {saving ? t('cloudSync.saving') : t('cloudSync.save')}
                             </button>
@@ -390,12 +390,12 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
     );
 }
 
-const inputCls = 'w-full px-3 py-2 rounded-md bg-[#1c1c1e] border border-[#3a3a3c] text-white text-[12px] focus:border-[#0a84ff] transition-colors';
+const inputCls = 'w-full px-3 py-2 rounded-md bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] text-[12px] focus:border-[var(--color-accent)] transition-colors';
 
 function Field({label, children}: { label: string; children: React.ReactNode }) {
     return (
         <div>
-            <label className="block text-[12px] text-[#98989d] mb-1.5">{label}</label>
+            <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">{label}</label>
             {children}
         </div>
     );
@@ -423,14 +423,14 @@ function SecretField({
     return (
         <div>
             <div className="flex items-center justify-between mb-1.5">
-                <label className="text-[12px] text-[#98989d]">{label}</label>
+                <label className="text-[12px] text-[var(--color-muted2)]">{label}</label>
                 {saved && !editing && (
                     <button onClick={() => onChange('')}
-                            className="text-[10px] text-[#ff3b30] hover:underline">{t('cloudSync.clear')}</button>
+                            className="text-[12px] text-[#ff3b30] hover:underline">{t('cloudSync.clear')}</button>
                 )}
                 {editing && (
                     <button onClick={() => onChange(undefined)}
-                            className="text-[10px] text-[#98989d] hover:underline">{t('cloudSync.cancelEdit')}</button>
+                            className="text-[12px] text-[var(--color-muted2)] hover:underline">{t('cloudSync.cancelEdit')}</button>
                 )}
             </div>
             <input

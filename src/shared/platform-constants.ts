@@ -91,9 +91,6 @@ export const CLAWHUB_TRENDING_BASE = 'https://clawhub.ai/api/v1/trending?kind=sk
 /** ClawHub 单次请求条数上限（实测 >100 返回 400） */
 export const CLAWHUB_PAGE_LIMIT = 100;
 
-/** ClawHub 全量拉取的条数上限，避免上游数千条时首屏等待过久 */
-export const CLAWHUB_MAX_ITEMS = 600;
-
 /**
  * ClawHub 原生技能的 zip 下载直链（`?slug=<slug>`，无凭证，实测返回 application/zip）。
  *

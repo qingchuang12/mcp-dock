@@ -114,7 +114,7 @@ export default function Layout({children}: LayoutProps) {
     ];
 
     return (
-        <div className="flex h-screen bg-content-bg text-white overflow-hidden">
+        <div className="flex h-screen bg-content-bg text-[var(--color-text)] overflow-hidden">
             {/* 侧边栏 */}
             <aside
                 ref={sidebarRef}
@@ -129,7 +129,7 @@ export default function Layout({children}: LayoutProps) {
                     {navGroups.map((group, groupIndex) => (
                         <div key={group.label} className={groupIndex > 0 ? 'mt-4' : ''}>
                             <div
-                                className="px-4 py-1 text-[10px] font-semibold text-muted uppercase tracking-wider truncate">
+                                className="px-4 py-1 text-[12px] font-semibold text-muted uppercase tracking-wider truncate">
                                 {group.label}
                             </div>
                             {group.items.map((item) => {
@@ -146,8 +146,8 @@ export default function Layout({children}: LayoutProps) {
                       flex items-center gap-3 mx-2 px-3 py-[7px] rounded-md text-[13px] no-drag
                       transition-colors duration-100
                       ${isActive
-                                            ? 'bg-content-border text-white font-medium'
-                                            : 'text-muted2 hover:text-white hover:bg-content-border/50'
+                                            ? 'bg-content-border text-[var(--color-text)] font-medium'
+                                            : 'text-muted2 hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)]'
                                         }
                     `}
                                     >
@@ -162,7 +162,7 @@ export default function Layout({children}: LayoutProps) {
 
                 {/* 底部状态 */}
                 <div className="p-3 border-t border-content-border">
-                    <div className="flex items-center justify-between text-[11px]">
+                    <div className="flex items-center justify-between text-[12px]">
                         <span className="text-muted2">{version ? `v${version}` : ''}</span>
                         <div className="flex items-center gap-1.5">
                             <span className="status-dot active"/>
@@ -176,8 +176,8 @@ export default function Layout({children}: LayoutProps) {
                     onMouseDown={handleMouseDown}
                     className={`
             absolute top-0 right-0 w-1 h-full cursor-col-resize
-            hover:bg-accent/50 transition-colors
-            ${isResizing ? 'bg-accent' : ''}
+            hover:bg-[var(--color-accent)]/50 transition-colors
+            ${isResizing ? 'bg-[var(--color-accent)]' : ''}
           `}
                 />
             </aside>

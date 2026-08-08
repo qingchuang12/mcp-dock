@@ -84,7 +84,7 @@ function DefaultIcon({name, repoUrl}: { name: string; repoUrl?: string | null })
 
     return (
         <div
-            className={`w-12 h-12 rounded-xl ${colors[colorIndex]} flex items-center justify-center text-white font-bold text-lg`}>
+            className={`w-12 h-12 rounded-xl ${colors[colorIndex]} flex items-center justify-center text-[var(--color-text)] font-bold text-lg`}>
             {initial}
         </div>
     );
@@ -123,7 +123,7 @@ export default function Detail() {
     if (isPlatform) {
         if (!connId) {
             return (
-                <div className="flex flex-col items-center justify-center h-full bg-[#1c1c1e]">
+                <div className="flex flex-col items-center justify-center h-full bg-[var(--color-bg)]">
                     <div className="w-12 h-12 rounded-full bg-[#ff3b30]/10 flex items-center justify-center mb-3">
                         <svg className="w-6 h-6 text-[#ff3b30]" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                              strokeWidth={1.5}>
@@ -131,7 +131,7 @@ export default function Detail() {
                                   d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
                         </svg>
                     </div>
-                    <p className="text-[13px] text-white mb-3">{t('detail.loadFailed')}</p>
+                    <p className="text-[13px] text-[var(--color-text)] mb-3">{t('detail.loadFailed')}</p>
                     <button onClick={() => navigate('/store')} className="btn btn-secondary">{t('detail.back')}</button>
                 </div>
             );
@@ -460,15 +460,15 @@ export default function Detail() {
 
     if (isLoading) {
         return (
-            <div className="flex items-center justify-center h-full bg-[#1c1c1e]">
-                <div className="w-8 h-8 border-2 border-[#3a3a3c] border-t-[#0a84ff] rounded-full animate-spin"/>
+            <div className="flex items-center justify-center h-full bg-[var(--color-bg)]">
+                <div className="w-8 h-8 border-2 border-[var(--color-border)] border-t-[#0a84ff] rounded-full animate-spin"/>
             </div>
         );
     }
 
     if (error || !server) {
         return (
-            <div className="flex flex-col items-center justify-center h-full bg-[#1c1c1e]">
+            <div className="flex flex-col items-center justify-center h-full bg-[var(--color-bg)]">
                 <div className="w-12 h-12 rounded-full bg-[#ff3b30]/10 flex items-center justify-center mb-3">
                     <svg className="w-6 h-6 text-[#ff3b30]" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                          strokeWidth={1.5}>
@@ -476,8 +476,8 @@ export default function Detail() {
                               d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
                     </svg>
                 </div>
-                <p className="text-[13px] text-white mb-1">{t('detail.loadFailed')}</p>
-                <p className="text-[12px] text-[#636366] mb-4 max-w-sm text-center">{t('detail.loadFailedHint')}</p>
+                <p className="text-[13px] text-[var(--color-text)] mb-1">{t('detail.loadFailed')}</p>
+                <p className="text-[12px] text-[var(--color-muted)] mb-4 max-w-sm text-center">{t('detail.loadFailedHint')}</p>
                 <button onClick={() => navigate('/store')} className="btn btn-secondary">
                     {t('detail.back')}
                 </button>
@@ -489,18 +489,18 @@ export default function Detail() {
     const repoUrl = getRepoUrl();
 
     return (
-        <div className="flex flex-col h-full bg-[#1c1c1e]">
+        <div className="flex flex-col h-full bg-[var(--color-bg)]">
             {/* 头部导航 - 参考 SkillDetail 风格 */}
-            <div className={`flex items-center gap-2 px-4 py-2 drag-region relative border-b border-[#3a3a3c] text-[12px] text-[#636366] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
-                <button onClick={() => navigate(-1)} className="no-drag hover:text-white transition-colors">
+            <div className={`flex items-center gap-2 px-4 py-2 drag-region relative border-b border-[var(--color-border)] text-[12px] text-[var(--color-muted)] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
+                <button onClick={() => navigate(-1)} className="no-drag hover:text-[var(--color-text)] transition-colors">
                     <BackIcon className="w-4 h-4"/>
                 </button>
-                <span className="no-drag hover:text-white cursor-pointer" onClick={() => navigate('/store')}>Store</span>
+                <span className="no-drag hover:text-[var(--color-text)] cursor-pointer" onClick={() => navigate('/store')}>Store</span>
                 <span>/</span>
                 <span
-                    className="no-drag hover:text-white cursor-pointer">{dataSource === 'official' ? 'Official' : 'Smithery'}</span>
+                    className="no-drag hover:text-[var(--color-text)] cursor-pointer">{dataSource === 'official' ? 'Official' : 'Smithery'}</span>
                 <span>/</span>
-                <span className="text-white">{server.displayName}</span>
+                <span className="text-[var(--color-text)]">{server.displayName}</span>
                 <WindowControls />
             </div>
 
@@ -528,21 +528,21 @@ export default function Detail() {
 
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
-                                        <h1 className="text-2xl font-bold text-white">{server.displayName}</h1>
+                                        <h1 className="text-2xl font-bold text-[var(--color-text)]">{server.displayName}</h1>
                                         {isSmitheryDetail(server) && server.verified && (
-                                            <VerifiedIcon className="w-5 h-5 text-[#0a84ff]"/>
+                                            <VerifiedIcon className="w-5 h-5 text-[var(--color-accent)]"/>
                                         )}
                                     </div>
-                                    <p className="text-[12px] text-[#636366] font-mono">{server.id}</p>
+                                    <p className="text-[12px] text-[var(--color-muted)] font-mono">{server.id}</p>
                                 </div>
                             </div>
 
-                            <p className="text-[14px] text-[#98989d] leading-relaxed mb-4">
+                            <p className="text-[14px] text-[var(--color-muted2)] leading-relaxed mb-4">
                                 {server.description || t('detail.noDescription')}
                             </p>
 
                             {/* 统计信息 - 与 Skill 详情页风格一致 */}
-                            <div className="flex items-center gap-4 text-[13px] text-[#98989d]">
+                            <div className="flex items-center gap-4 text-[13px] text-[var(--color-muted2)]">
                                 {isSmitheryDetail(server) && (
                                     <>
                     <span className="flex items-center gap-1">
@@ -551,7 +551,7 @@ export default function Detail() {
                     </span>
                                         {server.createdAt && (
                                             <span className="flex items-center gap-1">
-                        <ClockIcon className="w-4 h-4 text-[#636366]"/>
+                        <ClockIcon className="w-4 h-4 text-[var(--color-muted)]"/>
                         Created {formatDate(server.createdAt)}
                       </span>
                                         )}
@@ -572,7 +572,7 @@ export default function Detail() {
                                         {/* Forks */}
                                         {(server.forks || 0) > 0 && (
                                             <span className="flex items-center gap-1">
-                        <svg className="w-4 h-4 text-[#636366]" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                        <svg className="w-4 h-4 text-[var(--color-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                              strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round"
                                 d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"/>
@@ -583,7 +583,7 @@ export default function Detail() {
                                         {/* Last Commit */}
                                         {server.lastCommitAt && (
                                             <span className="flex items-center gap-1">
-                        <ClockIcon className="w-4 h-4 text-[#636366]"/>
+                        <ClockIcon className="w-4 h-4 text-[var(--color-muted)]"/>
                         Updated {formatDate(server.lastCommitAt)}
                       </span>
                                         )}
@@ -597,7 +597,7 @@ export default function Detail() {
                                     {server.topics.map((topic) => (
                                         <span
                                             key={topic}
-                                            className="px-2 py-0.5 rounded-full text-[10px] bg-[#0a84ff]/10 text-[#0a84ff] border border-[#0a84ff]/20"
+                                            className="px-2 py-0.5 rounded-full text-[12px] bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20"
                                         >
                       {topic}
                     </span>
@@ -616,7 +616,7 @@ export default function Detail() {
                                         <h3 className="text-[13px] font-semibold text-[#ff9f0a] mb-1">
                                             {t('detail.runtimeRequired')}
                                         </h3>
-                                        <p className="text-[12px] text-[#98989d] mb-3">
+                                        <p className="text-[12px] text-[var(--color-muted2)] mb-3">
                                             {t('detail.runtimeRequiredDesc', {
                                                 runtime: runtime === 'node' ? 'Node.js' : runtime === 'python' ? 'Python' : 'Docker'
                                             })}
@@ -624,45 +624,45 @@ export default function Detail() {
                                         <div className="space-y-2">
                                             {runtime === 'node' && (
                                                 <>
-                                                    <div className="bg-[#1c1c1e] rounded-lg p-2">
-                                                        <p className="text-[10px] text-[#636366] mb-1">macOS
+                                                    <div className="bg-[var(--color-bg)] rounded-lg p-2">
+                                                        <p className="text-[12px] text-[var(--color-muted)] mb-1">macOS
                                                             (Homebrew)</p>
-                                                        <code className="text-[11px] text-[#0a84ff] font-mono">brew
+                                                        <code className="text-[12px] text-[var(--color-accent)] font-mono">brew
                                                             install node</code>
                                                     </div>
-                                                    <div className="bg-[#1c1c1e] rounded-lg p-2">
-                                                        <p className="text-[10px] text-[#636366] mb-1">Windows</p>
-                                                        <code className="text-[11px] text-[#0a84ff] font-mono">winget
+                                                    <div className="bg-[var(--color-bg)] rounded-lg p-2">
+                                                        <p className="text-[12px] text-[var(--color-muted)] mb-1">Windows</p>
+                                                        <code className="text-[12px] text-[var(--color-accent)] font-mono">winget
                                                             install OpenJS.NodeJS</code>
                                                     </div>
                                                 </>
                                             )}
                                             {runtime === 'python' && (
                                                 <>
-                                                    <div className="bg-[#1c1c1e] rounded-lg p-2">
-                                                        <p className="text-[10px] text-[#636366] mb-1">macOS
+                                                    <div className="bg-[var(--color-bg)] rounded-lg p-2">
+                                                        <p className="text-[12px] text-[var(--color-muted)] mb-1">macOS
                                                             (Homebrew)</p>
-                                                        <code className="text-[11px] text-[#0a84ff] font-mono">brew
+                                                        <code className="text-[12px] text-[var(--color-accent)] font-mono">brew
                                                             install python</code>
                                                     </div>
-                                                    <div className="bg-[#1c1c1e] rounded-lg p-2">
-                                                        <p className="text-[10px] text-[#636366] mb-1">uv
+                                                    <div className="bg-[var(--color-bg)] rounded-lg p-2">
+                                                        <p className="text-[12px] text-[var(--color-muted)] mb-1">uv
                                                             (recommended)</p>
-                                                        <code className="text-[11px] text-[#0a84ff] font-mono">curl
+                                                        <code className="text-[12px] text-[var(--color-accent)] font-mono">curl
                                                             -LsSf https://astral.sh/uv/install.sh | sh</code>
                                                     </div>
                                                 </>
                                             )}
                                             {runtime === 'docker' && (
-                                                <div className="bg-[#1c1c1e] rounded-lg p-2">
-                                                    <p className="text-[10px] text-[#636366] mb-1">Docker Desktop</p>
+                                                <div className="bg-[var(--color-bg)] rounded-lg p-2">
+                                                    <p className="text-[12px] text-[var(--color-muted)] mb-1">Docker Desktop</p>
                                                     <a
                                                         href="#"
                                                         onClick={(e) => {
                                                             e.preventDefault();
                                                             api.system.openExternal('https://www.docker.com/products/docker-desktop/');
                                                         }}
-                                                        className="text-[11px] text-[#0a84ff] font-mono hover:underline"
+                                                        className="text-[12px] text-[var(--color-accent)] font-mono hover:underline"
                                                     >
                                                         https://docker.com/products/docker-desktop/
                                                     </a>
@@ -678,18 +678,18 @@ export default function Detail() {
                         {isOfficialDetail(server) && server.repository && (
                             <>
                                 {/* README.md 标题 - 直接在页面背景上 */}
-                                <h2 className="text-[15px] font-semibold text-white mb-4">README.md</h2>
+                                <h2 className="text-[15px] font-semibold text-[var(--color-text)] mb-4">README.md</h2>
 
                                 {/* README 内容 - 纯净展示源码，与 SKILL.md 展示风格一致 */}
                                 <div className="card p-4 mb-6 overflow-x-auto">
                                     {isLoadingReadme ? (
                                         <div className="flex items-center justify-center py-8">
                                             <div
-                                                className="w-6 h-6 border-2 border-[#3a3a3c] border-t-[#0a84ff] rounded-full animate-spin"/>
+                                                className="w-6 h-6 border-2 border-[var(--color-border)] border-t-[#0a84ff] rounded-full animate-spin"/>
                                         </div>
                                     ) : readme ? (
                                         <pre
-                                            className="text-[12px] text-[#e6edf3] font-mono leading-relaxed whitespace-pre-wrap">
+                                            className="text-[12px] text-[var(--color-text)] font-mono leading-relaxed whitespace-pre-wrap">
                       <code>{readme}</code>
                     </pre>
                                     ) : (
@@ -702,18 +702,18 @@ export default function Detail() {
                         {/* 功能列表 (Smithery 数据源) */}
                         {isSmitheryDetail(server) && server.capabilities && server.capabilities.length > 0 && (
                             <div className="card overflow-hidden mb-6">
-                                <div className="px-4 py-3 border-b border-[#3a3a3c]">
-                                    <h2 className="text-[13px] font-semibold text-white">
+                                <div className="px-4 py-3 border-b border-[var(--color-border)]">
+                                    <h2 className="text-[13px] font-semibold text-[var(--color-text)]">
                                         {t('detail.capabilities')} ({server.capabilities?.length ?? 0})
                                     </h2>
                                 </div>
                                 {(server.capabilities ?? []).map((cap, index) => (
                                     <div
                                         key={index}
-                                        className={`px-4 py-3 ${index !== (server.capabilities ?? []).length - 1 ? 'border-b border-[#3a3a3c]' : ''}`}
+                                        className={`px-4 py-3 ${index !== (server.capabilities ?? []).length - 1 ? 'border-b border-[var(--color-border)]' : ''}`}
                                     >
-                                        <h4 className="text-[12px] font-mono text-[#0a84ff] mb-0.5">{cap.name}</h4>
-                                        <p className="text-[12px] text-[#636366]">{cap.description || t('detail.noToolDescription')}</p>
+                                        <h4 className="text-[12px] font-mono text-[var(--color-accent)] mb-0.5">{cap.name}</h4>
+                                        <p className="text-[12px] text-[var(--color-muted)]">{cap.description || t('detail.noToolDescription')}</p>
                                     </div>
                                 ))}
                             </div>
@@ -723,21 +723,21 @@ export default function Detail() {
                         {/* 远程服务器列表 */}
                         {isOfficialDetail(server) && server.remotes && server.remotes.length > 0 && (
                             <div className="card overflow-hidden">
-                                <div className="px-4 py-3 border-b border-[#3a3a3c]">
-                                    <h2 className="text-[13px] font-semibold text-white">
+                                <div className="px-4 py-3 border-b border-[var(--color-border)]">
+                                    <h2 className="text-[13px] font-semibold text-[var(--color-text)]">
                                         {t('detail.remotes')} ({server.remotes.length})
                                     </h2>
                                 </div>
                                 {server.remotes.map((remote, index) => (
                                     <div
                                         key={index}
-                                        className={`px-4 py-3 ${index !== server.remotes!.length - 1 ? 'border-b border-[#3a3a3c]' : ''}`}
+                                        className={`px-4 py-3 ${index !== server.remotes!.length - 1 ? 'border-b border-[var(--color-border)]' : ''}`}
                                     >
                                         <div className="flex items-center gap-2 mb-1">
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#34c759]/15 text-[#34c759]">
+                      <span className="px-1.5 py-0.5 rounded text-[12px] font-medium bg-[#34c759]/15 text-[#34c759]">
                         {remote.type}
                       </span>
-                                            <span className="text-[10px] text-[#636366]">
+                                            <span className="text-[12px] text-[var(--color-muted)]">
                         {t('detail.remoteServer')}
                       </span>
                                         </div>
@@ -747,7 +747,7 @@ export default function Detail() {
                                                 e.preventDefault();
                                                 api.system.openExternal(remote.url);
                                             }}
-                                            className="text-[12px] font-mono text-[#0a84ff] hover:underline break-all"
+                                            className="text-[12px] font-mono text-[var(--color-accent)] hover:underline break-all"
                                         >
                                             {remote.url}
                                         </a>
@@ -759,7 +759,7 @@ export default function Detail() {
                 </div>
 
                 {/* 右侧边栏 */}
-                <div className="w-[280px] flex-shrink-0 border-l border-[#3a3a3c] overflow-y-auto p-4">
+                <div className="w-[280px] flex-shrink-0 border-l border-[var(--color-border)] overflow-y-auto p-4">
                     {/* 安装按钮 */}
                     <div className="mb-4 space-y-2">
                         {runtimeAvailable && (
@@ -817,15 +817,15 @@ export default function Detail() {
 
                     {/* 已安装的客户端 */}
                     {installedClients.length > 0 && (
-                        <div className="mb-4 p-3 bg-[#3a3a3c]/30 rounded-lg">
-                            <p className="text-[11px] text-[#636366] mb-2">{t('detail.installedIn')}</p>
+                        <div className="mb-4 p-3 bg-[var(--color-surface-hover)]/30 rounded-lg">
+                            <p className="text-[12px] text-[var(--color-muted)] mb-2">{t('detail.installedIn')}</p>
                             <div className="flex flex-wrap gap-1">
                                 {installedClients.map(clientId => {
                                     const client = clients.find(c => c.id === clientId);
                                     return (
                                         <span
                                             key={clientId}
-                                            className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#3a3a3c] text-[10px] text-[#98989d]"
+                                            className="flex items-center gap-1 px-2 py-0.5 rounded bg-[var(--color-surface-hover)] text-[12px] text-[var(--color-muted2)]"
                                         >
                       <ClientIcon clientId={clientId} size={12}/>
                                             {client?.name || clientId}
@@ -838,7 +838,7 @@ export default function Detail() {
 
                     {/* Source 卡片 */}
                     <div className="card p-4 space-y-3 mb-4">
-                        <h3 className="text-[13px] font-semibold text-white">Source</h3>
+                        <h3 className="text-[13px] font-semibold text-[var(--color-text)]">Source</h3>
 
                         {isOfficialDetail(server) && server.repository?.url && (
                             <a
@@ -847,7 +847,7 @@ export default function Detail() {
                                     e.preventDefault();
                                     api.system.openExternal(server.repository!.url);
                                 }}
-                                className="flex items-center justify-between text-[12px] text-[#98989d] hover:text-[#0a84ff] transition-colors"
+                                className="flex items-center justify-between text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-accent)] transition-colors"
                             >
                 <span className="flex items-center gap-2">
                   <GitHubIcon className="w-4 h-4"/>
@@ -864,7 +864,7 @@ export default function Detail() {
                                     e.preventDefault();
                                     api.system.openExternal(server.links?.registry ?? '');
                                 }}
-                                className="flex items-center justify-between text-[12px] text-[#98989d] hover:text-[#0a84ff] transition-colors"
+                                className="flex items-center justify-between text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-accent)] transition-colors"
                             >
                 <span className="flex items-center gap-2">
                   <GitHubIcon className="w-4 h-4"/>
@@ -881,7 +881,7 @@ export default function Detail() {
                                     e.preventDefault();
                                     api.system.openExternal(server.links?.homepage ?? '');
                                 }}
-                                className="flex items-center justify-between text-[12px] text-[#98989d] hover:text-[#0a84ff] transition-colors"
+                                className="flex items-center justify-between text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-accent)] transition-colors"
                             >
                 <span className="flex items-center gap-2">
                   <ExternalLinkIcon className="w-4 h-4"/>
@@ -898,7 +898,7 @@ export default function Detail() {
                                     e.preventDefault();
                                     api.system.openExternal(server.websiteUrl!);
                                 }}
-                                className="flex items-center justify-between text-[12px] text-[#98989d] hover:text-[#0a84ff] transition-colors"
+                                className="flex items-center justify-between text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-accent)] transition-colors"
                             >
                 <span className="flex items-center gap-2">
                   <ExternalLinkIcon className="w-4 h-4"/>
@@ -911,39 +911,39 @@ export default function Detail() {
 
                     {/* Details 卡片 */}
                     <div className="card p-4 mb-4">
-                        <h3 className="text-[13px] font-semibold text-white mb-3">Details</h3>
+                        <h3 className="text-[13px] font-semibold text-[var(--color-text)] mb-3">Details</h3>
                         <div className="space-y-2 text-[12px]">
                             <div className="flex justify-between">
-                                <span className="text-[#636366]">Runtime</span>
+                                <span className="text-[var(--color-muted)]">Runtime</span>
                                 <div className="flex items-center gap-1">
                                     <span
                                         className={`w-2 h-2 rounded-full ${runtimeAvailable ? 'bg-[#34c759]' : 'bg-[#ff9f0a]'}`}/>
-                                    <span className="text-white capitalize">{runtime}</span>
+                                    <span className="text-[var(--color-text)] capitalize">{runtime}</span>
                                 </div>
                             </div>
 
                             {isOfficialDetail(server) && (
                                 <>
                                     <div className="flex justify-between">
-                                        <span className="text-[#636366]">Version</span>
-                                        <span className="text-white font-mono">v{server.version}</span>
+                                        <span className="text-[var(--color-muted)]">Version</span>
+                                        <span className="text-[var(--color-text)] font-mono">v{server.version}</span>
                                     </div>
                                     {server.defaultBranch && (
                                         <div className="flex justify-between">
-                                            <span className="text-[#636366]">Branch</span>
-                                            <span className="text-white">{server.defaultBranch}</span>
+                                            <span className="text-[var(--color-muted)]">Branch</span>
+                                            <span className="text-[var(--color-text)]">{server.defaultBranch}</span>
                                         </div>
                                     )}
                                     {server.license && (
                                         <div className="flex justify-between">
-                                            <span className="text-[#636366]">License</span>
-                                            <span className="text-white">{server.license}</span>
+                                            <span className="text-[var(--color-muted)]">License</span>
+                                            <span className="text-[var(--color-text)]">{server.license}</span>
                                         </div>
                                     )}
                                     {server.author && (
                                         <div className="flex justify-between">
-                                            <span className="text-[#636366]">Author</span>
-                                            <span className="text-white">@{server.author}</span>
+                                            <span className="text-[var(--color-muted)]">Author</span>
+                                            <span className="text-[var(--color-text)]">@{server.author}</span>
                                         </div>
                                     )}
                                 </>
@@ -952,12 +952,12 @@ export default function Detail() {
                             {isSmitheryDetail(server) && (
                                 <>
                                     <div className="flex justify-between">
-                                        <span className="text-[#636366]">Downloads</span>
-                                        <span className="text-white">{formatNumber(server.downloads || 0)}</span>
+                                        <span className="text-[var(--color-muted)]">Downloads</span>
+                                        <span className="text-[var(--color-text)]">{formatNumber(server.downloads || 0)}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-[#636366]">Verified</span>
-                                        <span className="text-white">{server.verified ? 'Yes' : 'No'}</span>
+                                        <span className="text-[var(--color-muted)]">Verified</span>
+                                        <span className="text-[var(--color-text)]">{server.verified ? 'Yes' : 'No'}</span>
                                     </div>
                                 </>
                             )}
@@ -967,18 +967,18 @@ export default function Detail() {
                     {/* 安装包列表 (Official 数据源) - 移到右侧边栏 */}
                     {isOfficialDetail(server) && server.packages && server.packages.length > 0 && (
                         <div className="card p-4">
-                            <h3 className="text-[13px] font-semibold text-white mb-3">
+                            <h3 className="text-[13px] font-semibold text-[var(--color-text)] mb-3">
                                 Packages ({server.packages?.length ?? 0})
                             </h3>
                             <div className="space-y-2">
                                 {(server.packages ?? []).map((pkg, index) => (
                                     <div
                                         key={index}
-                                        className={`p-2 rounded-md bg-[#3a3a3c]/30 ${index !== (server.packages ?? []).length - 1 ? '' : ''}`}
+                                        className={`p-2 rounded-md bg-[var(--color-surface-hover)]/30 ${index !== (server.packages ?? []).length - 1 ? '' : ''}`}
                                     >
                                         <div className="flex items-center gap-2 mb-1">
                       <span className={`
-                        px-1.5 py-0.5 rounded text-[10px] font-medium
+                        px-1.5 py-0.5 rounded text-[12px] font-medium
                         ${pkg.registryType === 'npm' ? 'bg-[#cb3837]/15 text-[#cb3837]' :
                           pkg.registryType === 'pypi' ? 'bg-[#3776ab]/15 text-[#3776ab]' :
                               'bg-[#2496ed]/15 text-[#2496ed]'}
@@ -986,14 +986,14 @@ export default function Detail() {
                         {pkg.registryType}
                       </span>
                                             {pkg.runtimeHint && (
-                                                <span className="text-[10px] text-[#636366]">
+                                                <span className="text-[12px] text-[var(--color-muted)]">
                           via {pkg.runtimeHint}
                         </span>
                                             )}
                                         </div>
-                                        <p className="text-[11px] font-mono text-[#0a84ff] break-all">{pkg.identifier}</p>
+                                        <p className="text-[12px] font-mono text-[var(--color-accent)] break-all">{pkg.identifier}</p>
                                         {pkg.version && (
-                                            <p className="text-[10px] text-[#636366]">v{pkg.version}</p>
+                                            <p className="text-[12px] text-[var(--color-muted)]">v{pkg.version}</p>
                                         )}
                                     </div>
                                 ))}
@@ -1022,7 +1022,7 @@ export default function Detail() {
                     )}
 
                     {/* Server 信息头部 - 与 Skills 安装弹窗一致 */}
-                    <div className="flex items-center gap-3 p-3 bg-[#3a3a3c]/30 rounded-lg">
+                    <div className="flex items-center gap-3 p-3 bg-[var(--color-surface-hover)]/30 rounded-lg">
                         {server.iconUrl && !iconError ? (
                             <img
                                 src={server.iconUrl}
@@ -1034,14 +1034,14 @@ export default function Detail() {
                             <DefaultIcon name={server.displayName} repoUrl={repoUrl}/>
                         )}
                         <div>
-                            <h3 className="text-[14px] font-medium text-white">{server.displayName}</h3>
-                            <p className="text-[12px] text-[#636366]">{server.id}</p>
+                            <h3 className="text-[14px] font-medium text-[var(--color-text)]">{server.displayName}</h3>
+                            <p className="text-[12px] text-[var(--color-muted)]">{server.id}</p>
                         </div>
                     </div>
 
                     {/* 客户端选择 - 只展示已安装的 Client */}
                     <div>
-                        <label className="block text-[12px] font-medium text-white mb-2">
+                        <label className="block text-[12px] font-medium text-[var(--color-text)] mb-2">
                             {t('detail.selectClients')}
                         </label>
                         <div className="grid grid-cols-2 gap-2">
@@ -1059,15 +1059,15 @@ export default function Detail() {
                       ${isAlreadyInstalled
                                             ? 'bg-[#34c759]/10 border-[#34c759]/30 text-[#34c759]'
                                             : isSelected
-                                                ? 'bg-[#0a84ff]/10 border-[#0a84ff]/30 text-[#0a84ff]'
-                                                : 'bg-[#3a3a3c] border-[#3a3a3c] text-white hover:border-[#636366]'
+                                                ? 'bg-[var(--color-accent)]/10 border-[var(--color-accent)]/30 text-[var(--color-accent)]'
+                                                : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[#636366]'
                                         }
                     `}
                                     >
                                         <ClientIcon clientId={client.id} size={20}/>
                                         <div className="flex-1 min-w-0">
                                             <div className="text-[12px] font-medium">{client.name}</div>
-                                            <div className="text-[10px] opacity-60">
+                                            <div className="text-[12px] opacity-60">
                                                 {isAlreadyInstalled
                                                     ? t('detail.alreadyInstalled')
                                                     : t('detail.available')}
@@ -1082,7 +1082,7 @@ export default function Detail() {
                         </div>
 
                         {clients.filter(c => c.installed).length === 0 && (
-                            <p className="text-center text-[#636366] text-[13px] py-4">
+                            <p className="text-center text-[var(--color-muted)] text-[13px] py-4">
                                 {t('detail.noClientsInstalled') || 'No installed clients support MCP'}
                             </p>
                         )}
@@ -1091,8 +1091,8 @@ export default function Detail() {
                     {/* 配置表单 */}
                     {selectedClients.filter(c => !installedClients.includes(c)).length > 0 && (
                         <>
-                            <div className="border-t border-[#3a3a3c] pt-4">
-                                <p className="text-[12px] text-[#98989d] mb-4">
+                            <div className="border-t border-[var(--color-border)] pt-4">
+                                <p className="text-[12px] text-[var(--color-muted2)] mb-4">
                                     {t('detail.configDescription')}
                                 </p>
                             </div>

@@ -387,6 +387,10 @@ interface ElectronAPI {
         isMaximized: () => Promise<boolean>;
         onMaximizeChange: (callback: (maximized: boolean) => void) => () => void;
     };
+    // 系统主题跟随：主进程 nativeTheme 变化时回调（auto 模式用于实时刷新）
+    theme: {
+        onSystemThemeChange: (callback: (shouldUseDarkColors: boolean) => void) => () => void;
+    };
 }
 
 // 获取 Electron API
@@ -742,6 +746,10 @@ const mockAPI: ElectronAPI = {
         },
         isMaximized: async () => false,
         onMaximizeChange: () => () => {
+        },
+    },
+    theme: {
+        onSystemThemeChange: () => () => {
         },
     },
 };

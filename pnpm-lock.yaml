@@ -29,6 +29,9 @@ importers:
       asn1:
         specifier: ^0.2.6
         version: 0.2.6
+      bcrypt-pbkdf:
+        specifier: ^1.0.2
+        version: 1.0.2
       electron-store:
         specifier: ^8.1.0
         version: 8.2.0
@@ -86,6 +89,9 @@ importers:
       ssh2-sftp-client:
         specifier: ^12.1.1
         version: 12.1.1
+      tweetnacl:
+        specifier: ^0.14.5
+        version: 0.14.5
       zustand:
         specifier: ^4.4.0
         version: 4.5.7(@types/react@18.3.31)(react@18.3.1)

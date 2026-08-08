@@ -58,7 +58,7 @@ function getCategoryColor(categoryId: string): { bg: string; text: string } {
         productivity: {bg: 'bg-yellow-500/15', text: 'text-yellow-400'},
         design: {bg: 'bg-pink-500/15', text: 'text-pink-400'},
     };
-    return colors[categoryId] || {bg: 'bg-[#3a3a3c]', text: 'text-[#98989d]'};
+    return colors[categoryId] || {bg: 'bg-[var(--color-surface-hover)]', text: 'text-[var(--color-muted2)]'};
 }
 
 // Skill 图标组件
@@ -93,7 +93,7 @@ function SkillIcon({skill}: { skill: SkillListItem }) {
 
     return (
         <div
-            className={`w-9 h-9 rounded-xl ${colors[colorIndex]} flex items-center justify-center text-white font-semibold text-sm`}>
+            className={`w-9 h-9 rounded-xl ${colors[colorIndex]} flex items-center justify-center text-[var(--color-text)] font-semibold text-sm`}>
             {initial}
         </div>
     );
@@ -136,7 +136,7 @@ export default function SkillCard({skill, isInstalled, connectionId, sourceUrl}:
     return (
         <div
             onClick={handleClick}
-            className="card p-3 cursor-pointer hover:bg-[#3a3a3c]/30 transition-colors flex flex-col h-[115px]"
+            className="card p-3 cursor-pointer hover:bg-[var(--color-surface-hover)]/30 transition-colors flex flex-col h-[115px]"
         >
             {/* 顶部内容区域 */}
             <div className="flex items-start gap-2.5 flex-1 min-h-0">
@@ -148,7 +148,7 @@ export default function SkillCard({skill, isInstalled, connectionId, sourceUrl}:
                 {/* 内容 */}
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
-                        <h3 className="text-[13px] font-medium text-white truncate">
+                        <h3 className="text-[13px] font-medium text-[var(--color-text)] truncate">
                             {skill.name}
                         </h3>
                         {isInstalled && (
@@ -157,15 +157,15 @@ export default function SkillCard({skill, isInstalled, connectionId, sourceUrl}:
               </span>
                         )}
                     </div>
-                    <p className="text-[11px] text-[#98989d] line-clamp-2 mt-0.5 leading-relaxed">
+                    <p className="text-[12px] text-[var(--color-muted2)] line-clamp-2 mt-0.5 leading-relaxed">
                         {description || t('detail.noDescription')}
                     </p>
                 </div>
             </div>
 
             {/* 底部信息 - 紧凑设计 */}
-            <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-[#3a3a3c]/50">
-                <div className="flex items-center gap-2 text-[10px] text-[#636366]">
+            <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-[var(--color-border)]/50">
+                <div className="flex items-center gap-2 text-[12px] text-[var(--color-muted)]">
                     {/* 分类 - 使用翻译 */}
                     <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${bg} ${text}`}>
             {t(`skillCategory.${skill.categoryId}`) || skill.category}
@@ -174,7 +174,7 @@ export default function SkillCard({skill, isInstalled, connectionId, sourceUrl}:
                     <span>@{skill.author}</span>
                 </div>
 
-                <div className="flex items-center gap-2 text-[10px] text-[#636366]">
+                <div className="flex items-center gap-2 text-[12px] text-[var(--color-muted)]">
                     {/* Star 数 */}
                     <span className="flex items-center gap-0.5">
             <StarIcon className="w-3 h-3 text-yellow-400"/>

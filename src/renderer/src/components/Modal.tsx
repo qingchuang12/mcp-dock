@@ -42,7 +42,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' }:
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* 背景遮罩 */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="absolute inset-0 bg-[var(--color-bg)]/60 backdrop-blur-sm"
         onClick={onClose}
       />
 
@@ -55,12 +55,12 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' }:
       `}>
         {/* 头部 */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-content-border flex-shrink-0 gap-2">
-          <h2 className="text-[15px] font-semibold text-white truncate flex-1 min-w-0">
+          <h2 className="text-[15px] font-semibold text-[var(--color-text)] truncate flex-1 min-w-0">
             {title}
           </h2>
           <button
             onClick={onClose}
-            className="p-1 rounded text-muted2 hover:text-white hover:bg-content-border transition-colors"
+            className="p-1 rounded text-muted2 hover:text-[var(--color-text)] hover:bg-content-border transition-colors"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />

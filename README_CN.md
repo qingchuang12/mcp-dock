@@ -5,11 +5,11 @@
 </p>
 
 <p align="center">
-  <strong>MCP Server 配置管理工具 · 支持 14 个 AI 客户端</strong>
+  <strong>MCP Server 配置管理工具 · 支持 19 个 AI 客户端</strong>
 </p>
 
 <p align="center">
-  统一管理 Cursor、VS Code、Claude Code、Gemini CLI、Codex CLI、Windsurf、Zed、TRAE、Kiro、JetBrains 等客户端的 MCP 配置。
+  统一管理 Cursor、VS Code、Claude Code、Gemini CLI、Codex CLI、Windsurf、Zed、TRAE、Kiro、JetBrains、CodeBuddy、WorkBuddy、Qoder 等客户端的 MCP 配置。
 </p>
 
 <p align="center">
@@ -26,12 +26,13 @@
 ## 功能特性
 
 - **MCP 商店** - 浏览和搜索来自 Official Registry 和 Smithery 的 8500+ MCP Server
-- **Skills 商店** - 发现 4400+ AI Skills，适用于 Cursor、Claude Code、Gemini CLI、Codex CLI、Opencode
-- **一键安装** - 自动配置到 Cursor、VS Code、Claude Code、Gemini CLI、Codex CLI、Windsurf、Zed、TRAE、TRAE CN、TRAE 插件 (MarsCode)、Kiro、Opencode、JetBrains、Antigravity、OpenClaw
+- **Skills 商店** - 发现 4400+ AI Skills，适用于 Cursor、Claude Code、Gemini CLI、Codex CLI、Opencode 等
+- **一键安装** - 自动配置到 Cursor、VS Code、Claude Code、Gemini CLI、Codex CLI、Windsurf、Zed、TRAE、TRAE CN、TRAE 插件 (MarsCode)、Kiro、Opencode、JetBrains、Antigravity、OpenClaw、CodeBuddy、WorkBuddy、Qoder、云端存储
 - **Agent Skills 标准** - 支持 `~/.agents/skills/` 统一标准（[skills.sh](https://skills.sh/)）
 - **MCP Inspector** - 交互式调试工具，测试 MCP Server 的 Tools
 - **配置管理** - 统一管理所有客户端的 MCP 配置
 - **多端同步** - 将 MCP 配置同步到多个客户端
+- **云端同步** - 将 MCP 与 Skills 配置推送到云端存储，实现备份与跨设备同步
 - **历史记录** - 自动备份配置，支持一键回滚
 - **多语言** - 支持中文和英文界面
 
@@ -49,22 +50,22 @@ brew upgrade --cask mcp-dock
 
 ### macOS (手动下载)
 
-- [Apple Silicon (M1/M2/M3)](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.3.2-arm64.dmg)
-- [Intel](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.3.2.dmg)
+- [Apple Silicon (M1/M2/M3)](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.0.0-arm64.dmg)
+- [Intel](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.0.0.dmg)
 
 > 注意: 应用未签名，如果提示"文件已损坏"或"无法打开"，请执行: `xattr -cr /Applications/MCP\ Dock.app`
 
 ### Windows
 
-- [安装版](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock.Setup.1.3.2.exe)
-- [便携版](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock.1.3.2.exe)
+- [安装版](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock.Setup.1.0.0.exe)
+- [便携版](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.0.0.exe)
 
 ### Linux
 
-- [AppImage (x64)](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.3.2.AppImage)
-- [AppImage (arm64)](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.3.2-arm64.AppImage)
-- [Debian/Ubuntu (x64)](https://github.com/OldJii/mcp-dock/releases/latest/download/mcp-dock_1.3.2_amd64.deb)
-- [Debian/Ubuntu (arm64)](https://github.com/OldJii/mcp-dock/releases/latest/download/mcp-dock_1.3.2_arm64.deb)
+- [AppImage (x64)](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.0.0.AppImage)
+- [AppImage (arm64)](https://github.com/OldJii/mcp-dock/releases/latest/download/MCP.Dock-1.0.0-arm64.AppImage)
+- [Debian/Ubuntu (x64)](https://github.com/OldJii/mcp-dock/releases/latest/download/mcp-dock_1.0.0_amd64.deb)
+- [Debian/Ubuntu (arm64)](https://github.com/OldJii/mcp-dock/releases/latest/download/mcp-dock_1.0.0_arm64.deb)
 
 ## 支持的客户端
 
@@ -87,6 +88,10 @@ brew upgrade --cask mcp-dock
 | JetBrains (IntelliJ, WebStorm, PyCharm 等) | 支持 |
 | Antigravity | 支持 |
 | OpenClaw | 支持 |
+| CodeBuddy | 支持 |
+| WorkBuddy | 支持 |
+| Qoder | 支持 |
+| 云端存储 (Cloud) | 支持 |
 
 ### Skills 客户端
 
@@ -98,6 +103,11 @@ brew upgrade --cask mcp-dock
 | Codex CLI | 支持 |
 | Opencode | 支持 |
 | Agent Skills (.agents) | 支持 |
+| CodeBuddy | 支持 |
+| WorkBuddy | 支持 |
+| Qoder | 支持 |
+| TRAE 插件 (MarsCode) | 支持 |
+| 云端存储 (Cloud) | 支持 |
 
 ## 数据源
 
@@ -154,3 +164,71 @@ AI-Tools 支持两个数据源：
 
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - [Smithery.ai](https://smithery.ai/)
+
+## 源代码
+
+本仓库包含 AI-Tools（社区版）的完整源代码，你可以构建、修改并参与贡献。
+
+### 技术栈
+
+- **框架**: Electron 43 + React 18 + TypeScript 5.3
+- **样式**: Tailwind CSS 3.4
+- **状态管理**: Zustand 4
+- **构建**: Vite 7 + electron-builder 24
+- **测试**: Vitest 4
+- **协议**: MCP JSON-RPC over stdio
+
+### 开发
+
+```bash
+# 安装依赖
+npm install
+
+# 启动开发模式
+npm run electron:dev
+
+# 打包生产版本
+npm run package
+```
+
+### 项目结构
+
+```
+src/
+├── renderer/           # 前端（React + Vite + Tailwind）
+│   ├── src/
+│   │   ├── components/ # UI 组件
+│   │   ├── pages/      # 应用页面（Store、Library、Inspector 等）
+│   │   ├── api/        # Registry API 层
+│   │   ├── store/      # Zustand 状态管理
+│   │   ├── lib/        # 工具函数与 Electron 桥接
+│   │   └── locales/    # i18n（英文 + 简体中文）
+│   └── assets/         # 图标与静态资源
+├── main/               # Electron 主进程
+│   ├── config-manager  # 多客户端配置读写（19 个客户端）
+│   ├── mcp-client      # MCP JSON-RPC 客户端（Inspector 用）
+│   ├── skills-manager  # Skills 安装与管理
+│   ├── history-manager # 配置备份与回滚
+│   ├── env-manager     # 运行时环境检测
+│   ├── cache-manager   # 本地数据缓存
+│   ├── cloud-sync-store # 云端同步配置持久化
+│   └── cloud-sync-service # 云端配置推送/拉取
+├── preload/            # Electron 预加载（安全 IPC 桥接）
+├── shared/             # 共享常量（cloud-sync、platform、frontmatter）
+└── __tests__/          # 单元测试
+```
+
+### 社区版 vs 完整版
+
+| 功能 | 社区版 | 完整版 |
+|------|--------|--------|
+| 手动安装到 19 个客户端 | ✅ | ✅ |
+| MCP Inspector | ✅ | ✅ |
+| 配置历史与回滚 | ✅ | ✅ |
+| 多端同步 | ✅ | ✅ |
+| Skills 管理 | ✅ | ✅ |
+| 浏览 8,500+ MCP Server | ❌ | ✅ |
+| 浏览 4,400+ AI Skills | ❌ | ✅ |
+| 从注册表一键安装 | ❌ | ✅ |
+
+如需获取包含注册表浏览功能的完整版，请[下载最新发布版本](https://github.com/OldJii/mcp-dock/releases)。

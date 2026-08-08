@@ -485,6 +485,15 @@ const api = {
             return () => ipcRenderer.removeListener('window:maximize-changed', listener);
         },
     },
+
+    // 系统主题跟随：主进程 nativeTheme 变化后推送，渲染进程据此重新计算 auto 主题
+    theme: {
+        onSystemThemeChange: (callback: (shouldUseDarkColors: boolean) => void): (() => void) => {
+            const listener = (_e: unknown, shouldUseDarkColors: boolean) => callback(shouldUseDarkColors);
+            ipcRenderer.on('theme:system-changed', listener);
+            return () => ipcRenderer.removeListener('theme:system-changed', listener);
+        },
+    },
 };
 
 // 暴露 API 到渲染进程

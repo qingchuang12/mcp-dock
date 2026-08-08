@@ -45,7 +45,7 @@ function getCategoryColor(categoryId: string): { bg: string; text: string; borde
         productivity: {bg: 'bg-yellow-500/10', text: 'text-yellow-400', border: 'border-yellow-500/30'},
         design: {bg: 'bg-pink-500/10', text: 'text-pink-400', border: 'border-pink-500/30'},
     };
-    return colors[categoryId] || {bg: 'bg-[#3a3a3c]', text: 'text-[#98989d]', border: 'border-[#3a3a3c]'};
+    return colors[categoryId] || {bg: 'bg-[var(--color-surface-hover)]', text: 'text-[var(--color-muted2)]', border: 'border-[var(--color-border)]'};
 }
 
 function SkillAvatar({author, size = 48}: { author: string; size?: number }) {
@@ -62,7 +62,7 @@ function SkillAvatar({author, size = 48}: { author: string; size?: number }) {
         );
     }
     return (
-        <div className={`rounded-xl ${colors[colorIndex]} flex items-center justify-center text-white font-bold`}
+        <div className={`rounded-xl ${colors[colorIndex]} flex items-center justify-center text-[var(--color-text)] font-bold`}
              style={{width: size, height: size, fontSize: size * 0.4}}>
             {initial}
         </div>
@@ -437,15 +437,15 @@ export default function SkillDetail() {
 
     if (isLoading && !skillView) {
         return (
-            <div className="flex items-center justify-center h-full bg-[#1c1c1e]">
-                <div className="w-8 h-8 border-2 border-[#3a3a3c] border-t-[#0a84ff] rounded-full animate-spin"/>
+            <div className="flex items-center justify-center h-full bg-[var(--color-bg)]">
+                <div className="w-8 h-8 border-2 border-[var(--color-border)] border-t-[#0a84ff] rounded-full animate-spin"/>
             </div>
         );
     }
 
     if (!skillView) {
         return (
-            <div className="flex flex-col items-center justify-center h-full bg-[#1c1c1e]">
+            <div className="flex flex-col items-center justify-center h-full bg-[var(--color-bg)]">
                 <div className="w-12 h-12 rounded-full bg-[#ff3b30]/10 flex items-center justify-center mb-3">
                     <svg className="w-6 h-6 text-[#ff3b30]" fill="none" viewBox="0 0 24 24" stroke="currentColor"
                          strokeWidth={1.5}>
@@ -453,7 +453,7 @@ export default function SkillDetail() {
                               d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
                     </svg>
                 </div>
-                <p className="text-[13px] text-[#98989d] mb-3">{t('skill.loadFailed') || 'Failed to load skill'}</p>
+                <p className="text-[13px] text-[var(--color-muted2)] mb-3">{t('skill.loadFailed') || 'Failed to load skill'}</p>
                 <button onClick={() => navigate(-1)} className="btn btn-secondary text-[13px]">
                     {t('detail.back')}
                 </button>
@@ -469,36 +469,36 @@ export default function SkillDetail() {
         : skillView.repositoryUrl || '';
 
     return (
-        <div className="flex flex-col h-full bg-[#1c1c1e]">
+        <div className="flex flex-col h-full bg-[var(--color-bg)]">
             {/* 头部导航（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
             <div
-                className={`flex items-center gap-2 px-4 h-[32px] drag-region relative border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl text-[12px] text-[#636366] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
-                <button onClick={() => navigate(-1)} className="no-drag hover:text-white transition-colors">
+                className={`flex items-center gap-2 px-4 h-[32px] drag-region relative border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-xl text-[12px] text-[var(--color-muted)] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
+                <button onClick={() => navigate(-1)} className="no-drag hover:text-[var(--color-text)] transition-colors">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/>
                     </svg>
                 </button>
                 {skillView.type === 'registry' ? (
                     <>
-                        <span className="no-drag hover:text-white cursor-pointer"
+                        <span className="no-drag hover:text-[var(--color-text)] cursor-pointer"
                               onClick={() => navigate('/store')}>{t('nav.store')}</span>
                         <span>/</span>
                         {hasCategory && (
                             <>
                                 <span
-                                    className="hover:text-white cursor-pointer">{t(`skillCategory.${skillView.categoryId}`) || skillView.category}</span>
+                                    className="hover:text-[var(--color-text)] cursor-pointer">{t(`skillCategory.${skillView.categoryId}`) || skillView.category}</span>
                                 <span>/</span>
                             </>
                         )}
                     </>
                 ) : (
                     <>
-                        <span className="no-drag hover:text-white cursor-pointer"
+                        <span className="no-drag hover:text-[var(--color-text)] cursor-pointer"
                               onClick={() => navigate('/library')}>{t('nav.library')}</span>
                         <span>/</span>
                     </>
                 )}
-                <span className="text-white">{skillView.name}</span>
+                <span className="text-[var(--color-text)]">{skillView.name}</span>
                 <WindowControls />
             </div>
 
@@ -512,19 +512,19 @@ export default function SkillDetail() {
                                 <SkillAvatar author={skillView.author} size={48}/>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
-                                        <h1 className="text-2xl font-bold text-white">{skillView.name}</h1>
+                                        <h1 className="text-2xl font-bold text-[var(--color-text)]">{skillView.name}</h1>
                                         {skillView.type === 'local' && (
                                             <span
-                                                className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#34c759]/10 text-[#34c759] border border-[#34c759]/30">
+                                                className="px-2 py-0.5 rounded text-[12px] font-medium bg-[#34c759]/10 text-[#34c759] border border-[#34c759]/30">
                         {t('detail.installed')}
                       </span>
                                         )}
                                     </div>
-                                    <span className="text-[14px] text-[#636366]">by @{skillView.author}</span>
+                                    <span className="text-[14px] text-[var(--color-muted)]">by @{skillView.author}</span>
                                 </div>
                             </div>
 
-                            <p className="text-[14px] text-[#98989d] leading-relaxed mb-4 whitespace-pre-line">
+                            <p className="text-[14px] text-[var(--color-muted2)] leading-relaxed mb-4 whitespace-pre-line">
                                 {description || t('detail.noDescription')}
                             </p>
 
@@ -536,7 +536,7 @@ export default function SkillDetail() {
                             )}
 
                             {(skillView.stars != null || skillView.forks != null || skillView.updatedAt) && (
-                                <div className="flex items-center gap-4 mt-4 text-[13px] text-[#98989d]">
+                                <div className="flex items-center gap-4 mt-4 text-[13px] text-[var(--color-muted2)]">
                                     {skillView.stars != null && (
                                         <span className="flex items-center gap-1">
                       <StarIcon className="w-4 h-4 text-yellow-400"/>
@@ -545,13 +545,13 @@ export default function SkillDetail() {
                                     )}
                                     {skillView.forks != null && (
                                         <span className="flex items-center gap-1">
-                      <ForkIcon className="w-4 h-4 text-[#636366]"/>
+                      <ForkIcon className="w-4 h-4 text-[var(--color-muted)]"/>
                                             {formatNumber(skillView.forks)} Forks
                     </span>
                                     )}
                                     {skillView.updatedAt && (
                                         <span className="flex items-center gap-1">
-                      <ClockIcon className="w-4 h-4 text-[#636366]"/>
+                      <ClockIcon className="w-4 h-4 text-[var(--color-muted)]"/>
                       Updated {formatDate(skillView.updatedAt)}
                     </span>
                                     )}
@@ -559,22 +559,22 @@ export default function SkillDetail() {
                             )}
                         </div>
 
-                        <h2 className="text-[15px] font-semibold text-white mb-4">SKILL.md</h2>
+                        <h2 className="text-[15px] font-semibold text-[var(--color-text)] mb-4">SKILL.md</h2>
                         <div className="card p-4 overflow-x-auto">
                             {skillView.skillMdContent ? (
                                 <pre
-                                    className="text-[12px] text-[#e6edf3] font-mono leading-relaxed whitespace-pre-wrap">
+                                    className="text-[12px] text-[var(--color-text)] font-mono leading-relaxed whitespace-pre-wrap">
                   <code>{skillView.skillMdContent}</code>
                 </pre>
                             ) : (
-                                <p className="text-[13px] text-[#636366] italic">{t('detail.noReadme')}</p>
+                                <p className="text-[13px] text-[var(--color-muted)] italic">{t('detail.noReadme')}</p>
                             )}
                         </div>
                     </div>
                 </div>
 
                 {/* 右侧边栏 */}
-                <div className="w-[280px] flex-shrink-0 border-l border-[#3a3a3c] overflow-y-auto p-4">
+                <div className="w-[280px] flex-shrink-0 border-l border-[var(--color-border)] overflow-y-auto p-4">
                     {/* 安装/卸载按钮 */}
                     <div className="mb-4">
                         {isInstalled ? (
@@ -591,7 +591,7 @@ export default function SkillDetail() {
                 仅作信息提示，不禁用安装按钮（所有来源的 skill 均保持可安装）。 */}
                         {!resolvedSkill && !isInstalled && (
                             <div className="mt-2 space-y-2">
-                                <p className="text-[11px] leading-relaxed text-[#98989d] bg-[#2c2c2e] rounded-md px-2.5 py-2">
+                                <p className="text-[12px] leading-relaxed text-[var(--color-muted2)] bg-[var(--color-surface)] rounded-md px-2.5 py-2">
                                     {t('skill.previewOnlyHint') || '该来源暂未提供可安装的 Skill 内容（无 SKILL.md 下载通道），仅支持预览。'}
                                 </p>
                                 {(meta?.sourceUrl || skillView?.repositoryUrl) && (
@@ -599,7 +599,7 @@ export default function SkillDetail() {
                                         href={meta?.sourceUrl || skillView?.repositoryUrl}
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="block text-center text-[12px] text-[#0a84ff] hover:underline"
+                                        className="block text-center text-[12px] text-[var(--color-accent)] hover:underline"
                                     >
                                         {t('skill.viewOriginal') || '查看原页面 →'}
                                     </a>
@@ -610,14 +610,14 @@ export default function SkillDetail() {
 
                     {/* 已安装的客户端 */}
                     {isInstalled && (
-                        <div className="mb-4 p-3 bg-[#3a3a3c]/30 rounded-lg">
-                            <p className="text-[11px] text-[#636366] mb-2">{t('detail.installedIn')}</p>
+                        <div className="mb-4 p-3 bg-[var(--color-surface-hover)]/30 rounded-lg">
+                            <p className="text-[12px] text-[var(--color-muted)] mb-2">{t('detail.installedIn')}</p>
                             <div className="flex flex-wrap gap-1">
                                 {installedInClients.map(clientId => {
                                     const client = clients.find(c => c.id === clientId);
                                     return (
                                         <span key={clientId}
-                                              className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#3a3a3c] text-[10px] text-[#98989d]">
+                                              className="flex items-center gap-1 px-2 py-0.5 rounded bg-[var(--color-surface-hover)] text-[12px] text-[var(--color-muted2)]">
                       <ClientIcon clientId={clientId} size={12}/>
                                             {client?.name || clientId}
                     </span>
@@ -630,12 +630,12 @@ export default function SkillDetail() {
                     {/* Source 卡片 */}
                     {skillView.repositoryUrl && (
                         <div className="card p-4 space-y-3 mb-4">
-                            <h3 className="text-[13px] font-semibold text-white">Source</h3>
+                            <h3 className="text-[13px] font-semibold text-[var(--color-text)]">Source</h3>
                             <a href="#" onClick={(e) => {
                                 e.preventDefault();
                                 api.system.openExternal(skillView.repositoryUrl!);
                             }}
-                               className="flex items-center justify-between text-[12px] text-[#98989d] hover:text-[#0a84ff] transition-colors">
+                               className="flex items-center justify-between text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-accent)] transition-colors">
                 <span className="flex items-center gap-2">
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                     <path fillRule="evenodd"
@@ -656,7 +656,7 @@ export default function SkillDetail() {
                                     e.preventDefault();
                                     api.system.openExternal(skillDirUrl);
                                 }}
-                                   className="flex items-center justify-between text-[12px] text-[#98989d] hover:text-[#0a84ff] transition-colors">
+                                   className="flex items-center justify-between text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-accent)] transition-colors">
                   <span className="flex items-center gap-2">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round"
@@ -677,7 +677,7 @@ export default function SkillDetail() {
                                     e.preventDefault();
                                     api.system.openExternal(skillView.skillMdRawUrl!);
                                 }}
-                                   className="flex items-center justify-between text-[12px] text-[#98989d] hover:text-[#0a84ff] transition-colors">
+                                   className="flex items-center justify-between text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-accent)] transition-colors">
                   <span className="flex items-center gap-2">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round"
@@ -698,33 +698,33 @@ export default function SkillDetail() {
                     {/* Source & Community（仅 registry skill） */}
                     {skillView.type === 'registry' && (
                         <div className="card p-4 mb-4">
-                            <h3 className="text-[13px] font-semibold text-white mb-3">Source & Community</h3>
+                            <h3 className="text-[13px] font-semibold text-[var(--color-text)] mb-3">Source & Community</h3>
                             <div className="space-y-2 text-[12px]">
                                 <div className="flex justify-between">
-                                    <span className="text-[#636366]">Repository</span>
-                                    <span className="text-white">{skillView.author}</span>
+                                    <span className="text-[var(--color-muted)]">Repository</span>
+                                    <span className="text-[var(--color-text)]">{skillView.author}</span>
                                 </div>
                                 {skillView.branch && (
                                     <div className="flex justify-between">
-                                        <span className="text-[#636366]">Branch</span>
-                                        <span className="text-white">{skillView.branch}</span>
+                                        <span className="text-[var(--color-muted)]">Branch</span>
+                                        <span className="text-[var(--color-text)]">{skillView.branch}</span>
                                     </div>
                                 )}
                                 {(skillView.stars != null || skillView.forks != null) && (
                                     <div className="flex justify-between">
-                                        <span className="text-[#636366]">Community</span>
-                                        <span className="text-white flex items-center gap-1">
+                                        <span className="text-[var(--color-muted)]">Community</span>
+                                        <span className="text-[var(--color-text)] flex items-center gap-1">
                       {skillView.stars != null && <><StarIcon
                           className="w-3 h-3 text-yellow-400"/>{formatNumber(skillView.stars)}</>}
                                             {skillView.forks != null && <><ForkIcon
-                                                className="w-3 h-3 text-[#636366] ml-1"/>{formatNumber(skillView.forks)}</>}
+                                                className="w-3 h-3 text-[var(--color-muted)] ml-1"/>{formatNumber(skillView.forks)}</>}
                     </span>
                                     </div>
                                 )}
                                 {skillView.updatedAt && (
                                     <div className="flex justify-between">
-                                        <span className="text-[#636366]">Updated At</span>
-                                        <span className="text-white">{formatDate(skillView.updatedAt)}</span>
+                                        <span className="text-[var(--color-muted)]">Updated At</span>
+                                        <span className="text-[var(--color-text)]">{formatDate(skillView.updatedAt)}</span>
                                     </div>
                                 )}
                             </div>
@@ -734,23 +734,23 @@ export default function SkillDetail() {
                     {/* Skill Stats（仅 registry skill） */}
                     {skillView.type === 'registry' && skillView.stats && (
                         <div className="card p-4 mb-4">
-                            <h3 className="text-[13px] font-semibold text-white mb-3">Skill Stats</h3>
+                            <h3 className="text-[13px] font-semibold text-[var(--color-text)] mb-3">Skill Stats</h3>
                             <div className="space-y-2 text-[12px]">
                                 <div className="flex justify-between">
-                                    <span className="text-[#636366]">SKILL.md</span>
-                                    <span className="text-white">{skillView.skillMdLines || 0} Lines</span>
+                                    <span className="text-[var(--color-muted)]">SKILL.md</span>
+                                    <span className="text-[var(--color-text)]">{skillView.skillMdLines || 0} Lines</span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-[#636366]">Total Files</span>
-                                    <span className="text-white">{skillView.stats.totalFiles || 0}</span>
+                                    <span className="text-[var(--color-muted)]">Total Files</span>
+                                    <span className="text-[var(--color-text)]">{skillView.stats.totalFiles || 0}</span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-[#636366]">Total Size</span>
-                                    <span className="text-white">{skillView.stats.totalSize || '0 B'}</span>
+                                    <span className="text-[var(--color-muted)]">Total Size</span>
+                                    <span className="text-[var(--color-text)]">{skillView.stats.totalSize || '0 B'}</span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-[#636366]">License</span>
-                                    <span className="text-white">{skillView.stats.license || 'NOASSERTION'}</span>
+                                    <span className="text-[var(--color-muted)]">License</span>
+                                    <span className="text-[var(--color-text)]">{skillView.stats.license || 'NOASSERTION'}</span>
                                 </div>
                             </div>
                         </div>
@@ -759,23 +759,23 @@ export default function SkillDetail() {
                     {/* Files 列表 */}
                     {skillView.files.length > 0 && (
                         <div className="card p-4">
-                            <h3 className="text-[13px] font-semibold text-white mb-3">
+                            <h3 className="text-[13px] font-semibold text-[var(--color-text)] mb-3">
                                 Files ({skillView.files.length})
                             </h3>
                             <div className="space-y-1.5">
                                 {skillView.files.map((file) => (
                                     <div key={file.name}
-                                         className="flex items-center justify-between p-2 rounded-md bg-[#3a3a3c]/30">
+                                         className="flex items-center justify-between p-2 rounded-md bg-[var(--color-surface-hover)]/30">
                                         <div className="flex items-center gap-2 min-w-0">
-                                            <svg className="w-3.5 h-3.5 text-[#636366] flex-shrink-0" fill="none"
+                                            <svg className="w-3.5 h-3.5 text-[var(--color-muted)] flex-shrink-0" fill="none"
                                                  viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                                 <path strokeLinecap="round" strokeLinejoin="round"
                                                       d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>
                                             </svg>
-                                            <span className="text-[11px] text-white truncate">{file.name}</span>
+                                            <span className="text-[12px] text-[var(--color-text)] truncate">{file.name}</span>
                                         </div>
                                         {file.size && <span
-                                            className="text-[10px] text-[#636366] flex-shrink-0 ml-2">{file.size}</span>}
+                                            className="text-[12px] text-[var(--color-muted)] flex-shrink-0 ml-2">{file.size}</span>}
                                     </div>
                                 ))}
                             </div>
@@ -788,17 +788,17 @@ export default function SkillDetail() {
             <Modal isOpen={showInstallModal} onClose={() => setShowInstallModal(false)}
                    title={t('skill.installTitle') || 'Install Skill'}>
                 <div className="space-y-4">
-                    <div className="flex items-center gap-3 p-3 bg-[#3a3a3c]/30 rounded-lg">
+                    <div className="flex items-center gap-3 p-3 bg-[var(--color-surface-hover)]/30 rounded-lg">
                         <SkillAvatar author={skillView.author} size={40}/>
                         <div>
-                            <h3 className="text-[14px] font-medium text-white">{skillView.name}</h3>
-                            <p className="text-[12px] text-[#636366]">by @{skillView.author}</p>
+                            <h3 className="text-[14px] font-medium text-[var(--color-text)]">{skillView.name}</h3>
+                            <p className="text-[12px] text-[var(--color-muted)]">by @{skillView.author}</p>
                         </div>
                     </div>
 
                     <div>
                         <label
-                            className="block text-[12px] font-medium text-white mb-2">{t('detail.selectClients')}</label>
+                            className="block text-[12px] font-medium text-[var(--color-text)] mb-2">{t('detail.selectClients')}</label>
                         <div className="grid grid-cols-2 gap-2">
                             {clients.filter(c => c.installed && c.supportsSkills).map(client => {
                                 const isSelected = selectedClients.includes(client.id as SkillClientType);
@@ -809,12 +809,12 @@ export default function SkillDetail() {
                                             disabled={isAlreadyInstalled}
                                             className={`flex items-center gap-2 p-3 rounded-md border text-left transition-colors
                       ${isAlreadyInstalled ? 'bg-[#34c759]/10 border-[#34c759]/30 text-[#34c759]'
-                                                : isSelected ? 'bg-[#0a84ff]/10 border-[#0a84ff]/30 text-[#0a84ff]'
-                                                    : 'bg-[#3a3a3c] border-[#3a3a3c] text-white hover:border-[#636366]'}`}>
+                                                : isSelected ? 'bg-[var(--color-accent)]/10 border-[var(--color-accent)]/30 text-[var(--color-accent)]'
+                                                    : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[#636366]'}`}>
                                         <ClientIcon clientId={client.id} size={20}/>
                                         <div className="flex-1 min-w-0">
                                             <div className="text-[12px] font-medium">{client.name}</div>
-                                            <div className="text-[10px] opacity-60">
+                                            <div className="text-[12px] opacity-60">
                                                 {isAlreadyInstalled ? t('detail.alreadyInstalled') : t('detail.available')}
                                             </div>
                                         </div>
@@ -832,7 +832,7 @@ export default function SkillDetail() {
                     </div>
 
                     {clients.filter(c => c.installed && c.supportsSkills).length === 0 && (
-                        <p className="text-center text-[#636366] text-[13px] py-4">
+                        <p className="text-center text-[var(--color-muted)] text-[13px] py-4">
                             {t('skill.noClientsSupport') || 'No installed clients support Skills'}
                         </p>
                     )}

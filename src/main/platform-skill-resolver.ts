@@ -27,7 +27,6 @@ import {DiscoveredSkill, ImportParseResult, SkillsManager} from './skills-manage
 import type {PlatformType} from '../shared/platform-constants';
 import {
     CLAWHUB_DOWNLOAD_BASE,
-    CLAWHUB_MAX_ITEMS,
     CLAWHUB_PAGE_LIMIT,
     CLAWHUB_TRENDING_BASE,
     CLAWHUB_TRENDING_URL,
@@ -338,8 +337,8 @@ const DIRECT_UA = UA;
  */
 const PLATFORM_SEARCH_ENDPOINTS: Record<Exclude<SupportedPlatform, 'unknown'>, string[]> = {
     modelscope: [
-        '/openapi/v1/skills?name={q}&page_number={page}&page_size={size}',
-        '/openapi/v1/skills?name={q}&page={page}',
+        // ModelScope skills 公开分页接口：GET /openapi/v1/skills?name={q}&page={page}&page_size={size}
+        '/openapi/v1/skills?name={q}&page={page}&page_size={size}',
     ],
     safeskill: [
         '/api/v1/skills?query={q}&page={page}',
@@ -381,6 +380,12 @@ export interface PlatformSearchPage {
     items: PlatformSkillListItem[];
     pageInfo: PlatformPageInfo;
     /**
+     * 列表是否已完成全量加载。ClawHub 等「首屏优先 + 后台补全」的数据源在冷加载时
+     * 先返回前几页（complete:false），剩余数据在后台补全；前端据此决定是否延迟 refetch 以补齐总数。
+     * 缺省 undefined 视为已完成（无需补全）。
+     */
+    complete?: boolean;
+    /**
      * 上游真实总量（如 ClawHub 趋势榜单的 totalItems）。
      * 当数据源为「本地分页 + 截断拉取」（例如 ClawHub 只拉前 N 条但上游有数千条）时，
      * 此值应回填上游真实总量，前端据此显示准确的「总数 / 分页」而非被截断的本地条数。
@@ -400,6 +405,8 @@ export interface PlatformSearchPage {
      * 此时 items 恒为空，并非网络/加载故障，前端应给出针对性的友好提示而非「加载失败」。
      */
     unsupported?: boolean;
+    /** 友好提示（非致命）：如 ModelScope 触发配额限制、要求带关键字搜索时返回，UI 应优先展示 */
+    message?: string;
 }
 
 // ============================================================================
@@ -433,6 +440,8 @@ export interface PlatformServerListItem {
 export interface PlatformServerSearchPage {
     items: PlatformServerListItem[];
     pageInfo: PlatformPageInfo;
+    /** 友好提示（非致命）：如 ModelScope 触发配额限制、要求带关键字搜索时返回，UI 应优先展示 */
+    message?: string;
 }
 
 /** 平台 MCP server 详情（归一化，对齐渲染端安装所需字段） */
@@ -478,60 +487,78 @@ interface PlatformServerEndpoint {
 }
 
 const PLATFORM_SERVER_SEARCH: Partial<Record<Exclude<SupportedPlatform, 'unknown'>, PlatformServerEndpoint>> = {
-    // ModelScope MCP 广场：PUT /openapi/v1/mcp/servers，body {search, filter:{category}, page_number, page_size}
+    // ModelScope MCP 广场（最新契约，见 source.md：「ModelScope MCP 广场 API」一节）：
+    //   PUT {baseUrl}/openapi/v1/mcp/servers
+    // 请求体分页字段为 snake_case：page_size + page_number + search + filter{category,tag,is_hosted}。
+    // 响应结构：data.mcp_server_list[] + data.total_count。
+    // 注意：该接口文档标记 Authorization 为必填（Bearer）；但实测公开环境未携带令牌
+    // 也可能放行，因此仅在连接配置了令牌时才附带 Authorization，缺失时交由上游决定。
     modelscope: {
         method: 'PUT',
         path: '/openapi/v1/mcp/servers',
         buildBody: (q, page, size, category) => {
-            const body: Record<string, unknown> = {search: q, page_number: page, page_size: size};
-            if (category) body.filter = {category};
-            return body;
+            return {
+                page_size: size,
+                page_number: page,
+                search: q,
+                filter: category ? { category } : {},
+            };
         },
     },
 };
 
 /** 将平台返回的原始 MCP server 条目归一化为 PlatformServerListItem */
 function toServerListItem(raw: Record<string, unknown>, platform: SupportedPlatform): PlatformServerListItem {
-    const id = String(raw.id || raw.qualifiedName || raw.name || 'server');
-    const display = String(raw.chinese_name || raw.displayName || raw.name || id);
-    const desc = String(raw.description || raw.desc || raw.summary || raw.detail || '');
+    const id = String(raw.id || raw.Id || raw.qualifiedName || raw.name || 'server');
+    const display = String(raw.chinese_name || raw.ChineseName || raw.displayName || raw.name || id);
+    const desc = String(raw.description || raw.Abstract || raw.AbstractCN || raw.desc || raw.summary || raw.detail || '');
     const repo = raw.repo || raw.repository || raw.repo_path;
 
     const categories = Array.isArray(raw.categories)
         ? (raw.categories as unknown[]).map(String)
+        : Array.isArray(raw.Category)
+        ? (raw.Category as unknown[]).map(String)
         : typeof raw.category === 'string' && raw.category
-            ? [raw.category]
-            : [];
+        ? [raw.category]
+        : [];
 
     const sourceUrl = raw.source_url
         ? String(raw.source_url)
+        : raw.FromSiteUrl
+        ? String(raw.FromSiteUrl)
         : raw.github_url
-            ? String(raw.github_url)
-            : raw.url
-                ? String(raw.url)
-                : repo
-                    ? `https://github.com/${String(repo)}`
-                    : undefined;
+        ? String(raw.github_url)
+        : raw.url
+        ? String(raw.url)
+        : repo
+        ? `https://github.com/${String(repo)}`
+        : undefined;
 
     const stars =
-        typeof raw.view_count === 'number'
-            ? raw.view_count
-            : typeof raw.stars === 'number'
-                ? raw.stars
-                : typeof raw.downloads === 'number'
-                    ? raw.downloads
-                    : undefined;
+        typeof raw.Stars === 'number'
+        ? raw.Stars
+        : typeof raw.ViewCount === 'number'
+        ? raw.ViewCount
+        : typeof raw.CallVolume === 'number'
+        ? raw.CallVolume
+        : typeof raw.view_count === 'number'
+        ? raw.view_count
+        : typeof raw.stars === 'number'
+        ? raw.stars
+        : typeof raw.downloads === 'number'
+        ? raw.downloads
+        : undefined;
 
     const iconUrl =
         typeof raw.logo_url === 'string' && raw.logo_url
-            ? raw.logo_url
-            : typeof raw.icon_url === 'string' && raw.icon_url
-                ? raw.icon_url
-                : undefined;
+        ? raw.logo_url
+        : typeof raw.icon_url === 'string' && raw.icon_url
+        ? raw.icon_url
+        : undefined;
 
     return {
         id,
-        name: String(raw.name || id),
+        name: String(raw.name || raw.Name || id),
         displayName: display,
         description: desc,
         categories,
@@ -569,13 +596,30 @@ export async function searchPlatformServersPaged(
         return {items: [], pageInfo: emptyPageInfo(safePage, safeSize)};
     }
 
+    // ModelScope 配额硬限制：page_number × page_size ≤ 100（见 source.md 错误码 QuotaLimitExceed）。
+    // 按规则直接预判，越界时无需发起请求即可返回友好提示，避免浪费一次必然失败的调用。
+    if (sp === 'modelscope' && safePage * safeSize > MODELSCOPE_QUOTA_PRODUCT) {
+        const maxPages = Math.max(1, Math.floor(MODELSCOPE_QUOTA_PRODUCT / safeSize));
+        log(`platform=modelscope 命中配额上限（page=${safePage} × size=${safeSize} > ${MODELSCOPE_QUOTA_PRODUCT}），直接返回提示`);
+        return {
+            items: [],
+            pageInfo: {page: safePage, pageSize: safeSize, total: MODELSCOPE_QUOTA_PRODUCT, totalPages: maxPages, hasMore: false},
+            message: '__QUOTA_LIMIT_EXCEED__',
+        };
+    }
+
     const headers: Record<string, string> = {
         'User-Agent': DIRECT_UA,
         'Accept': 'application/json',
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
     };
-    // ModelScope 列表接口无需令牌即可访问；带了无效 Bearer 反而可能 401，
-    // 故仅在有令牌时附带 Authorization。
+    if (sp === 'modelscope') {
+        // 建议携带语言偏好头（可选），用于返回中文描述
+        headers['x-modelscope-accept-language'] = 'zh_CN';
+    }
+    // ModelScope 公开 skills 接口（/openapi/v1/skills）无需令牌即可访问；
+    // MCP 广场接口文档标记 Authorization 为必填，故仅在有令牌时附带 Bearer，
+    // 缺失令牌时交由上游决定是否放行（缺失即返回空结果，非代码缺陷）。
     if (secret) headers['Authorization'] = `Bearer ${secret}`;
     if (def.method === 'PUT') headers['Content-Type'] = 'application/json';
 
@@ -623,7 +667,25 @@ export async function searchPlatformServersPaged(
             return {items: [], pageInfo: emptyPageInfo(safePage, safeSize)};
         }
 
+        // ModelScope 等平台在触发配额/频率限制时会返回 success:false 的业务错误体
+        // （如 code="QuotaLimitExceed"），此时 data 为空。需给出友好提示，让用户
+        // 通过输入关键字缩小范围，而不是静默展示空列表。
+        // 配额类错误用哨兵串让渲染层做国际化；其它业务错误直接透传上游 message。
+        if (json && json.success === false) {
+            const code = String(json.code ?? '');
+            const rawMsg = typeof json.message === 'string' ? json.message : '';
+            let hint: string;
+            if (code === 'QuotaLimitExceed' || /quota|limit exceeded|超出|超过.*限制/i.test(rawMsg)) {
+                hint = '__QUOTA_LIMIT_EXCEED__';
+            } else {
+                hint = rawMsg || '查询被上游拒绝，请稍后重试。';
+            }
+            log(`  ✗ ${url} -> 业务错误 code=${code} msg=${rawMsg}`);
+            return {items: [], pageInfo: emptyPageInfo(safePage, safeSize), message: hint};
+        }
+
         // 定位 mcp_server_list / servers 数组
+        // ModelScope MCP 广场（source.md）：data.mcp_server_list
         const arr: unknown[] =
             json?.data?.mcp_server_list ||
             json?.mcp_server_list ||
@@ -638,6 +700,29 @@ export async function searchPlatformServersPaged(
         );
 
         const pageInfo = extractPageInfo(json, safePage, safeSize, liked.length);
+
+        // ModelScope 配额：单次最多可检索 page_number × page_size ≤ 100 条，
+        // 超出边界的页上游必拒。因此把可翻页数钳制在配额内（与 Smithery 的
+        // totalPages 一样作为分页控件唯一真相），避免 UI 跳到必然失败的空白页；
+        // 当 catalog 实际量大于可检索上限时，在末页提示用户用关键字缩小范围。
+        if (sp === 'modelscope') {
+            const maxPages = Math.max(1, Math.floor(MODELSCOPE_QUOTA_PRODUCT / safeSize));
+            const maxTotal = maxPages * safeSize;
+            const rawTotal = json?.data?.total_count;
+            const rawTotalNum = typeof rawTotal === 'number' && Number.isFinite(rawTotal) ? rawTotal : null;
+            const cappedTotal = rawTotalNum !== null ? Math.min(rawTotalNum, maxTotal) : maxTotal;
+            pageInfo.total = cappedTotal;
+            pageInfo.totalPages = Math.max(1, Math.ceil(cappedTotal / safeSize));
+            pageInfo.hasMore = safePage < pageInfo.totalPages;
+            if (rawTotalNum !== null && rawTotalNum > maxTotal && safePage >= pageInfo.totalPages) {
+                return {
+                    items: liked.map(r => toServerListItem(r, sp)),
+                    pageInfo,
+                    message: '__QUOTA_LIMIT_EXCEED__',
+                };
+            }
+        }
+
         log(`  ✓ ${url} -> ${liked.length} servers in ${durationMs}ms (total=${pageInfo.total ?? '?'}, hasMore=${pageInfo.hasMore})`);
         return {items: liked.map(r => toServerListItem(r, sp)), pageInfo};
     } catch (e) {
@@ -789,10 +874,17 @@ export async function fetchPlatformServerDetail(
 export const DIRECT_SEARCH_PAGE_SIZE = 20;
 
 /**
+ * ModelScope MCP 广场配额硬上限：page_number × page_size 不得超过 100
+ * （见 source.md 错误码 QuotaLimitExceed）。超过即被上游拒绝，因此检索与
+ * 分页都必须约束在该乘积内。
+ */
+export const MODELSCOPE_QUOTA_PRODUCT = 100;
+
+/**
  * 从平台响应中提取分页元信息。
  *
  * 实测各平台契约：
- *  - ModelScope：{data:{skills,total,page_number,page_size}}
+ *  - ModelScope：请求 ?name=&page=&page_size=（见 PLATFORM_SEARCH_ENDPOINTS）；响应分页字段经下方回退链同时兼容 page/size 与 page_number/page_size
  *  - SkillsMP  ：{skills,pagination:{page,limit,total,totalPages}}
  *  - 其它/兜底 ：无分页字段时，用「本页条数 == 请求 size」推断是否还有下一页
  */
@@ -804,11 +896,13 @@ function extractPageInfo(
 ): PlatformPageInfo {
     // 分页元信息可能位于不同层级：
     //  - SkillsMP：json.data.pagination = {page, limit, total, totalPages, hasNext, hasPrev, ...}
-    //  - ModelScope：json.data = {skills, total, page_number, page_size}
+    //  - ModelScope：请求用 page + page_size；响应分页字段兼容 page/size 与 page_number/page_size（见下方回退链）
     //  - 其它/兜底：json.pagination 或 json 顶层
     const p =
         json?.data?.pagination ||
         json?.pagination ||
+        json?.Data?.McpServer ||
+        json?.Data ||
         json?.data ||
         json ||
         {};
@@ -818,7 +912,14 @@ function extractPageInfo(
         return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null;
     };
 
-    const total = num(p.total) ?? num(p.total_count) ?? num(p.totalCount) ?? num(json?.total);
+    const total =
+        num(p.total) ??
+        num(p.total_count) ??
+        num(p.totalCount) ??
+        num(json?.Data?.McpServer?.TotalCount) ??
+        num(json?.Data?.totalCount) ??
+        num(json?.Data?.total) ??
+        num(json?.total);
     const pageSize =
         num(p.page_size) ?? num(p.pageSize) ?? num(p.limit) ?? num(p.per_page) ?? requestedSize;
     const page = num(p.page_number) ?? num(p.pageNumber) ?? num(p.page) ?? requestedPage;
@@ -1226,14 +1327,22 @@ async function searchSkillhubPaged(
 //  不支持关键词搜索，故走本地模糊匹配 + 分页。
 //
 //  该接口用游标翻页：响应带 `nextCursor`，回传即取下一页；`limit` 上限 100，
-//  `totalItems` 给出上游总量（实测数千条）。早期实现只取首屏 20 条，导致
-//  商店里 ClawHub 源永远只有一页 —— 现改为按游标连续拉取到 CLAWHUB_MAX_ITEMS。
+//  `totalItems` 给出上游真实总量（实测数千条，如 2795）。早期实现只取首屏或按固定上限
+//  截断，导致分页总数与本地数据不一致、页数跳动 —— 现改为顺着 nextCursor 全量拉取，
+//  并直接以 totalItems 驱动前端分页（同时受 CLAWHUB_MAX_FETCH_PAGES 安全护栏约束）。
 // ============================================================================
 
 /** 趋势榜单缓存 TTL：10 分钟，避免每次搜索重打接口 */
 const CLAWHUB_CACHE_TTL = 10 * 60 * 1000;
-let clawhubCache: { ts: number; items: PlatformSkillListItem[]; total: number } | null = null;
-let clawhubInflight: Promise<{ items: PlatformSkillListItem[]; total: number }> | null = null;
+/** ClawHub 游标翻页的安全上限（防止上游 nextCursor 异常时不终止）；正常会在 nextCursor 耗尽时停止 */
+const CLAWHUB_MAX_FETCH_PAGES = 500;
+/**
+ * 首屏优先：冷加载时先串行拉前 N 页（≈ N×CLAWHUB_PAGE_LIMIT 条）即返回首页并渲染，
+ * 剩余页在后台继续补全。这样把冷加载首屏从「等全量（≈28 页 ≈ 8s）」降到「约 2 页 RTT（≈0.6s）」。
+ */
+const CLAWHUB_FIRST_PAGES = 2;
+let clawhubCache: { ts: number; items: PlatformSkillListItem[]; total: number; complete: boolean } | null = null;
+let clawhubInflight: Promise<{ items: PlatformSkillListItem[]; total: number; complete: boolean }> | null = null;
 
 /** 把趋势榜单的单条原始记录映射成通用 skill 列表项，无法识别 id 时返回 null */
 function mapClawhubEntry(entry: unknown): PlatformSkillListItem | null {
@@ -1300,72 +1409,114 @@ function mapClawhubEntry(entry: unknown): PlatformSkillListItem | null {
     };
 }
 
-async function loadClawhubTrending(): Promise<{ items: PlatformSkillListItem[]; total: number }> {
+/** 翻页拉取状态（在阶段一与后台补全之间共享） */
+interface ClawhubFetchState {
+    list: PlatformSkillListItem[];
+    seen: Set<string>;
+    cursor: string | null;
+    upstreamTotal: number;
+    fetchPages: number;
+}
+
+/**
+ * 顺着 nextCursor 串行拉取最多 maxPages 页，累加到 state。
+ * - 首页拉取失败：抛出错误（视为数据源不可用）。
+ * - 后续页拉取失败 / 空页 / 无下一页：停止（保留已得部分）。
+ * 返回 'stop' 表示已拉到尽头或中途一页失败，'done' 表示达到 maxPages。
+ */
+async function fetchClawhubPages(state: ClawhubFetchState, maxPages: number): Promise<'done' | 'stop'> {
+    const log = (...args: unknown[]) => console.log('[clawhub]', ...args);
+    while (state.fetchPages < maxPages) {
+        const limit = CLAWHUB_PAGE_LIMIT;
+        const url =
+            `${CLAWHUB_TRENDING_BASE}&limit=${limit}` +
+            (state.cursor ? `&cursor=${encodeURIComponent(state.cursor)}` : '');
+
+        const raw = await fetchText(url);
+        if (!raw) {
+            // 首页就失败视为不可用；后续页失败则保留已拿到的部分，不整体报错
+            if (state.list.length === 0) {
+                log(`✗ 无法获取趋势榜单（${url}）`);
+                throw new Error('无法获取 ClawHub 技能榜单，请检查网络连接');
+            }
+            log(`! 第 ${state.list.length / CLAWHUB_PAGE_LIMIT + 1} 页拉取失败，使用已获取的 ${state.list.length} 条`);
+            return 'stop';
+        }
+
+        let json: unknown;
+        try {
+            json = JSON.parse(raw);
+        } catch {
+            if (state.list.length === 0) {
+                log(`✗ 响应不是合法 JSON`);
+                throw new Error('ClawHub 返回了非预期的数据格式');
+            }
+            return 'stop';
+        }
+
+        const body = (json ?? {}) as { items?: unknown; nextCursor?: unknown; totalItems?: unknown };
+        if (typeof body.totalItems === 'number') state.upstreamTotal = body.totalItems;
+
+        const pageItems = Array.isArray(body.items) ? body.items : [];
+        if (pageItems.length === 0) return 'stop';
+
+        for (const entry of pageItems) {
+            const mapped = mapClawhubEntry(entry);
+            // 上游按趋势快照排序，翻页时偶有重复条目，按 id 去重
+            if (!mapped || state.seen.has(mapped.id)) continue;
+            state.seen.add(mapped.id);
+            state.list.push(mapped);
+        }
+
+        const next = typeof body.nextCursor === 'string' ? body.nextCursor : '';
+        if (!next || next === state.cursor) return 'stop';
+        state.cursor = next;
+        state.fetchPages++;
+    }
+    return 'done';
+}
+
+/** 阶段一完成后，在后台继续把剩余页拉全并写回缓存 */
+async function completeClawhubInBackground(state: ClawhubFetchState): Promise<void> {
+    const log = (...args: unknown[]) => console.log('[clawhub]', ...args);
+    try {
+        await fetchClawhubPages(state, CLAWHUB_MAX_FETCH_PAGES);
+    } catch (e) {
+        log(`! 后台补全中断：`, e);
+    }
+    if (clawhubCache) {
+        // 用新数组引用，便于前端 refetch 感知到数据增长
+        clawhubCache = {ts: clawhubCache.ts, items: [...state.list], total: state.upstreamTotal, complete: true};
+    }
+    log(`✓ 后台补全完成：${state.list.length} 个 trending skill（上游共 ${state.upstreamTotal || '未知'} 条）`);
+}
+
+async function loadClawhubTrending(): Promise<{ items: PlatformSkillListItem[]; total: number; complete: boolean }> {
     const log = (...args: unknown[]) => console.log('[clawhub]', ...args);
 
     if (clawhubCache && Date.now() - clawhubCache.ts < CLAWHUB_CACHE_TTL) {
-        return {items: clawhubCache.items, total: clawhubCache.total};
+        return {items: clawhubCache.items, total: clawhubCache.total, complete: clawhubCache.complete};
     }
     if (clawhubInflight) return clawhubInflight;
 
     clawhubInflight = (async () => {
-        const list: PlatformSkillListItem[] = [];
-        const seen = new Set<string>();
-        let cursor: string | null = null;
-        let upstreamTotal = 0;
+        const state: ClawhubFetchState = {
+            list: [],
+            seen: new Set<string>(),
+            cursor: null,
+            upstreamTotal: 0,
+            fetchPages: 0,
+        };
 
-        // 游标翻页：最多 CLAWHUB_MAX_ITEMS 条，或上游 nextCursor 耗尽为止
-        while (list.length < CLAWHUB_MAX_ITEMS) {
-            const remaining = CLAWHUB_MAX_ITEMS - list.length;
-            const limit = Math.min(CLAWHUB_PAGE_LIMIT, remaining);
-            const url =
-                `${CLAWHUB_TRENDING_BASE}&limit=${limit}` +
-                (cursor ? `&cursor=${encodeURIComponent(cursor)}` : '');
+        // 阶段一：仅拉前 CLAWHUB_FIRST_PAGES 页（≈0.6s），足以首页渲染 + 前段本地搜索，
+        // 拉满即把 partial 写缓存并返回，剩余页转入后台补全（completeClawhubInBackground）。
+        await fetchClawhubPages(state, CLAWHUB_FIRST_PAGES);
 
-            const raw = await fetchText(url);
-            if (!raw) {
-                // 首页就失败视为不可用；后续页失败则保留已拿到的部分，不整体报错
-                if (list.length === 0) {
-                    log(`✗ 无法获取趋势榜单（${url}）`);
-                    throw new Error('无法获取 ClawHub 技能榜单，请检查网络连接');
-                }
-                log(`! 第 ${list.length / CLAWHUB_PAGE_LIMIT + 1} 页拉取失败，使用已获取的 ${list.length} 条`);
-                break;
-            }
-
-            let json: unknown;
-            try {
-                json = JSON.parse(raw);
-            } catch {
-                if (list.length === 0) {
-                    log(`✗ 响应不是合法 JSON`);
-                    throw new Error('ClawHub 返回了非预期的数据格式');
-                }
-                break;
-            }
-
-            const body = (json ?? {}) as { items?: unknown; nextCursor?: unknown; totalItems?: unknown };
-            if (typeof body.totalItems === 'number') upstreamTotal = body.totalItems;
-
-            const pageItems = Array.isArray(body.items) ? body.items : [];
-            if (pageItems.length === 0) break;
-
-            for (const entry of pageItems) {
-                const mapped = mapClawhubEntry(entry);
-                // 上游按趋势快照排序，翻页时偶有重复条目，按 id 去重
-                if (!mapped || seen.has(mapped.id)) continue;
-                seen.add(mapped.id);
-                list.push(mapped);
-            }
-
-            const next = typeof body.nextCursor === 'string' ? body.nextCursor : '';
-            if (!next || next === cursor) break;
-            cursor = next;
-        }
-
-        clawhubCache = {ts: Date.now(), items: list, total: upstreamTotal};
-        log(`✓ 拉取 ${list.length} 个 trending skill（上游共 ${upstreamTotal || '未知'} 条）`);
-        return {items: list, total: upstreamTotal};
+        // 写 partial 缓存（complete:false），随后后台继续拉全量
+        clawhubCache = {ts: Date.now(), items: state.list, total: state.upstreamTotal, complete: false};
+        void completeClawhubInBackground(state);
+        log(`✓ 首屏就绪：${state.list.length} 个 trending skill（后台补全剩余页）`);
+        return {items: [...state.list], total: state.upstreamTotal, complete: false};
     })();
 
     try {
@@ -1381,7 +1532,7 @@ async function searchClawhubPaged(
     pageSize: number,
     category: string
 ): Promise<PlatformSearchPage> {
-    const {items: all, total: upstreamTotal} = await loadClawhubTrending();
+    const {items: all, total: upstreamTotal, complete} = await loadClawhubTrending();
     let filtered = all;
 
     if (category) {
@@ -1400,10 +1551,10 @@ async function searchClawhubPaged(
         });
     }
 
-    // 无搜索、无分类时展示上游真实总量（totalItems，可能 > 本地已拉取条数）；
-    // 有搜索/分类时本地过滤，只能用本地条数（上游不提供子集总量）。
     const noFilter = !q && !category;
-    const total = noFilter && upstreamTotal > 0 ? upstreamTotal : filtered.length;
+    // 未补全完成且处于无过滤态时，用「已加载条数」驱动分页，避免翻到尚未加载的空白页；
+    // 后台补全完成（或上游未给 totalItems）后，再使用上游真实总量 upstreamTotal，保持页数稳定。
+    const total = noFilter && complete && upstreamTotal > 0 ? upstreamTotal : filtered.length;
     const totalPages = pageSize > 0 ? Math.ceil(total / pageSize) : 0;
     const start = (page - 1) * pageSize;
     const items = filtered.slice(start, start + pageSize);
@@ -1411,9 +1562,12 @@ async function searchClawhubPaged(
     return {
         items,
         pageInfo: {page, pageSize, total, totalPages, hasMore: start + pageSize < total},
+        // serverTotal 透传上游真实总量，供前端顶部「共 N 个」展示
         serverTotal: upstreamTotal > 0 ? upstreamTotal : undefined,
-        // 本地全量拉取后前端切片分页（受 CLAWHUB_MAX_ITEMS 截断，翻页范围以本地为准）
+        // 本地切片分页：首屏（page=1）立即渲染，主进程在后台按页补全剩余数据；
+        // complete 标记是否已完成全量，前端据此决定是否需要延迟 refetch 补齐。
         pagingMode: 'client',
+        complete,
     };
 }
 
@@ -1457,6 +1611,18 @@ export async function searchPlatformDirectPaged(
     }
     const sp = platform as Exclude<SupportedPlatform, 'unknown'>;
     const startedAll = Date.now();
+
+    // ModelScope 配额硬限制：page_number × page_size ≤ 100（见 source.md 错误码 QuotaLimitExceed）。
+    // skills 与 mcp 同源，同样受此配额约束。按规则直接预判，越界时无需发起请求即可返回友好提示。
+    if (sp === 'modelscope' && safePage * safeSize > MODELSCOPE_QUOTA_PRODUCT) {
+        const maxPages = Math.max(1, Math.floor(MODELSCOPE_QUOTA_PRODUCT / safeSize));
+        console.log('[direct-search]', `platform=modelscope(skills) 命中配额上限（page=${safePage} × size=${safeSize} > ${MODELSCOPE_QUOTA_PRODUCT}），直接返回提示`);
+        return {
+            items: [],
+            pageInfo: {page: safePage, pageSize: safeSize, total: MODELSCOPE_QUOTA_PRODUCT, totalPages: maxPages, hasMore: false},
+            message: '__QUOTA_LIMIT_EXCEED__',
+        };
+    }
 
     // SkillHub：站点为 Next.js SPA，无任何公开 JSON 列表接口（所有候选端点均返回
     // HTML 壳），直接改用其开源清单仓库 iflytek/skillhub 的 builtin-skills 目录。
@@ -1644,10 +1810,39 @@ export async function searchPlatformDirectPaged(
                 lastDiagnostics.set(sp, diag);
 
                 const pageInfo = extractPageInfo(json, safePage, safeSize, liked.length);
+
+                // ModelScope 配额：单次最多可检索 page × size ≤ 100 条，超出边界的页上游必拒。
+                // 把可翻页数钳制在配额内（与 Smithery/MCP 的 totalPages 一样作为分页控件唯一真相），
+                // 避免 UI 跳到必然失败的空白页；当 catalog 实际量大于可检索上限时，在末页提示关键字。
+                if (sp === 'modelscope') {
+                    const maxPages = Math.max(1, Math.floor(MODELSCOPE_QUOTA_PRODUCT / safeSize));
+                    const maxTotal = maxPages * safeSize;
+                    const rawTotal = json?.data?.total_count ?? json?.data?.total;
+                    const rawTotalNum = typeof rawTotal === 'number' && Number.isFinite(rawTotal) ? rawTotal : null;
+                    const cappedTotal = rawTotalNum !== null ? Math.min(rawTotalNum, maxTotal) : maxTotal;
+                    pageInfo.total = cappedTotal;
+                    pageInfo.totalPages = Math.max(1, Math.ceil(cappedTotal / safeSize));
+                    pageInfo.hasMore = safePage < pageInfo.totalPages;
+                    if (rawTotalNum !== null && rawTotalNum > maxTotal && safePage >= pageInfo.totalPages) {
+                        log(
+                            `  ✓ ${url} -> 已达配额上限（catalog=${rawTotalNum} > ${maxTotal}），提示关键字搜索`
+                        );
+                        return {
+                            items: liked.map(r => toListItem(r, sp)),
+                            pageInfo,
+                            message: '__QUOTA_LIMIT_EXCEED__',
+                        };
+                    }
+                }
+
                 log(
                     `  ✓ ${url} -> ${liked.length} items in ${attempt.durationMs}ms ` +
                     `(page ${pageInfo.page}/${pageInfo.totalPages ?? '?'}, total=${pageInfo.total ?? '?'}, hasMore=${pageInfo.hasMore})`
                 );
+                // 这些端点携带 {page}/{page_number} 与 {size} 参数、返回对应切片，本质是服务端真分页。
+                // 前端据此按「client 预取」模式工作：先用首屏（page=1）立即渲染，再在后台把剩余页
+                // 补全进本地列表做切片分页；分页总数一律由 pageInfo.total（服务端稳定真实总量）驱动，
+                // 不会随本地列表累积增长而跳动。故不返回 pagingMode（默认 client）。
                 return {items: liked.map(r => toListItem(r, sp)), pageInfo};
             }
 

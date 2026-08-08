@@ -9,9 +9,10 @@ import {useSearchParams} from 'react-router-dom';
 import {useElectronAPI} from '../lib/electron';
 import {useIsMac} from '../lib/useIsMac';
 import {useStore} from '../store/useStore';
+import {getEffectiveTheme} from '../lib/useTheme';
 import {Light as SyntaxHighlighter} from 'react-syntax-highlighter';
 import json from 'react-syntax-highlighter/dist/esm/languages/hljs/json';
-import {atomOneDark} from 'react-syntax-highlighter/dist/esm/styles/hljs';
+import {atomOneDark, docco} from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import WindowControls from '../components/WindowControls';
 
 // 注册 JSON 语言
@@ -58,7 +59,8 @@ export default function Inspector() {
   const api = useElectronAPI();
   const isMac = useIsMac();
   const [searchParams] = useSearchParams();
-  const { inspectorState, setInspectorState } = useStore();
+  const { inspectorState, setInspectorState, theme } = useStore();
+  const isDark = getEffectiveTheme(theme) === 'dark';
   
   // 跟踪是否是通过 URL 参数进入
   const hasPresetConfig = useRef(false);
@@ -313,7 +315,7 @@ export default function Inspector() {
   const renderToolForm = () => {
     if (!selectedTool?.inputSchema?.properties) {
       return (
-        <p className="text-[13px] text-[#636366]">
+        <p className="text-[13px] text-[var(--color-muted)]">
           {t('inspector.noParameters') || 'This tool has no parameters'}
         </p>
       );
@@ -331,18 +333,18 @@ export default function Inspector() {
       <div className="space-y-3">
         {Object.entries(properties).map(([key, schema]) => (
           <div key={key}>
-            <label className="block text-[12px] text-[#98989d] mb-1">
+            <label className="block text-[12px] text-[var(--color-muted2)] mb-1">
               {key}
               {required.includes(key) && <span className="text-[#ff3b30] ml-1">*</span>}
               {schema.description && (
-                <span className="text-[#636366] ml-2">- {schema.description}</span>
+                <span className="text-[var(--color-muted)] ml-2">- {schema.description}</span>
               )}
             </label>
             {schema.enum ? (
               <select
                 value={toolArgs[key] || ''}
                 onChange={(e) => setToolArgs(prev => ({ ...prev, [key]: e.target.value }))}
-                className="w-full px-3 py-2 bg-[#1c1c1e] border border-[#3a3a3c] rounded-lg text-[13px] text-white focus:outline-none focus:border-[#0a84ff]"
+                className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
               >
                 <option value="">Select...</option>
                 {schema.enum.map(opt => (
@@ -353,7 +355,7 @@ export default function Inspector() {
               <select
                 value={toolArgs[key] || ''}
                 onChange={(e) => setToolArgs(prev => ({ ...prev, [key]: e.target.value }))}
-                className="w-full px-3 py-2 bg-[#1c1c1e] border border-[#3a3a3c] rounded-lg text-[13px] text-white focus:outline-none focus:border-[#0a84ff]"
+                className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
               >
                 <option value="">Select...</option>
                 <option value="true">true</option>
@@ -365,7 +367,7 @@ export default function Inspector() {
                 value={toolArgs[key] || ''}
                 onChange={(e) => setToolArgs(prev => ({ ...prev, [key]: e.target.value }))}
                 placeholder={schema.default !== undefined ? String(schema.default) : `Enter ${key}...`}
-                className="w-full px-3 py-2 bg-[#1c1c1e] border border-[#3a3a3c] rounded-lg text-[13px] text-white placeholder-[#636366] focus:outline-none focus:border-[#0a84ff]"
+                className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)]"
               />
             )}
           </div>
@@ -375,11 +377,11 @@ export default function Inspector() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#1c1c1e]">
+    <div className="flex flex-col h-full bg-[var(--color-bg)]">
       {/* 顶部控制栏（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
-      <div className={`flex items-center justify-between px-4 h-[38px] drag-region relative border-b border-[#3a3a3c] bg-[#1c1c1e]/80 backdrop-blur-xl ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
+      <div className={`flex items-center justify-between px-4 h-[38px] drag-region relative border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-xl ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
         <div className="flex items-center gap-3 no-drag">
-          <h1 className="text-[14px] font-semibold text-white tracking-tight">
+          <h1 className="text-[14px] font-semibold text-[var(--color-text)] tracking-tight">
             {t('inspector.title') || 'MCP Inspector'}
           </h1>
           
@@ -391,7 +393,7 @@ export default function Inspector() {
               status === 'error' ? 'bg-[#ff3b30]' :
               'bg-[#636366]'
             }`} />
-            <span className="text-[12px] text-[#98989d]">
+            <span className="text-[12px] text-[var(--color-muted2)]">
               {status === 'connected' && serverInfo?.name 
                 ? `${serverInfo.name} v${serverInfo.version || '?'}`
                 : status === 'connecting' ? (t('inspector.connecting') || 'Connecting...')
@@ -408,7 +410,7 @@ export default function Inspector() {
           className={`px-4 py-1.5 rounded-lg text-[13px] font-medium transition-colors no-drag ${
             status === 'connected'
               ? 'bg-[#ff3b30] text-white hover:bg-[#ff3b30]/80'
-              : 'bg-[#0a84ff] text-white hover:bg-[#0a84ff]/80'
+              : 'bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent)]/80'
           } disabled:opacity-50`}
         >
           {status === 'connected' 
@@ -424,11 +426,11 @@ export default function Inspector() {
       {/* 主内容区 - 三栏布局 */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧：配置 + 工具列表 */}
-        <div className="w-72 border-r border-[#3a3a3c] flex flex-col overflow-hidden">
+        <div className="w-72 border-r border-[var(--color-border)] flex flex-col overflow-hidden">
           {/* 配置区域 */}
-          <div className="p-3 border-b border-[#3a3a3c] space-y-3">
+          <div className="p-3 border-b border-[var(--color-border)] space-y-3">
             <div>
-              <label className="block text-[11px] text-[#636366] uppercase mb-1">
+              <label className="block text-[12px] text-[var(--color-muted)] uppercase mb-1">
                 {t('inspector.command') || 'Command'}
               </label>
               <input
@@ -437,11 +439,11 @@ export default function Inspector() {
                 onChange={(e) => setCommand(e.target.value)}
                 disabled={status === 'connected'}
                 placeholder="npx, uvx, node..."
-                className="w-full px-2 py-1.5 bg-[#2c2c2e] border border-[#3a3a3c] rounded text-[12px] text-white placeholder-[#636366] focus:outline-none focus:border-[#0a84ff] disabled:opacity-50"
+                className="w-full px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
               />
             </div>
             <div>
-              <label className="block text-[11px] text-[#636366] uppercase mb-1">
+              <label className="block text-[12px] text-[var(--color-muted)] uppercase mb-1">
                 {t('inspector.arguments') || 'Arguments'}
               </label>
               <input
@@ -450,20 +452,20 @@ export default function Inspector() {
                 onChange={(e) => setArgs(e.target.value)}
                 disabled={status === 'connected'}
                 placeholder="-y @modelcontextprotocol/server-..."
-                className="w-full px-2 py-1.5 bg-[#2c2c2e] border border-[#3a3a3c] rounded text-[12px] text-white placeholder-[#636366] focus:outline-none focus:border-[#0a84ff] disabled:opacity-50"
+                className="w-full px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
               />
             </div>
             
             {/* 环境变量 */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-[11px] text-[#636366] uppercase">
+                <label className="text-[12px] text-[var(--color-muted)] uppercase">
                   {t('inspector.envVars') || 'Environment'}
                 </label>
                 <button
                   onClick={addEnvVar}
                   disabled={status === 'connected'}
-                  className="text-[11px] text-[#0a84ff] hover:text-[#5ac8fa] disabled:opacity-50"
+                  className="text-[12px] text-[var(--color-accent)] hover:text-[#5ac8fa] disabled:opacity-50"
                 >
                   + Add
                 </button>
@@ -476,7 +478,7 @@ export default function Inspector() {
                     onChange={(e) => updateEnvVar(index, 'key', e.target.value)}
                     disabled={status === 'connected'}
                     placeholder="KEY"
-                    className="flex-1 px-2 py-1 bg-[#2c2c2e] border border-[#3a3a3c] rounded text-[11px] text-white placeholder-[#636366] focus:outline-none focus:border-[#0a84ff] disabled:opacity-50"
+                    className="flex-1 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
                   />
                   <input
                     type="text"
@@ -484,7 +486,7 @@ export default function Inspector() {
                     onChange={(e) => updateEnvVar(index, 'value', e.target.value)}
                     disabled={status === 'connected'}
                     placeholder="value"
-                    className="flex-1 px-2 py-1 bg-[#2c2c2e] border border-[#3a3a3c] rounded text-[11px] text-white placeholder-[#636366] focus:outline-none focus:border-[#0a84ff] disabled:opacity-50"
+                    className="flex-1 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
                   />
                   <button
                     type="button"
@@ -500,33 +502,33 @@ export default function Inspector() {
           </div>
 
           {/* Tabs: Tools / Resources / Prompts */}
-          <div className="flex border-b border-[#3a3a3c]">
+          <div className="flex border-b border-[var(--color-border)]">
             <button
               onClick={() => setActiveTab('tools')}
-              className={`flex-1 px-2 py-2 text-[11px] font-medium transition-colors ${
+              className={`flex-1 px-2 py-2 text-[12px] font-medium transition-colors ${
                 activeTab === 'tools'
-                  ? 'text-[#0a84ff] border-b-2 border-[#0a84ff]'
-                  : 'text-[#636366] hover:text-white'
+                  ? 'text-[var(--color-accent)] border-b-2 border-[var(--color-accent)]'
+                  : 'text-[var(--color-muted)] hover:text-[var(--color-text)]'
               }`}
             >
               {t('inspector.tools') || 'Tools'} ({tools.length})
             </button>
             <button
               onClick={() => setActiveTab('resources')}
-              className={`flex-1 px-2 py-2 text-[11px] font-medium transition-colors ${
+              className={`flex-1 px-2 py-2 text-[12px] font-medium transition-colors ${
                 activeTab === 'resources'
-                  ? 'text-[#0a84ff] border-b-2 border-[#0a84ff]'
-                  : 'text-[#636366] hover:text-white'
+                  ? 'text-[var(--color-accent)] border-b-2 border-[var(--color-accent)]'
+                  : 'text-[var(--color-muted)] hover:text-[var(--color-text)]'
               }`}
             >
               {t('inspector.resources') || 'Resources'} ({resources.length})
             </button>
             <button
               onClick={() => setActiveTab('prompts')}
-              className={`flex-1 px-2 py-2 text-[11px] font-medium transition-colors ${
+              className={`flex-1 px-2 py-2 text-[12px] font-medium transition-colors ${
                 activeTab === 'prompts'
-                  ? 'text-[#0a84ff] border-b-2 border-[#0a84ff]'
-                  : 'text-[#636366] hover:text-white'
+                  ? 'text-[var(--color-accent)] border-b-2 border-[var(--color-accent)]'
+                  : 'text-[var(--color-muted)] hover:text-[var(--color-text)]'
               }`}
             >
               {t('inspector.prompts') || 'Prompts'} ({prompts.length})
@@ -538,7 +540,7 @@ export default function Inspector() {
             {/* Tools Tab */}
             {activeTab === 'tools' && (
               tools.length === 0 ? (
-                <div className="px-3 py-4 text-center text-[12px] text-[#636366]">
+                <div className="px-3 py-4 text-center text-[12px] text-[var(--color-muted)]">
                   {status === 'connected' 
                     ? (t('inspector.noTools') || 'No tools available')
                     : (t('inspector.connectFirst') || 'Connect to see tools')
@@ -552,13 +554,13 @@ export default function Inspector() {
                       onClick={() => handleSelectTool(tool)}
                       className={`w-full text-left px-2 py-2 rounded transition-colors ${
                         selectedTool?.name === tool.name
-                          ? 'bg-[#0a84ff]/20 text-[#0a84ff]'
-                          : 'text-white hover:bg-[#3a3a3c]/50'
+                          ? 'bg-[var(--color-accent)]/20 text-[var(--color-accent)]'
+                          : 'text-[var(--color-text)] hover:bg-[var(--color-surface-hover)]/50'
                       }`}
                     >
                       <div className="text-[12px] font-medium truncate">{tool.name}</div>
                       {tool.description && (
-                        <div className="text-[11px] text-[#636366] truncate mt-0.5">
+                        <div className="text-[12px] text-[var(--color-muted)] truncate mt-0.5">
                           {tool.description}
                         </div>
                       )}
@@ -571,7 +573,7 @@ export default function Inspector() {
             {/* Resources Tab */}
             {activeTab === 'resources' && (
               resources.length === 0 ? (
-                <div className="px-3 py-4 text-center text-[12px] text-[#636366]">
+                <div className="px-3 py-4 text-center text-[12px] text-[var(--color-muted)]">
                   {status === 'connected' 
                     ? (t('inspector.noResources') || 'No resources available')
                     : (t('inspector.connectFirst') || 'Connect to see resources')
@@ -582,19 +584,19 @@ export default function Inspector() {
                   {resources.map((resource) => (
                     <div
                       key={resource.uri}
-                      className="px-2 py-2 rounded text-white hover:bg-[#3a3a3c]/50"
+                      className="px-2 py-2 rounded text-[var(--color-text)] hover:bg-[var(--color-surface-hover)]/50"
                     >
                       <div className="text-[12px] font-medium truncate">{resource.name}</div>
-                      <div className="text-[11px] text-[#636366] truncate mt-0.5">
+                      <div className="text-[12px] text-[var(--color-muted)] truncate mt-0.5">
                         {resource.uri}
                       </div>
                       {resource.description && (
-                        <div className="text-[11px] text-[#636366] truncate mt-0.5">
+                        <div className="text-[12px] text-[var(--color-muted)] truncate mt-0.5">
                           {resource.description}
                         </div>
                       )}
                       {resource.mimeType && (
-                        <div className="text-[10px] text-[#98989d] mt-1 px-1.5 py-0.5 bg-[#2c2c2e] rounded inline-block">
+                        <div className="text-[12px] text-[var(--color-muted2)] mt-1 px-1.5 py-0.5 bg-[var(--color-surface)] rounded inline-block">
                           {resource.mimeType}
                         </div>
                       )}
@@ -607,7 +609,7 @@ export default function Inspector() {
             {/* Prompts Tab */}
             {activeTab === 'prompts' && (
               prompts.length === 0 ? (
-                <div className="px-3 py-4 text-center text-[12px] text-[#636366]">
+                <div className="px-3 py-4 text-center text-[12px] text-[var(--color-muted)]">
                   {status === 'connected' 
                     ? (t('inspector.noPrompts') || 'No prompts available')
                     : (t('inspector.connectFirst') || 'Connect to see prompts')
@@ -618,11 +620,11 @@ export default function Inspector() {
                   {prompts.map((prompt) => (
                     <div
                       key={prompt.name}
-                      className="px-2 py-2 rounded text-white hover:bg-[#3a3a3c]/50"
+                      className="px-2 py-2 rounded text-[var(--color-text)] hover:bg-[var(--color-surface-hover)]/50"
                     >
                       <div className="text-[12px] font-medium truncate">{prompt.name}</div>
                       {prompt.description && (
-                        <div className="text-[11px] text-[#636366] truncate mt-0.5">
+                        <div className="text-[12px] text-[var(--color-muted)] truncate mt-0.5">
                           {prompt.description}
                         </div>
                       )}
@@ -631,10 +633,10 @@ export default function Inspector() {
                           {prompt.arguments.map((arg) => (
                             <span
                               key={arg.name}
-                              className={`text-[10px] px-1.5 py-0.5 rounded ${
+                              className={`text-[12px] px-1.5 py-0.5 rounded ${
                                 arg.required 
                                   ? 'bg-[#ff3b30]/20 text-[#ff6961]' 
-                                  : 'bg-[#2c2c2e] text-[#98989d]'
+                                  : 'bg-[var(--color-surface)] text-[var(--color-muted2)]'
                               }`}
                             >
                               {arg.name}
@@ -655,12 +657,12 @@ export default function Inspector() {
           {selectedTool ? (
             <>
               {/* 工具详情头部（固定） */}
-              <div className="flex-shrink-0 px-4 pt-4 pb-3 border-b border-[#3a3a3c]">
+              <div className="flex-shrink-0 px-4 pt-4 pb-3 border-b border-[var(--color-border)]">
                 <div className="flex items-center justify-between">
                   <div className="min-w-0 flex-1 mr-3">
-                    <h2 className="text-[15px] font-semibold text-white truncate">{selectedTool.name}</h2>
+                    <h2 className="text-[15px] font-semibold text-[var(--color-text)] truncate">{selectedTool.name}</h2>
                     {selectedTool.description && (
-                      <p className="text-[12px] text-[#98989d] mt-1 line-clamp-2">{selectedTool.description}</p>
+                      <p className="text-[12px] text-[var(--color-muted2)] mt-1 line-clamp-2">{selectedTool.description}</p>
                     )}
                   </div>
                   <button
@@ -674,7 +676,7 @@ export default function Inspector() {
               </div>
 
               {/* 参数表单区域（可滚动，限制最大高度） */}
-              <div className="flex-shrink-0 max-h-[40%] overflow-y-auto border-b border-[#3a3a3c]">
+              <div className="flex-shrink-0 max-h-[40%] overflow-y-auto border-b border-[var(--color-border)]">
                 <div className="p-4">
                   {renderToolForm()}
                 </div>
@@ -682,7 +684,7 @@ export default function Inspector() {
 
               {/* 结果区域（填充剩余空间，可滚动） */}
               <div className="flex-1 min-h-0 overflow-y-auto p-4">
-                <h3 className="text-[12px] text-[#636366] uppercase mb-2">
+                <h3 className="text-[12px] text-[var(--color-muted)] uppercase mb-2">
                   {t('inspector.result') || 'Result'}
                 </h3>
                 {resultError ? (
@@ -693,20 +695,20 @@ export default function Inspector() {
                   <div className="rounded-lg overflow-hidden">
                     <SyntaxHighlighter
                       language="json"
-                      style={atomOneDark}
+                      style={isDark ? atomOneDark : docco}
                       customStyle={{
                         margin: 0,
                         padding: '12px',
                         borderRadius: '8px',
                         fontSize: '12px',
-                        backgroundColor: '#2c2c2e',
+                        backgroundColor: 'var(--color-surface)',
                       }}
                     >
                       {JSON.stringify(result, null, 2)}
                     </SyntaxHighlighter>
                   </div>
                 ) : (
-                  <div className="text-[13px] text-[#636366]">
+                  <div className="text-[13px] text-[var(--color-muted)]">
                     {t('inspector.noResult') || 'Run the tool to see results'}
                   </div>
                 )}
@@ -715,10 +717,10 @@ export default function Inspector() {
           ) : (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <svg className="w-12 h-12 mx-auto text-[#636366] mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                <svg className="w-12 h-12 mx-auto text-[var(--color-muted)] mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z" />
                 </svg>
-                <p className="text-[13px] text-[#636366]">
+                <p className="text-[13px] text-[var(--color-muted)]">
                   {status === 'connected'
                     ? (t('inspector.selectTool') || 'Select a tool from the list')
                     : (t('inspector.connectToStart') || 'Connect to an MCP server to start')
@@ -731,13 +733,13 @@ export default function Inspector() {
       </div>
 
       {/* 底部日志区域 */}
-      <div className="h-32 border-t border-[#3a3a3c] overflow-hidden flex flex-col">
-        <div className="px-3 py-1.5 text-[11px] text-[#636366] uppercase border-b border-[#3a3a3c] flex-shrink-0">
+      <div className="h-32 border-t border-[var(--color-border)] overflow-hidden flex flex-col">
+        <div className="px-3 py-1.5 text-[12px] text-[var(--color-muted)] uppercase border-b border-[var(--color-border)] flex-shrink-0">
           {t('inspector.logs') || 'Logs'}
         </div>
-        <div className="flex-1 overflow-y-auto p-2 font-mono text-[11px] text-[#98989d] bg-[#0c0c0c]">
+        <div className="flex-1 overflow-y-auto p-2 font-mono text-[12px] text-[var(--color-muted2)] bg-[var(--color-surface)]">
           {logs.length === 0 ? (
-            <span className="text-[#636366]">{t('inspector.noLogs') || 'No logs yet'}</span>
+            <span className="text-[var(--color-muted)]">{t('inspector.noLogs') || 'No logs yet'}</span>
           ) : (
             logs.map((log, i) => (
               <div key={i} className="leading-relaxed">{log}</div>

@@ -6,7 +6,7 @@
     "name": "AI-Tools Team",
     "email": "mail@folay.top"
   },
-  "homepage": "https://github.com/OldJii/mcp-dock",
+  "homepage": "https://www.ywhome.top",
   "main": "dist/main/index.js",
   "packageManager": "pnpm@11.16.0",
   "scripts": {
@@ -33,6 +33,7 @@
     "@tanstack/react-query": "^5.17.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "asn1": "^0.2.6",
+    "bcrypt-pbkdf": "^1.0.2",
     "electron-store": "^8.1.0",
     "fuse.js": "^7.0.0",
     "gray-matter": "^4.0.3",
@@ -52,6 +53,7 @@
     "smol-toml": "^1.6.1",
     "ssh2": "^1.17.0",
     "ssh2-sftp-client": "^12.1.1",
+    "tweetnacl": "^0.14.5",
     "zustand": "^4.4.0"
   },
   "devDependencies": {

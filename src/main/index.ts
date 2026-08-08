@@ -2,7 +2,7 @@
  * AI-Tools - Electron 主进程入口
  */
 
-import {app, BrowserWindow, ipcMain, session, shell} from 'electron';
+import {app, BrowserWindow, ipcMain, nativeTheme, session, shell} from 'electron';
 import path from 'path';
 import {ClientType, ConfigManager, SkillClientType} from './config-manager';
 import {EnvManager} from './env-manager';
@@ -121,6 +121,12 @@ function createWindow() {
         mainWindow = null;
     });
 
+    // 首屏加载完成后，向渲染进程推送一次当前系统主题（auto 模式下作为权威初始值，
+    // 纠正 matchMedia 在部分平台初始读取不准确的情形）
+    mainWindow.webContents.on('did-finish-load', () => {
+        mainWindow?.webContents.send('theme:system-changed', nativeTheme.shouldUseDarkColors);
+    });
+
     // 自定义标题栏：广播窗口最大化状态变化（双击标题栏/拖拽到顶部/系统快照等触发）
     mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximize-changed', true));
     mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximize-changed', false));
@@ -172,6 +178,13 @@ app.whenReady().then(() => {
     }
 
     createWindow();
+
+    // 系统主题跟随：操作系统明暗切换时，经 nativeTheme 桥接通知渲染进程重新计算主题。
+    // 渲染进程内 matchMedia 的 change 在 Electron 某些版本下不可靠（窗口失焦/未重绘时不触发），
+    // 主进程 nativeTheme.on('updated') 是更权威、更及时的来源。
+    nativeTheme.on('updated', () => {
+        mainWindow?.webContents.send('theme:system-changed', nativeTheme.shouldUseDarkColors);
+    });
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {

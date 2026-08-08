@@ -8,19 +8,19 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Surge-like 配色
+        // Surge-like 配色（统一引用 CSS 变量，跟随浅色/暗色主题）
         sidebar: {
-          bg: '#2c2c2e',
-          hover: '#3a3a3c',
-          active: '#48484a',
-          text: '#ffffff',
-          muted: '#98989d',
-          border: '#3a3a3c',
+          bg: 'var(--color-surface)',
+          hover: 'var(--color-surface-hover)',
+          active: 'var(--color-surface-active)',
+          text: 'var(--color-text)',
+          muted: 'var(--color-muted2)',
+          border: 'var(--color-border)',
         },
         content: {
-          bg: '#1c1c1e',
-          card: '#2c2c2e',
-          border: '#3a3a3c',
+          bg: 'var(--color-bg)',
+          card: 'var(--color-surface)',
+          border: 'var(--color-border)',
         },
         // 主色调（锚定到全站实际使用的 Apple 系统蓝 #0a84ff）
         primary: {
@@ -35,11 +35,11 @@ module.exports = {
           800: '#08478a',
           900: '#063365',
         },
-        // 语义别名
-        accent: '#0a84ff',
-        muted: '#636366',
-        muted2: '#98989d',
-        link: '#5ac8fa',
+        // 语义别名（统一引用 CSS 变量）
+        accent: 'var(--color-accent)',
+        muted: 'var(--color-muted)',
+        muted2: 'var(--color-muted2)',
+        link: 'var(--color-info)',
         // 状态色（统一，消除 #30d158 / #ff453a 等离群值）
         success: '#34c759',
         warning: '#ff9f0a',
@@ -51,7 +51,7 @@ module.exports = {
         mono: ['SF Mono', 'Menlo', 'Monaco', 'monospace'],
       },
       fontSize: {
-        '2xs': '0.625rem',
+        '2xs': '0.75rem',
       },
       animation: {
         'fade-in': 'fadeIn 0.2s ease-out',
