@@ -2,7 +2,7 @@
  * ConnectionsStore - API 直连管理（单例）
  *
  * 设计：
- *  - 连接配置明文存于 ~/.ai-tool/connections.json（不存 secret 明文，仅存 tokenId 引用）。
+ *  - 连接配置明文存于 ~/.ai-tools/connections.json（不存 secret 明文，仅存 tokenId 引用）。
  *  - 每条连接绑定一个令牌（tokenId），验证时用 SecretStore 取 secret 探活 baseUrl。
  *  - 状态枚举：active | unverified | error | token_revoked。
  *  - 导出配置不含 secret 明文。
@@ -60,7 +60,7 @@ export class ConnectionsStore {
 
     constructor() {
         const home = app.getPath('home');
-        const dir = path.join(home, '.ai-tool');
+        const dir = path.join(home, '.ai-tools');
         this.filePath = path.join(dir, 'connections.json');
         this.mcpSeedFlagPath = path.join(dir, '.mcp-sources-seeded');
         this.skillSeedFlagPath = path.join(dir, '.skill-sources-seeded');

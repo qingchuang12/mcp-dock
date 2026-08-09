@@ -47,7 +47,7 @@ export class HistoryManager {
     private configManager: ConfigManager;
 
     constructor() {
-        this.backupDir = path.join(os.homedir(), '.ai-tool', 'backups');
+        this.backupDir = path.join(os.homedir(), '.ai-tools', 'backups');
         this.configManager = new ConfigManager();
     }
 
@@ -83,7 +83,7 @@ export class HistoryManager {
             workbuddy: path.join(home, '.workbuddy', 'skills'),
             qoder: path.join(home, '.qoder', 'skills'),
             marscode: path.join(home, '.marscode', 'skills'),
-            cloud: path.join(home, '.ai-tool', 'cloud', 'ai-tool', 'skills'),
+            cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'skills'),
         };
 
         const skillsPath = skillsPaths[client];

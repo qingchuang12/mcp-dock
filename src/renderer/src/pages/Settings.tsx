@@ -18,6 +18,7 @@ import McpSourceManager from '../components/McpSourceManager';
 import CloudSyncManager from '../components/CloudSyncManager';
 import WindowControls from '../components/WindowControls';
 import {useStore, type ThemeMode} from '../store/useStore';
+import {ensureLanguageLoaded} from '../i18n';
 
 export default function Settings() {
     const {t, i18n} = useTranslation();
@@ -103,7 +104,10 @@ export default function Settings() {
     };
 
     const handleLanguageChange = (lang: string) => {
-        i18n.changeLanguage(lang);
+        // 首次切到某语言时按需动态加载其语言包（避免首屏打包全部 locale）
+        ensureLanguageLoaded(lang).then((lng) => {
+            i18n.changeLanguage(lng);
+        });
         localStorage.setItem('language', lang);
     };
 

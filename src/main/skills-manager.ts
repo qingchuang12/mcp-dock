@@ -93,7 +93,7 @@ export class SkillsManager {
     constructor() {
         const home = os.homedir();
 
-        this.settingsPath = path.join(home, '.ai-tool', 'settings.json');
+        this.settingsPath = path.join(home, '.ai-tools', 'settings.json');
 
         // Skills 目录路径（跨平台一致）
         this.defaultSkillsPaths = {
@@ -107,7 +107,7 @@ export class SkillsManager {
             workbuddy: path.join(home, '.workbuddy', 'skills'),
             qoder: path.join(home, '.qoder', 'skills'),
             marscode: path.join(home, '.marscode', 'skills'),
-            cloud: path.join(home, '.ai-tool', 'cloud', 'ai-tool', 'skills'),
+            cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'skills'),
         };
 
         this.loadSettings();

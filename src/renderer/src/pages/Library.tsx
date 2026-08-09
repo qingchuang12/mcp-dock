@@ -681,7 +681,7 @@ export default function Library() {
 
     /**
      * 同步目标包含云端时，把暂存区推到远端。
-     * 「同步到云端客户端」只写了本地 ~/.ai-tool/cloud 暂存区，还需要一次传输才真正上云。
+     * 「同步到云端客户端」只写了本地 ~/.ai-tools/cloud 暂存区，还需要一次传输才真正上云。
      */
     const autoPushIfCloud = async (targets: string[]) => {
         if (!targets.includes('cloud')) return;

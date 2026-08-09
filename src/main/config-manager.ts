@@ -27,7 +27,7 @@ export interface ClientConfig {
 }
 
 // 所有 MCP 客户端类型
-// 'cloud' 是虚拟客户端：指向 ~/.ai-tool/cloud/ai-tool 暂存区，由云同步（Git / SFTP）推拉到远端
+// 'cloud' 是虚拟客户端：指向 ~/.ai-tools/cloud/ai-tool 暂存区，由云同步（Git / SFTP）推拉到远端
 export type ClientType =
     'cursor'
     | 'vscode'
@@ -100,7 +100,7 @@ export class ConfigManager {
         const platform = process.platform;
 
         // 用户设置文件路径
-        this.userSettingsPath = path.join(home, '.ai-tool', 'settings.json');
+        this.userSettingsPath = path.join(home, '.ai-tools', 'settings.json');
 
         // 根据平台设置各客户端默认配置路径
         // 参考: https://modelcontextprotocol.io/docs/configuration
@@ -125,7 +125,7 @@ export class ConfigManager {
                 codebuddy: path.join(home, '.codebuddy', 'mcp.json'),
                 workbuddy: path.join(home, '.workbuddy', 'mcp.json'),
                 qoder: path.join(home, '.qoder', 'mcp.json'),
-                cloud: path.join(home, '.ai-tool', 'cloud', 'ai-tool', 'mcp', 'mcp.json'),
+                cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'mcp', 'mcp.json'),
             };
             // Skills 目录路径
             this.defaultSkillsPaths = {
@@ -139,7 +139,7 @@ export class ConfigManager {
                 workbuddy: path.join(home, '.workbuddy', 'skills'),
                 qoder: path.join(home, '.qoder', 'skills'),
                 marscode: path.join(home, '.marscode', 'skills'),
-                cloud: path.join(home, '.ai-tool', 'cloud', 'ai-tool', 'skills'),
+                cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'skills'),
             };
         } else if (platform === 'win32') {
             // Windows 路径配置
@@ -162,7 +162,7 @@ export class ConfigManager {
                 codebuddy: path.join(home, '.codebuddy', 'mcp.json'),
                 workbuddy: path.join(home, '.workbuddy', 'mcp.json'),
                 qoder: path.join(home, '.qoder', 'mcp.json'),
-                cloud: path.join(home, '.ai-tool', 'cloud', 'ai-tool', 'mcp', 'mcp.json'),
+                cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'mcp', 'mcp.json'),
             };
             this.defaultSkillsPaths = {
                 cursor: path.join(home, '.cursor', 'skills'),
@@ -175,7 +175,7 @@ export class ConfigManager {
                 workbuddy: path.join(home, '.workbuddy', 'skills'),
                 qoder: path.join(home, '.qoder', 'skills'),
                 marscode: path.join(home, '.marscode', 'skills'),
-                cloud: path.join(home, '.ai-tool', 'cloud', 'ai-tool', 'skills'),
+                cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'skills'),
             };
         } else {
             // Linux 路径配置
@@ -198,7 +198,7 @@ export class ConfigManager {
                 codebuddy: path.join(home, '.codebuddy', 'mcp.json'),
                 workbuddy: path.join(home, '.workbuddy', 'mcp.json'),
                 qoder: path.join(home, '.qoder', 'mcp.json'),
-                cloud: path.join(home, '.ai-tool', 'cloud', 'ai-tool', 'mcp', 'mcp.json'),
+                cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'mcp', 'mcp.json'),
             };
             this.defaultSkillsPaths = {
                 cursor: path.join(home, '.cursor', 'skills'),
@@ -211,7 +211,7 @@ export class ConfigManager {
                 workbuddy: path.join(home, '.workbuddy', 'skills'),
                 qoder: path.join(home, '.qoder', 'skills'),
                 marscode: path.join(home, '.marscode', 'skills'),
-                cloud: path.join(home, '.ai-tool', 'cloud', 'ai-tool', 'skills'),
+                cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'skills'),
             };
         }
 

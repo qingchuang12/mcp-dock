@@ -354,7 +354,7 @@ interface ElectronAPI {
     };
     // MCP Inspector
     mcp: McpApi;
-    // 本地持久化缓存（落盘 ~/.ai-tool/cache/，用于 store 列表 SWR 秒开）
+    // 本地持久化缓存（落盘 ~/.ai-tools/cache/，用于 store 列表 SWR 秒开）
     cache: {
         get: <T>(key: string) => Promise<{
             data: T;
@@ -519,10 +519,10 @@ const mockAPI: ElectronAPI = {
                 id: 'cloud',
                 name: '云端存储',
                 installed: false,
-                configPath: '~/.ai-tool/cloud/ai-tool/mcp/mcp.json',
+                configPath: '~/.ai-tools/cloud/ai-tool/mcp/mcp.json',
                 configExists: false,
                 supportsSkills: true,
-                skillsPath: '~/.ai-tool/cloud/ai-tool/skills'
+                skillsPath: '~/.ai-tools/cloud/ai-tool/skills'
             },
         ],
         setCustomPath: async () => {

@@ -93,9 +93,9 @@ export class CacheManager {
     constructor(config: Partial<CacheConfig> = {}) {
         this.config = {...DEFAULT_CONFIG, ...config};
 
-        // 缓存目录：~/.ai-tool/cache/
+        // 缓存目录：~/.ai-tools/cache/
         const userDataPath = app.getPath('home');
-        this.cacheDir = path.join(userDataPath, '.ai-tool', 'cache');
+        this.cacheDir = path.join(userDataPath, '.ai-tools', 'cache');
 
         // 确保缓存目录存在
         this.ensureCacheDir();

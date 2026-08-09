@@ -2,7 +2,7 @@
  * CloudSyncStore - 云同步配置（单例）
  *
  * 设计：
- *  - 配置明文存于 ~/.ai-tool/cloud-sync.json，只含 secretId 引用，不含任何凭据明文。
+ *  - 配置明文存于 ~/.ai-tools/cloud-sync.json，只含 secretId 引用，不含任何凭据明文。
  *  - 凭据明文交给 SecretStore 的通用密文接口（putRawSecret / getRawSecret）加密落盘。
  *  - isActive() 决定「云端存储」这个虚拟客户端是否出现在客户端列表中。
  */
@@ -30,13 +30,13 @@ export {CLOUD_ROOT_DIR, CLOUD_CLIENT_ID} from '../shared/cloud-sync-constants';
 
 export class CloudSyncStore {
     private filePath: string;
-    /** 本地暂存区根目录：~/.ai-tool/cloud */
+    /** 本地暂存区根目录：~/.ai-tools/cloud */
     private stagingRoot: string;
     private config: CloudSyncConfig = defaultCloudSyncConfig();
 
     constructor() {
         const home = app.getPath('home');
-        const dir = path.join(home, '.ai-tool');
+        const dir = path.join(home, '.ai-tools');
         this.filePath = path.join(dir, 'cloud-sync.json');
         this.stagingRoot = path.join(dir, 'cloud');
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, {recursive: true});

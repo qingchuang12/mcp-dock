@@ -2,7 +2,7 @@
  * CloudSyncService - 云端存储传输（单例）
  *
  * 设计：
- *  - 「云端」被当作一个客户端：本地暂存区 ~/.ai-tool/cloud/ai-tool 与云端 <remote>/ai-tool 目录同构。
+ *  - 「云端」被当作一个客户端：本地暂存区 ~/.ai-tools/cloud/ai-tool 与云端 <remote>/ai-tool 目录同构。
  *    同步 MCP / Skill 到云客户端 = 写本地暂存区；push/pull 负责暂存区与远端之间的传输。
  *  - Git 通道调用系统 git CLI（与项目中 tar/PowerShell 解压一致的 shell-out 思路），
  *    凭据不写入 .git/config：token 拼进临时 URL 参数，SSH 走 GIT_SSH_COMMAND。

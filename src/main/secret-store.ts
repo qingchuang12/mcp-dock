@@ -70,7 +70,7 @@ export class SecretStore {
 
     constructor() {
         const home = app.getPath('home');
-        this.dir = path.join(home, '.ai-tool', 'secrets');
+        this.dir = path.join(home, '.ai-tools', 'secrets');
         this.metaPath = path.join(this.dir, 'metadata.json');
         this.key = this.deriveKey();
         this.ensureDir();

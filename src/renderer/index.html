@@ -7,7 +7,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="icon" type="image/svg+xml" href="./assets/icons/mcp-dock.svg" />
-    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- 字体非阻塞加载：弱网/被墙时不阻塞首屏文本渲染（避免 FOIT）。
+         print 媒体先在后台加载，加载完成后切为 all 应用样式；display=swap 兜底。 -->
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap"
+      media="print"
+      onload="this.media='all'"
+    >
     <title>AI-Tools</title>
     <!-- 在首屏绘制前根据持久化主题设置 dark 类，避免浅色用户看到暗色闪烁 -->
     <script>

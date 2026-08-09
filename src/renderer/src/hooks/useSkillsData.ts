@@ -59,7 +59,9 @@ export function useSkillsData(params: UseSkillsDataParams): StoreData<SkillListI
     const github = useQuery({
         queryKey: ['skillsGithub', selectedSkillSourceId || 'github'],
         queryFn: async () => {
-            return fetchSkillsList(undefined, true);
+            // 复用磁盘缓存 SWR：首屏命中缓存秒开，仅缓存过期（>10min）或手动刷新才打 GitHub。
+            // 此前传 noCache=true 会绕过缓存每次冷启动直连 api.github.com，弱网下长时间转圈。
+            return fetchSkillsList(undefined, false);
         },
         // 数据缓存 10 分钟：卸载后保留缓存，重新进入直接命中；过期才重新拉取
         staleTime: STORE_QUERY_STALE_MS,
