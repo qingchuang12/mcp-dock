@@ -2,10 +2,13 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import type { Resource } from 'i18next';
 
-// 仅在启动时静态加载「当前语言」的 locale，另一个语言在用户切换时再动态 import，
-// 避免把两份完整 JSON 都打进首屏 bundle（减小首屏解析/执行体积）。
-const savedLanguage = localStorage.getItem('language') || 'en';
-const initialLng = savedLanguage === 'zh' ? 'zh' : 'en';
+// 语言持久化策略：
+// - 用户曾在设置中选择过语言（localStorage 存在 'language' 键，值为 'en' 或 'zh'）→ 保持该选择；
+// - 从未选择过（无 'language' 键）→ 首次启动跟随系统语言（navigator.language），
+//   匹配到中文系（zh/zh-CN 等）则用 'zh'，否则回退 'en'。
+const savedLanguage = localStorage.getItem('language');
+const systemLng = (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en';
+const initialLng = savedLanguage === 'zh' || savedLanguage === 'en' ? savedLanguage : systemLng;
 
 // 初始语言同步 import，确保首屏立刻有翻译可用（不闪烁）；其余语言在切换时惰性加载。
 import en from './locales/en.json';

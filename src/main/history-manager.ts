@@ -7,6 +7,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import {ClientType, ConfigManager, SKILL_SUPPORTED_CLIENTS, SkillClientType} from './config-manager';
+import {CLOUD_ROOT_DIR} from '../shared/cloud-sync-constants';
 
 export interface BackupInfo {
     timestamp: string;
@@ -83,7 +84,7 @@ export class HistoryManager {
             workbuddy: path.join(home, '.workbuddy', 'skills'),
             qoder: path.join(home, '.qoder', 'skills'),
             marscode: path.join(home, '.marscode', 'skills'),
-            cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'skills'),
+            cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'skills'),
         };
 
         const skillsPath = skillsPaths[client];

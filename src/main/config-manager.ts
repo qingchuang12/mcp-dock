@@ -10,6 +10,7 @@ import os from 'os';
 import * as jsonc from 'jsonc-parser';
 import * as TOML from 'smol-toml';
 import {getCloudSyncStore} from './cloud-sync-store';
+import {CLOUD_ROOT_DIR} from '../shared/cloud-sync-constants';
 
 export interface McpServerConfig {
     command?: string;
@@ -27,7 +28,7 @@ export interface ClientConfig {
 }
 
 // 所有 MCP 客户端类型
-// 'cloud' 是虚拟客户端：指向 ~/.ai-tools/cloud/ai-tool 暂存区，由云同步（Git / SFTP）推拉到远端
+// 'cloud' 是虚拟客户端：指向 ~/.ai-tools/cloud/ai-tools 暂存区，由云同步（Git / SFTP）推拉到远端
 export type ClientType =
     'cursor'
     | 'vscode'
@@ -48,6 +49,9 @@ export type ClientType =
     | 'workbuddy'
     | 'qoder'
     | 'cloud';
+
+/** 任意客户端 id：内置 ClientType 或用户手动添加的 custom:<slug> */
+export type AnyClientId = ClientType | string;
 
 // 支持 Skills 的客户端类型（含 .agents 统一标准）
 export type SkillClientType =
@@ -70,12 +74,27 @@ export const SKILL_SUPPORTED_CLIENTS: SkillClientType[] = ['cursor', 'claude-cod
 const SERVERS_KEY_CLIENTS: ClientType[] = ['vscode'];
 
 export interface ClientInfo {
-    id: ClientType;
+    id: ClientType | string;
     name: string;
     installed: boolean;
     configPath: string;
     configExists: boolean;
     supportsSkills: boolean;
+    skillsPath?: string;
+    /** 是否为用户手动添加的客户端 */
+    isCustom?: boolean;
+}
+
+/** 用户手动添加的客户端定义（持久化到 settings.json） */
+export interface CustomClientDef {
+    /** 唯一 id，形如 custom:<slug> */
+    id: string;
+    name: string;
+    /** MCP 配置文件绝对路径 */
+    configPath: string;
+    /** 是否支持 Skills */
+    supportsSkills: boolean;
+    /** Skills 目录绝对路径（supportsSkills 时有效） */
     skillsPath?: string;
 }
 
@@ -83,6 +102,8 @@ export interface ClientInfo {
 interface UserSettings {
     customConfigPaths?: Partial<Record<ClientType, string>>;
     customSkillsPaths?: Partial<Record<SkillClientType, string>>;
+    // 用户手动添加的客户端列表
+    customClients?: CustomClientDef[];
     // 编辑保存后转为「手动安装」的 MCP server id 列表：此后不再被当作商店来源，避免线上更新覆盖
     manualMcpServers?: string[];
 }
@@ -125,7 +146,7 @@ export class ConfigManager {
                 codebuddy: path.join(home, '.codebuddy', 'mcp.json'),
                 workbuddy: path.join(home, '.workbuddy', 'mcp.json'),
                 qoder: path.join(home, '.qoder', 'mcp.json'),
-                cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'mcp', 'mcp.json'),
+                cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'mcp', 'mcp.json'),
             };
             // Skills 目录路径
             this.defaultSkillsPaths = {
@@ -139,7 +160,7 @@ export class ConfigManager {
                 workbuddy: path.join(home, '.workbuddy', 'skills'),
                 qoder: path.join(home, '.qoder', 'skills'),
                 marscode: path.join(home, '.marscode', 'skills'),
-                cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'skills'),
+                cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'skills'),
             };
         } else if (platform === 'win32') {
             // Windows 路径配置
@@ -162,7 +183,7 @@ export class ConfigManager {
                 codebuddy: path.join(home, '.codebuddy', 'mcp.json'),
                 workbuddy: path.join(home, '.workbuddy', 'mcp.json'),
                 qoder: path.join(home, '.qoder', 'mcp.json'),
-                cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'mcp', 'mcp.json'),
+                cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'mcp', 'mcp.json'),
             };
             this.defaultSkillsPaths = {
                 cursor: path.join(home, '.cursor', 'skills'),
@@ -175,7 +196,7 @@ export class ConfigManager {
                 workbuddy: path.join(home, '.workbuddy', 'skills'),
                 qoder: path.join(home, '.qoder', 'skills'),
                 marscode: path.join(home, '.marscode', 'skills'),
-                cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'skills'),
+                cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'skills'),
             };
         } else {
             // Linux 路径配置
@@ -198,7 +219,7 @@ export class ConfigManager {
                 codebuddy: path.join(home, '.codebuddy', 'mcp.json'),
                 workbuddy: path.join(home, '.workbuddy', 'mcp.json'),
                 qoder: path.join(home, '.qoder', 'mcp.json'),
-                cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'mcp', 'mcp.json'),
+                cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'mcp', 'mcp.json'),
             };
             this.defaultSkillsPaths = {
                 cursor: path.join(home, '.cursor', 'skills'),
@@ -211,7 +232,7 @@ export class ConfigManager {
                 workbuddy: path.join(home, '.workbuddy', 'skills'),
                 qoder: path.join(home, '.qoder', 'skills'),
                 marscode: path.join(home, '.marscode', 'skills'),
-                cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'skills'),
+                cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'skills'),
             };
         }
 
@@ -247,13 +268,17 @@ export class ConfigManager {
     /**
      * 获取客户端配置路径（优先使用用户自定义路径）
      */
-    private getClientConfigPath(client: ClientType): string {
+    private getClientConfigPath(client: ClientType | string): string {
+        // 自定义客户端：直接返回其配置路径
+        const custom = this.userSettings.customClients?.find(c => c.id === client);
+        if (custom) return custom.configPath;
+
         if (client === 'jetbrains') {
-            const custom = this.userSettings.customConfigPaths?.['jetbrains'];
-            if (custom) return custom;
+            const customPath = this.userSettings.customConfigPaths?.['jetbrains'];
+            if (customPath) return customPath;
             return this.resolvedJetBrainsPath || '';
         }
-        return this.userSettings.customConfigPaths?.[client] || this.defaultClientPaths[client];
+        return this.userSettings.customConfigPaths?.[client as ClientType] || this.defaultClientPaths[client as ClientType];
     }
 
     private resolvedJetBrainsPath: string = '';
@@ -321,8 +346,10 @@ export class ConfigManager {
     /**
      * 获取客户端 Skills 目录路径（优先使用用户自定义路径）
      */
-    getSkillsPath(client: SkillClientType): string {
-        return this.userSettings.customSkillsPaths?.[client] || this.defaultSkillsPaths[client];
+    getSkillsPath(client: SkillClientType | string): string {
+        const custom = this.userSettings.customClients?.find(c => c.id === client);
+        if (custom?.skillsPath) return custom.skillsPath;
+        return this.userSettings.customSkillsPaths?.[client as SkillClientType] || this.defaultSkillsPaths[client as SkillClientType];
     }
 
     /**
@@ -341,6 +368,60 @@ export class ConfigManager {
 
         await this.saveUserSettings();
         this.invalidateClientsCache();
+    }
+
+    /**
+     * 添加用户手动客户端。id 形如 custom:<slug>，slug 由 name 派生。
+     * 若同名下已存在则返回已存在项（去重）。
+     */
+    async addCustomClient(input: { name: string; configPath: string; supportsSkills?: boolean; skillsPath?: string }): Promise<CustomClientDef> {
+        if (!this.userSettings.customClients) {
+            this.userSettings.customClients = [];
+        }
+        const name = input.name.trim() || 'Custom Client';
+        // 名称去重：同名（不区分大小写）自定义客户端已存在则拒绝，避免列表出现重复项。
+        const dup = this.userSettings.customClients.find(
+            c => c.name.trim().toLowerCase() === name.toLowerCase(),
+        );
+        if (dup) {
+            throw new Error(`DUPLICATE_CLIENT_NAME:${name}`);
+        }
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'client';
+        let id = `custom:${slug}`;
+        // 保证 id 唯一
+        let n = 2;
+        while (this.userSettings.customClients.some(c => c.id === id)) {
+            id = `custom:${slug}-${n}`;
+            n++;
+        }
+        const def: CustomClientDef = {
+            id,
+            name,
+            configPath: input.configPath.trim(),
+            supportsSkills: !!input.supportsSkills,
+            skillsPath: input.supportsSkills ? input.skillsPath?.trim() || undefined : undefined,
+        };
+        this.userSettings.customClients.push(def);
+        await this.saveUserSettings();
+        this.invalidateClientsCache();
+        return def;
+    }
+
+    /**
+     * 删除用户手动客户端
+     */
+    async removeCustomClient(id: string): Promise<void> {
+        if (!this.userSettings.customClients) return;
+        this.userSettings.customClients = this.userSettings.customClients.filter(c => c.id !== id);
+        await this.saveUserSettings();
+        this.invalidateClientsCache();
+    }
+
+    /**
+     * 获取所有用户手动客户端
+     */
+    getCustomClients(): CustomClientDef[] {
+        return this.userSettings.customClients || [];
     }
 
     /**
@@ -368,8 +449,8 @@ export class ConfigManager {
     /**
      * 获取客户端显示名称
      */
-    private getClientName(client: ClientType): string {
-        const names: Record<ClientType, string> = {
+    private getClientName(client: ClientType | string): string {
+        const names: Partial<Record<ClientType | string, string>> = {
             cursor: 'Cursor',
             vscode: 'VS Code',
             'claude-code': 'Claude Code',
@@ -390,17 +471,17 @@ export class ConfigManager {
             qoder: 'Qoder',
             cloud: '云端存储',
         };
-        return names[client];
+        return names[client] || (typeof client === 'string' ? client.replace(/^custom:/, '') : 'Unknown Client');
     }
 
     /**
      * 获取各平台的应用路径
      */
-    private getAppPaths(client: ClientType): string[] {
+    private getAppPaths(client: AnyClientId): string[] {
         const home = os.homedir();
         const platform = process.platform;
 
-        const darwinPaths: Record<ClientType, string[]> = {
+        const darwinPaths: Record<string, string[]> = {
             cursor: ['/Applications/Cursor.app', path.join(home, 'Applications', 'Cursor.app')],
             vscode: ['/Applications/Visual Studio Code.app', path.join(home, 'Applications', 'Visual Studio Code.app')],
             'claude-code': ['/usr/local/bin/claude', path.join(home, '.local', 'bin', 'claude')],
@@ -439,7 +520,7 @@ export class ConfigManager {
             ],
         };
 
-        const win32Paths: Record<ClientType, string[]> = {
+        const win32Paths: Record<string, string[]> = {
             cursor: [
                 path.join(home, 'AppData', 'Local', 'Programs', 'cursor', 'Cursor.exe'),
                 path.join(home, 'AppData', 'Local', 'cursor', 'Cursor.exe'),
@@ -518,7 +599,7 @@ export class ConfigManager {
             ],
         };
 
-        const linuxPaths: Record<ClientType, string[]> = {
+        const linuxPaths: Record<string, string[]> = {
             cursor: [
                 '/usr/bin/cursor',
                 '/usr/local/bin/cursor',
@@ -629,12 +710,24 @@ export class ConfigManager {
      * 检查客户端应用是否已安装（只检查应用程序，不检查配置文件）
      * 对于 CLI 工具（codex-cli, opencode 等），额外通过 which/where 命令检测
      */
-    private async isClientInstalled(client: ClientType): Promise<boolean> {
+    private async isClientInstalled(client: ClientType | string): Promise<boolean> {
+        // 用户手动添加的客户端：配置文件存在即视为可用（手动指定路径，无需探测可执行文件）
+        const custom = this.userSettings.customClients?.find(c => c.id === client);
+        if (custom) {
+            try {
+                await fs.access(custom.configPath);
+                return true;
+            } catch {
+                // 配置文件不存在：仍视为可用，让用户在"未安装"区也能看到并编辑路径
+                return true;
+            }
+        }
+
         // 云端存储是虚拟客户端：只有配置好云同步（Git / SFTP）后才视为「已安装」，
         // 未配置时它不会出现在同步窗口的目标列表里。
         if (client === 'cloud') return getCloudSyncStore().isActive();
 
-        const paths = this.getAppPaths(client);
+        const paths = this.getAppPaths(client as ClientType);
 
         for (const appPath of paths) {
             try {
@@ -649,7 +742,7 @@ export class ConfigManager {
         // JetBrains / VS Code 插件安装），没有独立可执行文件，也不注册 CLI。
         // 此时用户主目录下的配置目录才是唯一可靠的"已安装"信号。
         // 由于本软件只需完成配置同步，配置目录存在即足以支持全部功能。
-        for (const marker of this.getConfigMarkers(client)) {
+        for (const marker of this.getConfigMarkers(client as ClientType)) {
             try {
                 await fs.access(marker);
                 return true;
@@ -668,7 +761,7 @@ export class ConfigManager {
             'codebuddy': 'codebuddy',
         };
 
-        const cliName = cliClients[client];
+        const cliName = cliClients[client as ClientType];
         if (cliName) {
             try {
                 const {exec} = require('child_process');
@@ -685,6 +778,16 @@ export class ConfigManager {
             }
         }
 
+        // 识别优化兜底：只要该客户端的配置文件已存在，即视为已安装。
+        // 许多客户端（如 vscode / zed / trae / kiro 等）即使可执行文件不在常见路径，
+        // 只要用户已生成过 MCP 配置，就应该在「已安装」列表中出现，避免被误判为未安装。
+        try {
+            await fs.access(this.getClientConfigPath(client));
+            return true;
+        } catch {
+            // 配置文件不存在
+        }
+
         return false;
     }
 
@@ -697,9 +800,9 @@ export class ConfigManager {
      * 但会在用户主目录创建 `~/.codebuddy/`（内含 mcp.json、skills、settings.json）。
      * 由于本软件的职责仅为配置同步，该目录存在就意味着功能完全可用。
      */
-    private getConfigMarkers(client: ClientType): string[] {
+    private getConfigMarkers(client: AnyClientId): string[] {
         const home = os.homedir();
-        const markers: Partial<Record<ClientType, string[]>> = {
+        const markers: Record<string, string[]> = {
             codebuddy: [
                 path.join(home, '.codebuddy'),
             ],
@@ -738,7 +841,7 @@ export class ConfigManager {
     /**
      * 检查配置文件是否存在
      */
-    private async configExists(client: ClientType): Promise<boolean> {
+    private async configExists(client: ClientType | string): Promise<boolean> {
         try {
             await fs.access(this.getClientConfigPath(client));
             return true;
@@ -750,21 +853,22 @@ export class ConfigManager {
     /**
      * 获取所有客户端信息
      */
-    async getAllClients(): Promise<ClientInfo[]> {
+    async getAllClients(force = false): Promise<ClientInfo[]> {
         // 确保用户设置已加载
         await this.loadUserSettings();
 
         // 命中会话缓存则直接返回（见 clientsCache / invalidateClientsCache）
-        if (this.clientsCache) {
+        // force=true（来自刷新按钮）时绕过缓存，重新探测所有客户端的安装/配置状态。
+        if (!force && this.clientsCache) {
             return this.clientsCache;
         }
 
-        const clients: ClientType[] = ['cursor', 'vscode', 'claude-code', 'gemini-cli', 'codex-cli', 'windsurf', 'zed', 'trae', 'trae-cn', 'marscode', 'kiro', 'opencode', 'jetbrains', 'antigravity', 'openclaw', 'codebuddy', 'workbuddy', 'qoder', 'cloud'];
+        const clients: (ClientType | string)[] = ['cursor', 'vscode', 'claude-code', 'gemini-cli', 'codex-cli', 'windsurf', 'zed', 'trae', 'trae-cn', 'marscode', 'kiro', 'opencode', 'jetbrains', 'antigravity', 'openclaw', 'codebuddy', 'workbuddy', 'qoder', 'cloud'];
 
         // 并行检测所有客户端：原先串行 await 每个客户端的 isClientInstalled（其中 CLI 客户端
         // 要走 where/which，最坏有 3s 超时），18 个客户端累计可达 1~2s，导致「我的库」打开明显卡顿。
         // 改为并发后，耗时约等于最慢单个客户端的检测时间。
-        const results = await Promise.all(clients.map(async (client): Promise<ClientInfo> => {
+        const results: ClientInfo[] = await Promise.all(clients.map(async (client): Promise<ClientInfo> => {
             const [installed, configExists] = await Promise.all([
                 this.isClientInstalled(client),
                 this.configExists(client),
@@ -772,10 +876,16 @@ export class ConfigManager {
 
             const supportsSkills = SKILL_SUPPORTED_CLIENTS.includes(client as SkillClientType);
 
+            // 「存在」判定简化为：对应配置文件是否存在。
+            // 有配置文件 -> 显示（已安装）；删掉配置文件 -> 不显示。
+            // 不依赖应用是否安装 / 是否含 server，纯粹以配置文件为准，符合用户对「客户端存在」的直觉。
+            // cloud 是虚拟客户端，仍按云同步是否激活判定。
+            const isInstalled = client === 'cloud' ? installed : configExists;
+
             return {
                 id: client,
                 name: this.getClientName(client),
-                installed,
+                installed: isInstalled,
                 configPath: this.getClientConfigPath(client),
                 configExists,
                 supportsSkills,
@@ -783,8 +893,30 @@ export class ConfigManager {
             };
         }));
 
-        this.clientsCache = results;
-        return results;
+        // 合并用户手动添加的客户端
+        const customClients = this.userSettings.customClients || [];
+        const customResults: ClientInfo[] = await Promise.all(customClients.map(async (def): Promise<ClientInfo> => {
+            let configExists = false;
+            try {
+                await fs.access(def.configPath);
+                configExists = true;
+            } catch {
+                // 配置文件不存在
+            }
+            return {
+                id: def.id,
+                name: def.name,
+                installed: true,
+                configPath: def.configPath,
+                configExists,
+                supportsSkills: def.supportsSkills,
+                skillsPath: def.supportsSkills ? def.skillsPath : undefined,
+                isCustom: true,
+            };
+        }));
+
+        this.clientsCache = [...results, ...customResults];
+        return this.clientsCache;
     }
 
     /**
@@ -798,14 +930,14 @@ export class ConfigManager {
     /**
      * 获取指定客户端的配置文件路径
      */
-    getConfigPath(client: ClientType = 'cursor'): string {
+    getConfigPath(client: AnyClientId = 'cursor'): string {
         return this.getClientConfigPath(client);
     }
 
     /**
      * 确保配置目录存在
      */
-    private async ensureConfigDir(client: ClientType): Promise<void> {
+    private async ensureConfigDir(client: AnyClientId): Promise<void> {
         const configPath = this.getClientConfigPath(client);
         const dir = path.dirname(configPath);
         await fs.mkdir(dir, {recursive: true});
@@ -814,8 +946,8 @@ export class ConfigManager {
     /**
      * 获取客户端使用的 MCP 服务器键名
      */
-    private getServersKey(client: ClientType): string {
-        if (SERVERS_KEY_CLIENTS.includes(client)) return 'servers';
+    private getServersKey(client: AnyClientId): string {
+        if (SERVERS_KEY_CLIENTS.includes(client as ClientType)) return 'servers';
         if (client === 'zed') return 'context_servers';
         if (client === 'opencode') return 'mcp';
         return 'mcpServers';
@@ -827,7 +959,7 @@ export class ConfigManager {
      * Zed: JSONC 格式，key 为 context_servers
      * Opencode: JSON/JSONC 格式，key 为 mcp
      */
-    async readConfig(client: ClientType = 'cursor'): Promise<ClientConfig> {
+    async readConfig(client: AnyClientId = 'cursor'): Promise<ClientConfig> {
         const configPath = this.getClientConfigPath(client);
 
         try {
@@ -910,7 +1042,7 @@ export class ConfigManager {
                 };
             }
 
-            if (SERVERS_KEY_CLIENTS.includes(client)) {
+            if (SERVERS_KEY_CLIENTS.includes(client as ClientType)) {
                 const config = JSON.parse(content);
                 return {
                     mcpServers: config.servers || {},
@@ -928,7 +1060,7 @@ export class ConfigManager {
                 if (client === 'opencode' || client === 'openclaw') {
                     return {mcpServers: {}};
                 }
-                if (SERVERS_KEY_CLIENTS.includes(client)) {
+                if (SERVERS_KEY_CLIENTS.includes(client as ClientType)) {
                     return {mcpServers: {}, servers: {}};
                 }
                 return {mcpServers: {}};
@@ -943,7 +1075,7 @@ export class ConfigManager {
      * Zed: JSONC 格式，key 为 context_servers，保留用户注释
      * Opencode: JSONC 格式，key 为 mcp，保留用户注释
      */
-    async writeConfig(config: ClientConfig, client: ClientType = 'cursor', merge = true): Promise<void> {
+    async writeConfig(config: ClientConfig, client: AnyClientId = 'cursor', merge = true): Promise<void> {
         await this.ensureConfigDir(client);
         const configPath = this.getClientConfigPath(client);
 
@@ -1090,7 +1222,7 @@ export class ConfigManager {
         }
 
         // VS Code: 写入时将 mcpServers -> servers
-        if (SERVERS_KEY_CLIENTS.includes(client)) {
+        if (SERVERS_KEY_CLIENTS.includes(client as ClientType)) {
             const {mcpServers, servers, ...rest} = config;
             const writeConfig = {
                 ...rest,
@@ -1109,21 +1241,29 @@ export class ConfigManager {
     /**
      * 获取已安装的服务器列表（从指定客户端）
      */
-    async getInstalledServers(client: ClientType = 'cursor'): Promise<Record<string, McpServerConfig>> {
+    async getInstalledServers(client: AnyClientId = 'cursor'): Promise<Record<string, McpServerConfig>> {
         const config = await this.readConfig(client);
-        return config.mcpServers || {};
+        // 兼容不同客户端配置键名：mcpServers（Claude/VS Code/WorkBuddy 等）或 servers（部分格式）。
+        return config.mcpServers || config.servers || {};
     }
 
     /**
      * 获取所有客户端中已安装的服务器（合并去重）
      */
     async getAllInstalledServers(): Promise<{
-        servers: Record<string, { config: McpServerConfig; clients: ClientType[] }>;
-        byClient: Record<ClientType, Record<string, McpServerConfig>>;
+        servers: Record<string, { config: McpServerConfig; clients: AnyClientId[] }>;
+        byClient: Record<string, Record<string, McpServerConfig>>;
     }> {
-        const clients: ClientType[] = ['cursor', 'vscode', 'claude-code', 'gemini-cli', 'codex-cli', 'windsurf', 'zed', 'trae', 'trae-cn', 'marscode', 'kiro', 'opencode', 'jetbrains', 'antigravity', 'openclaw', 'codebuddy', 'workbuddy', 'qoder', 'cloud'];
-        const servers: Record<string, { config: McpServerConfig; clients: ClientType[] }> = {};
-        const byClient: Record<ClientType, Record<string, McpServerConfig>> = {
+        // 确保用户设置（含自定义客户端）已加载
+        await this.loadUserSettings();
+        // 内置客户端 + 用户手动添加的自定义客户端（custom:<slug>），保证新增客户端也会被扫描。
+        const customIds: string[] = (this.userSettings.customClients || []).map(c => c.id);
+        const clients: AnyClientId[] = [
+            'cursor', 'vscode', 'claude-code', 'gemini-cli', 'codex-cli', 'windsurf', 'zed', 'trae', 'trae-cn', 'marscode', 'kiro', 'opencode', 'jetbrains', 'antigravity', 'openclaw', 'codebuddy', 'workbuddy', 'qoder', 'cloud',
+            ...customIds,
+        ];
+        const servers: Record<string, { config: McpServerConfig; clients: AnyClientId[] }> = {};
+        const byClient: Record<string, Record<string, McpServerConfig>> = {
             cursor: {},
             vscode: {},
             'claude-code': {},
@@ -1143,6 +1283,7 @@ export class ConfigManager {
             workbuddy: {},
             qoder: {},
             cloud: {},
+            ...Object.fromEntries(customIds.map(id => [id, {}])),
         };
 
         for (const client of clients) {
@@ -1171,28 +1312,21 @@ export class ConfigManager {
     async installServer(
         serverId: string,
         serverConfig: McpServerConfig,
-        clients: ClientType[] = ['cursor']
-    ): Promise<{ success: ClientType[]; failed: ClientType[] }> {
-        const success: ClientType[] = [];
-        const failed: ClientType[] = [];
-
-        console.log(`[ConfigManager] Installing server ${serverId} to clients:`, clients);
-        console.log(`[ConfigManager] Server config:`, JSON.stringify(serverConfig, null, 2));
+        clients: AnyClientId[] = ['cursor']
+    ): Promise<{ success: AnyClientId[]; failed: AnyClientId[] }> {
+        const success: AnyClientId[] = [];
+        const failed: AnyClientId[] = [];
 
         for (const client of clients) {
             try {
-                console.log(`[ConfigManager] Installing to ${client}...`);
                 const config = await this.readConfig(client);
-                console.log(`[ConfigManager] Current config for ${client}:`, JSON.stringify(config, null, 2));
 
                 if (!config.mcpServers) {
                     config.mcpServers = {};
                 }
                 config.mcpServers[serverId] = serverConfig;
 
-                console.log(`[ConfigManager] New config for ${client}:`, JSON.stringify(config, null, 2));
                 await this.writeConfig(config, client);
-                console.log(`[ConfigManager] Successfully installed to ${client}`);
                 success.push(client);
             } catch (error) {
                 console.error(`[ConfigManager] Failed to install to ${client}:`, error);
@@ -1200,7 +1334,6 @@ export class ConfigManager {
             }
         }
 
-        console.log(`[ConfigManager] Install result - success:`, success, 'failed:', failed);
         return {success, failed};
     }
 
@@ -1209,10 +1342,10 @@ export class ConfigManager {
      */
     async uninstallServer(
         serverId: string,
-        clients: ClientType[] = ['cursor']
-    ): Promise<{ success: ClientType[]; failed: ClientType[] }> {
-        const success: ClientType[] = [];
-        const failed: ClientType[] = [];
+        clients: AnyClientId[] = ['cursor']
+    ): Promise<{ success: AnyClientId[]; failed: AnyClientId[] }> {
+        const success: AnyClientId[] = [];
+        const failed: AnyClientId[] = [];
 
         for (const client of clients) {
             try {
@@ -1228,6 +1361,8 @@ export class ConfigManager {
             }
         }
 
+        // 若目标含云端存储：暂存区已删除该 server。远端推送统一由渲染层
+        // confirmUninstall → pushCloudAsync 在后台异步完成（不阻塞卸载界面）。
         return {success, failed};
     }
 
@@ -1237,7 +1372,7 @@ export class ConfigManager {
     async updateServer(
         serverId: string,
         serverConfig: McpServerConfig,
-        client: ClientType = 'cursor'
+        client: AnyClientId = 'cursor'
     ): Promise<void> {
         const config = await this.readConfig(client);
         if (!config.mcpServers) {
@@ -1252,9 +1387,9 @@ export class ConfigManager {
      */
     async syncServerToClients(
         serverId: string,
-        sourceClient: ClientType,
-        targetClients: ClientType[]
-    ): Promise<{ success: ClientType[]; failed: ClientType[] }> {
+        sourceClient: AnyClientId,
+        targetClients: AnyClientId[]
+    ): Promise<{ success: AnyClientId[]; failed: AnyClientId[] }> {
         const servers = await this.getInstalledServers(sourceClient);
         const serverConfig = servers[serverId];
 
@@ -1271,13 +1406,13 @@ export class ConfigManager {
      */
     async syncServersToClients(
         items: { serverId: string; config: McpServerConfig }[],
-        targetClients: ClientType[]
+        targetClients: AnyClientId[]
     ): Promise<{
         synced: number;
         failed: number;
-        details: { serverId: string; success: ClientType[]; failed: ClientType[] }[];
+        details: { serverId: string; success: AnyClientId[]; failed: AnyClientId[] }[];
     }> {
-        const details: { serverId: string; success: ClientType[]; failed: ClientType[] }[] = [];
+        const details: { serverId: string; success: AnyClientId[]; failed: AnyClientId[] }[] = [];
         let synced = 0;
         let failed = 0;
 

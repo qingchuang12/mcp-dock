@@ -9,6 +9,7 @@ import os from 'os';
 import zlib from 'zlib';
 import {execFile} from 'child_process';
 import {SKILL_SUPPORTED_CLIENTS, SkillClientType} from './config-manager';
+import {CLOUD_ROOT_DIR} from '../shared/cloud-sync-constants';
 
 // GitHub 仓库中发现的 Skill 信息
 export interface DiscoveredSkill {
@@ -107,7 +108,7 @@ export class SkillsManager {
             workbuddy: path.join(home, '.workbuddy', 'skills'),
             qoder: path.join(home, '.qoder', 'skills'),
             marscode: path.join(home, '.marscode', 'skills'),
-            cloud: path.join(home, '.ai-tools', 'cloud', 'ai-tool', 'skills'),
+            cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'skills'),
         };
 
         this.loadSettings();
@@ -309,6 +310,9 @@ export class SkillsManager {
                 console.error(`[SkillsManager] Failed to uninstall skill from ${client}:`, error);
             }
         }
+
+        // 若目标含云端存储：暂存区目录已删除。远端推送统一由渲染层
+        // confirmUninstall → pushCloudAsync 在后台异步完成（不阻塞卸载，且避免双重推送）。
     }
 
     /**

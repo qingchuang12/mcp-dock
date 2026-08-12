@@ -30,7 +30,7 @@ export {CLOUD_ROOT_DIR, CLOUD_CLIENT_ID} from '../shared/cloud-sync-constants';
 
 export class CloudSyncStore {
     private filePath: string;
-    /** 本地暂存区根目录：~/.ai-tools/cloud */
+    /** 本地暂存区根目录：~/.ai-tools/ai-tools */
     private stagingRoot: string;
     private config: CloudSyncConfig = defaultCloudSyncConfig();
 
@@ -69,7 +69,7 @@ export class CloudSyncStore {
         return this.stagingRoot;
     }
 
-    /** 暂存区中与云端同构的 ai-tool 目录 */
+    /** 暂存区中与云端同构的 ai-tools 目录 */
     getStagingDataDir(): string {
         return path.join(this.stagingRoot, CLOUD_ROOT_DIR);
     }

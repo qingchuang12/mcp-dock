@@ -7,8 +7,8 @@ import {useEffect, useMemo, useState} from 'react';
 import {useNavigate, useSearchParams} from 'react-router-dom';
 import {useTranslation} from 'react-i18next';
 import {
+    type AnyClientId,
     type ClientInfo,
-    type ClientType,
     getElectronAPI,
     type InstalledSkill,
     type McpServerConfig,
@@ -28,7 +28,7 @@ import {type DataSource, fetchServerList, type ServerListItem} from '../api/regi
 interface InstalledServer {
     id: string;
     config: McpServerConfig;
-    clients: ClientType[];
+    clients: AnyClientId[];
     isMcpDock: boolean;
     source: DataSource;
     // 编辑保存后转为「手动安装」：不再被当作商店来源，避免线上更新覆盖
@@ -223,7 +223,7 @@ export default function Library() {
     const [editingServer, setEditingServer] = useState<InstalledServer | null>(null);
     const [editedConfig, setEditedConfig] = useState('');
     const [syncingServer, setSyncingServer] = useState<InstalledServer | null>(null);
-    const [selectedSyncClients, setSelectedSyncClients] = useState<ClientType[]>([]);
+    const [selectedSyncClients, setSelectedSyncClients] = useState<AnyClientId[]>([]);
     // MCP Server 多选 + 批量同步（多客户端复用）
     const [serverSelectMode, setServerSelectMode] = useState(false);
     const [selectedServers, setSelectedServers] = useState<string[]>([]);
@@ -233,6 +233,7 @@ export default function Library() {
     const [showAddModal, setShowAddModal] = useState(false);
     const [isAddingServer, setIsAddingServer] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [isUpdatingAll, setIsUpdatingAll] = useState(false);
     const [refreshingSkill, setRefreshingSkill] = useState<string | null>(null);
 
     // 创建 / 编辑自定义 Skill
@@ -262,6 +263,7 @@ export default function Library() {
 
     // 云同步：仅在设置里配置好 Git / SFTP 后，'cloud' 才会作为已安装客户端出现
     const [cloudBusy, setCloudBusy] = useState<'push' | 'pull' | null>(null);
+    const [cloudUploadConfirmOpen, setCloudUploadConfirmOpen] = useState(false);
     const cloudAvailable = clients.some(c => c.id === 'cloud' && c.installed);
 
     const openUninstall = (type: 'mcp' | 'skill', id: string, displayName: string, clients: string[]) => {
@@ -274,9 +276,14 @@ export default function Library() {
         const clients = selectedUninstallClients;
         try {
             if (uninstallTarget.type === 'mcp') {
-                await handleRemoveServer(uninstallTarget.id, clients as ClientType[]);
+                await handleRemoveServer(uninstallTarget.id, clients as AnyClientId[]);
             } else {
                 await handleRemoveSkill(uninstallTarget.id, clients as SkillClientType[]);
+            }
+            // 卸载目标含云端存储：本地暂存区已删除，云端推送在后台异步进行，这里仅给出进行中反馈
+            if (clients.includes('cloud')) {
+                toast.success(t('library.cloudUninstallStarted') || '云端删除中…');
+                pushCloudAsync();
             }
         } finally {
             setUninstallTarget(null);
@@ -311,10 +318,23 @@ export default function Library() {
         loadData();
     }, [api]);
 
+    // 应用启动时主进程已在后台以云端为准拉取，拉取完成通知渲染层刷新本地暂存区展示
+    useEffect(() => {
+        const off = api.cloudSync.onPulled((result) => {
+            if (result.ok) {
+                console.log('[Library] cloud pulled on startup, refreshing');
+                loadData();
+            } else {
+                console.warn('[Library] cloud pull on startup failed:', result.message);
+            }
+        });
+        return off;
+    }, [api]);
+
     const loadData = async () => {
         try {
             const [clientList, {servers: serverMap}, {byClient: skillsByClient}, manualServers] = await Promise.all([
-                api.clients.getAll(),
+                api.clients.getAll(true),
                 api.config.getAllServers(),
                 api.skills.getAllInstalled(),
                 api.config.getManualServers(),
@@ -358,6 +378,24 @@ export default function Library() {
         }
     };
 
+    // 刷新数据（带动效）
+    const handleRefresh = async () => {
+        if (isRefreshing) return;
+        setIsRefreshing(true);
+        const startTime = Date.now();
+        try {
+            await loadData();
+        } catch (error) {
+            console.error('Failed to refresh library:', error);
+        } finally {
+            const elapsed = Date.now() - startTime;
+            if (elapsed < 600) {
+                await new Promise(resolve => setTimeout(resolve, 600 - elapsed));
+            }
+            setIsRefreshing(false);
+        }
+    };
+
     // 编辑服务器
     const handleEdit = (server: InstalledServer) => {
         setEditingServer(server);
@@ -388,7 +426,7 @@ export default function Library() {
     };
 
     // 删除服务器
-    const handleRemoveServer = async (serverId: string, clientsToRemove: ClientType[]) => {
+    const handleRemoveServer = async (serverId: string, clientsToRemove: AnyClientId[]) => {
         try {
             await api.config.uninstallServer(serverId, clientsToRemove);
             const server = servers.find(s => s.id === serverId);
@@ -443,9 +481,9 @@ export default function Library() {
         }
     };
 
-    // 更新所有 Skills（带旋转动效）
+    // 更新所有 Skills（带旋转动效）——独立于刷新状态，避免与刷新按钮联动
     const handleUpdateAllSkills = async () => {
-        setIsRefreshing(true);
+        setIsUpdatingAll(true);
         const startTime = Date.now();
 
         try {
@@ -469,7 +507,7 @@ export default function Library() {
             console.error('Failed to update all skills:', error);
             toast.error(t('library.allSkillsUpdateFailed') || 'Failed to update skills');
         } finally {
-            setIsRefreshing(false);
+            setIsUpdatingAll(false);
         }
     };
 
@@ -680,40 +718,54 @@ export default function Library() {
     };
 
     /**
-     * 同步目标包含云端时，把暂存区推到远端。
+     * 后台异步把暂存区推到云端（不阻塞当前操作界面）。
+     * 本地写盘已完成即可返回，远端传输在后台进行，完成后才提示结果。
+     */
+    const pushCloudAsync = () => {
+        void api.cloudSync.push().then((res) => {
+            if (res.ok) toast.success(res.message || '已上传到云端');
+            else toast.error(res.message || '上传云端失败');
+        }).catch((err) => {
+            toast.error(err?.message || '上传云端失败');
+        });
+    };
+
+    /**
+     * 同步目标包含云端时，把暂存区推到远端（异步，不卡界面）。
      * 「同步到云端客户端」只写了本地 ~/.ai-tools/cloud 暂存区，还需要一次传输才真正上云。
      */
     const autoPushIfCloud = async (targets: string[]) => {
         if (!targets.includes('cloud')) return;
-        const res = await api.cloudSync.push();
-        if (res.ok) toast.success(res.message || '已上传到云端');
-        else toast.error(res.message || '上传云端失败');
+        pushCloudAsync();
     };
 
-    // 云上传：把当前库里的 MCP + Skill 全量写入云端暂存区，再推送到远端
-    const handleCloudUpload = async () => {
+    // 云上传：按当前 Tab 只把对应类型（MCP 或 Skill）写入云端暂存区，远端传输异步进行。
+    // 点击顶部「云上传」按钮时先弹确认框，确认后才执行真正上传。
+    const doCloudUpload = async () => {
         setCloudBusy('push');
         try {
-            if (servers.length > 0) {
-                await api.config.syncServersBatch(
-                    servers.map(s => ({serverId: s.id, config: s.config})),
-                    ['cloud']
-                );
+            if (activeTab === 'mcp') {
+                if (servers.length > 0) {
+                    await api.config.syncServersBatch(
+                        servers.map(s => ({serverId: s.id, config: s.config})),
+                        ['cloud']
+                    );
+                }
+            } else {
+                const skillItems = skills
+                    .map(s => ({
+                        name: s.name,
+                        sourceClient: (skillClients[s.name] || []).find(c => c !== 'cloud') as SkillClientType
+                    }))
+                    .filter(i => i.sourceClient);
+                if (skillItems.length > 0) {
+                    await api.skills.syncBatch(skillItems, ['cloud']);
+                }
             }
-            const skillItems = skills
-                .map(s => ({
-                    name: s.name,
-                    sourceClient: (skillClients[s.name] || []).find(c => c !== 'cloud') as SkillClientType
-                }))
-                .filter(i => i.sourceClient);
-            if (skillItems.length > 0) {
-                await api.skills.syncBatch(skillItems, ['cloud']);
-            }
-
-            const res = await api.cloudSync.push();
-            if (res.ok) toast.success(res.message || '已上传到云端');
-            else toast.error(res.message || '上传失败');
+            // 本地暂存区已就绪，立即刷新界面，远端推送在后台异步完成
             await loadData();
+            toast.success(t('library.cloudUploadStarted') || '云端上传中…');
+            pushCloudAsync();
         } catch (error: any) {
             console.error('Cloud upload failed:', error);
             toast.error(error?.message || '上传失败');
@@ -722,24 +774,18 @@ export default function Library() {
         }
     };
 
-    // 云下载：把远端拉到暂存区，之后云端内容会作为「云端存储」客户端出现在列表里
-    const handleCloudDownload = async () => {
-        setCloudBusy('pull');
-        try {
-            const res = await api.cloudSync.pull();
-            if (res.ok) toast.success(res.message || '已从云端下载');
-            else toast.error(res.message || '下载失败');
-            await loadData();
-        } catch (error: any) {
-            console.error('Cloud download failed:', error);
-            toast.error(error?.message || '下载失败');
-        } finally {
-            setCloudBusy(null);
-        }
+    // 顶部「云上传」入口：先确认是否覆盖云端，再全量上传
+    const handleCloudUpload = () => {
+        setCloudUploadConfirmOpen(true);
+    };
+
+    const confirmCloudUpload = () => {
+        setCloudUploadConfirmOpen(false);
+        void doCloudUpload();
     };
 
     // 切换同步客户端选择
-    const toggleSyncClient = (clientId: ClientType) => {
+    const toggleSyncClient = (clientId: AnyClientId) => {
         setSelectedSyncClients(prev =>
             prev.includes(clientId)
                 ? prev.filter(c => c !== clientId)
@@ -756,7 +802,7 @@ export default function Library() {
     };
 
     // 添加自定义服务器
-    const handleAddServer = async (serverId: string, config: McpServerConfig, targetClients: ClientType[]) => {
+    const handleAddServer = async (serverId: string, config: McpServerConfig, targetClients: AnyClientId[]) => {
         setIsAddingServer(true);
         try {
             await api.config.installServer(serverId, config, targetClients);
@@ -839,26 +885,29 @@ export default function Library() {
                 </div>
 
                 <div className="flex items-center gap-2 no-drag">
+                    {/* 刷新 */}
+                    <button
+                        onClick={handleRefresh}
+                        disabled={isRefreshing}
+                        title={t('library.refresh') || 'Refresh'}
+                        className="p-1.5 rounded-md text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors disabled:opacity-50"
+                    >
+                        <svg
+                            className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`}
+                            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round"
+                                  d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
+                        </svg>
+                    </button>
                     {/* 云端存储：在「设置 → 云同步」配置好后才出现 */}
                     {cloudAvailable && (
                         <>
                             <button
-                                onClick={handleCloudDownload}
-                                disabled={cloudBusy !== null}
-                                title="从云端拉取 ai-tool 目录到本地暂存区"
-                                className="flex items-center gap-1.5 px-3 py-1 bg-[var(--color-surface-hover)] text-[var(--color-text)] rounded-md text-[12px] font-medium hover:bg-[var(--color-surface-active)] transition-colors disabled:opacity-50"
-                            >
-                                <svg className={`w-3.5 h-3.5 ${cloudBusy === 'pull' ? 'animate-pulse' : ''}`}
-                                     fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round"
-                                          d="M12 9.75v6.75m0 0l-3-3m3 3l3-3m-8.25 6a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z"/>
-                                </svg>
-                                {cloudBusy === 'pull' ? '下载中…' : '云下载'}
-                            </button>
-                            <button
                                 onClick={handleCloudUpload}
                                 disabled={cloudBusy !== null}
-                                title="把当前库的 MCP 与 Skill 上传到云端 ai-tool 目录"
+                                title={activeTab === 'skills'
+                                    ? '把当前库的 Skill 上传到云端 ai-tools 目录'
+                                    : '把当前库的 MCP 上传到云端 ai-tools 目录'}
                                 className="flex items-center gap-1.5 px-3 py-1 bg-[var(--color-surface-hover)] text-[var(--color-text)] rounded-md text-[12px] font-medium hover:bg-[var(--color-surface-active)] transition-colors disabled:opacity-50"
                             >
                                 <svg className={`w-3.5 h-3.5 ${cloudBusy === 'push' ? 'animate-pulse' : ''}`}
@@ -954,11 +1003,11 @@ export default function Library() {
                             {skills.length > 0 && (
                                 <button
                                     onClick={handleUpdateAllSkills}
-                                    disabled={isRefreshing}
+                                    disabled={isUpdatingAll}
                                     className="flex items-center gap-1.5 px-3 py-1 bg-[var(--color-surface-hover)] text-[var(--color-text)] rounded-md text-[12px] font-medium hover:bg-[var(--color-surface-active)] transition-colors disabled:opacity-50"
                                 >
                                     <svg
-                                        className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`}
+                                        className={`w-3.5 h-3.5 ${isUpdatingAll ? 'animate-spin' : ''}`}
                                         fill="none"
                                         viewBox="0 0 24 24"
                                         stroke="currentColor"
@@ -1492,6 +1541,43 @@ export default function Library() {
                             {isSyncing
                                 ? (t('library.syncing') || 'Syncing...')
                                 : (t('library.sync') || 'Sync')}
+                        </button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* 云上传确认：确认是否覆盖云端 */}
+            <Modal
+                isOpen={cloudUploadConfirmOpen}
+                onClose={() => setCloudUploadConfirmOpen(false)}
+                title={activeTab === 'skills'
+                    ? (t('library.cloudUploadSkillConfirmTitle') || '确认是否覆盖云端 Skill')
+                    : (t('library.cloudUploadMcpConfirmTitle') || '确认是否覆盖云端 MCP')}
+            >
+                <div className="space-y-4">
+                    <p className="text-[13px] text-[var(--color-muted2)]">
+                        {activeTab === 'skills'
+                            ? (t('library.cloudUploadSkillConfirmMsg') ||
+                                '此操作将把本地所有 Skill 上传到云端并覆盖现有内容，确认继续？')
+                            : (t('library.cloudUploadMcpConfirmMsg') ||
+                                '此操作将把本地所有 MCP 上传到云端并覆盖现有内容，确认继续？')}
+                    </p>
+                    <div className="flex justify-end gap-2 pt-2">
+                        <button
+                            onClick={() => setCloudUploadConfirmOpen(false)}
+                            className="btn btn-secondary"
+                            disabled={cloudBusy !== null}
+                        >
+                            {t('common.cancel')}
+                        </button>
+                        <button
+                            onClick={confirmCloudUpload}
+                            className="btn btn-primary disabled:opacity-50"
+                            disabled={cloudBusy !== null}
+                        >
+                            {cloudBusy === 'push'
+                                ? (t('library.cloudUploading') || '上传中…')
+                                : (t('library.cloudUploadConfirmBtn') || '确认上传')}
                         </button>
                     </div>
                 </div>

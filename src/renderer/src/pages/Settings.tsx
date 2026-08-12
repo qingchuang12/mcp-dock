@@ -40,6 +40,13 @@ export default function Settings() {
     // 未安装客户端折叠状态
     const [showUninstalled, setShowUninstalled] = useState(false);
 
+    // 添加客户端弹窗状态
+    const [addingClient, setAddingClient] = useState(false);
+    const [addName, setAddName] = useState('');
+    const [addConfigPath, setAddConfigPath] = useState('');
+    const [addSupportsSkills, setAddSupportsSkills] = useState(false);
+    const [addSkillsPath, setAddSkillsPath] = useState('');
+
     // 关于弹窗
     const [showAbout, setShowAbout] = useState(false);
 
@@ -51,11 +58,11 @@ export default function Settings() {
         try {
             const [runtimeInfo, clientList, appVersion] = await Promise.all([
                 api.env.getAllRuntimes(),
-                api.clients.getAll(),
+                api.clients.getAll(true),
                 api.system.getVersion(),
             ]);
             setRuntimes(runtimeInfo);
-            // 云端存储在下方「云同步」卡片单独配置，不混入客户端列表
+            // 显示所有受支持的客户端（含未安装的）。云端存储在「云同步」卡片单独配置，不混入。
             setClients(clientList.filter(c => c.id !== 'cloud'));
             setVersion(appVersion);
         } catch (error) {
@@ -75,7 +82,7 @@ export default function Settings() {
         try {
             const [runtimeInfo, clientList, appVersion] = await Promise.all([
                 api.env.getAllRuntimes(),
-                api.clients.getAll(),
+                api.clients.getAll(true),
                 api.system.getVersion(),
             ]);
 
@@ -86,7 +93,7 @@ export default function Settings() {
             }
 
             setRuntimes(runtimeInfo);
-            // 云端存储在下方「云同步」卡片单独配置，不混入客户端列表
+            // 显示所有受支持的客户端（含未安装的）。云端存储在「云同步」卡片单独配置，不混入。
             setClients(clientList.filter(c => c.id !== 'cloud'));
             setVersion(appVersion);
             toast.success(t('settings.refreshed') || 'Settings refreshed');
@@ -137,6 +144,62 @@ export default function Settings() {
             setEditingClient(null);
         } catch (error) {
             console.error('Failed to save client config:', error);
+        }
+    };
+
+    // 添加自定义客户端
+    const handleAddClient = async () => {
+        if (!addName.trim() || !addConfigPath.trim()) {
+            toast.error(t('settings.addClientRequire') || 'Please enter both name and config path');
+            return;
+        }
+        try {
+            const def = await api.clients.addCustom({
+                name: addName.trim(),
+                configPath: addConfigPath.trim(),
+                supportsSkills: addSupportsSkills,
+                skillsPath: addSupportsSkills ? addSkillsPath.trim() || undefined : undefined,
+            });
+            // 双保险：直接更新本地列表，避免依赖后端缓存时序
+            setClients(prev => [
+                ...prev.filter(c => c.id !== def.id && c.id !== 'cloud'),
+                {
+                    id: def.id,
+                    name: def.name,
+                    installed: true,
+                    configPath: def.configPath,
+                    configExists: false,
+                    supportsSkills: def.supportsSkills,
+                    skillsPath: def.supportsSkills ? def.skillsPath : undefined,
+                    isCustom: true,
+                },
+            ]);
+            setAddingClient(false);
+            setAddName('');
+            setAddConfigPath('');
+            setAddSupportsSkills(false);
+            setAddSkillsPath('');
+            toast.success(t('settings.clientAdded') || 'Client added');
+        } catch (error) {
+            console.error('Failed to add client:', error);
+            const msg = error instanceof Error ? error.message : '';
+            if (msg.startsWith('DUPLICATE_CLIENT_NAME:')) {
+                toast.error(t('settings.addClientDuplicate') || 'A client with this name already exists');
+            } else {
+                toast.error(t('settings.addClientFailed') || 'Failed to add client');
+            }
+        }
+    };
+
+    // 删除自定义客户端
+    const handleRemoveClient = async (id: string) => {
+        try {
+            await api.clients.removeCustom(id);
+            // 双保险：立即从本地列表移除
+            setClients(prev => prev.filter(c => c.id !== id));
+            toast.success(t('settings.clientRemoved') || 'Client removed');
+        } catch (error) {
+            console.error('Failed to remove client:', error);
         }
     };
 
@@ -237,22 +300,24 @@ export default function Settings() {
                                     {t('settings.clientsDesc')}
                                 </p>
                             </div>
-                            <button
-                                onClick={handleRefresh}
-                                disabled={isRefreshing}
-                                className="p-1.5 rounded text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors disabled:opacity-50"
-                            >
-                                <svg
-                                    className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`}
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                    strokeWidth={2}
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    onClick={handleRefresh}
+                                    disabled={isRefreshing}
+                                    className="p-1.5 rounded text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors disabled:opacity-50"
                                 >
-                                    <path strokeLinecap="round" strokeLinejoin="round"
-                                          d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
-                                </svg>
-                            </button>
+                                    <svg
+                                        className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`}
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke="currentColor"
+                                        strokeWidth={2}
+                                    >
+                                        <path strokeLinecap="round" strokeLinejoin="round"
+                                              d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
 
                         {isInitialLoading && clients.length === 0 ? (
@@ -298,32 +363,48 @@ export default function Settings() {
                                                             {client.configPath?.replace(/^.*[/\\]/, '') || ''}
                                                         </code>
                                                     </div>
-                                                    <button
-                                                        onClick={() => openEditModal(client)}
-                                                        className="p-1 rounded text-[var(--color-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-all"
-                                                        title={t('settings.editPath') || 'Edit config path'}
-                                                    >
-                                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24"
-                                                             stroke="currentColor" strokeWidth={2}>
-                                                            <path strokeLinecap="round" strokeLinejoin="round"
-                                                                  d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
-                                                        </svg>
-                                                    </button>
+                                                    <div className="flex items-center gap-0.5">
+                                                        <button
+                                                            onClick={() => openEditModal(client)}
+                                                            className="p-1 rounded text-[var(--color-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-all"
+                                                            title={t('settings.editPath') || 'Edit config path'}
+                                                        >
+                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24"
+                                                                 stroke="currentColor" strokeWidth={2}>
+                                                                <path strokeLinecap="round" strokeLinejoin="round"
+                                                                      d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
+                                                            </svg>
+                                                        </button>
+                                                        {client.isCustom && (
+                                                            <button
+                                                                onClick={() => handleRemoveClient(client.id)}
+                                                                className="p-1 rounded text-[var(--color-muted)] opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-[var(--color-surface-hover)] transition-all"
+                                                                title={t('settings.removeClient') || 'Remove client'}
+                                                            >
+                                                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24"
+                                                                     stroke="currentColor" strokeWidth={2}>
+                                                                    <path strokeLinecap="round" strokeLinejoin="round"
+                                                                          d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
+                                                                </svg>
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
                                 )}
 
-                                {/* 未安装客户端 - 可折叠区域 */}
-                                {clients.filter(c => !c.installed).length > 0 && (
-                                    <>
+                                {/* 未安装客户端 + 自定义客户端入口 - 可折叠区域，始终显示 */}
+                                <>
                                         <button
                                             onClick={() => setShowUninstalled(!showUninstalled)}
                                             className="w-full flex items-center justify-between px-4 py-2.5 border-t border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]/30 transition-colors"
                                         >
                       <span className="text-[12px] text-[var(--color-muted)]">
-                        {t('settings.uninstalledClients') || `${clients.filter(c => !c.installed).length} more clients not installed`}
+                        {clients.filter(c => !c.installed).length > 0
+                          ? (t('settings.uninstalledClients') || `${clients.filter(c => !c.installed).length} more clients not installed`)
+                          : (t('settings.customClient') || 'Custom client')}
                       </span>
                                             <svg
                                                 className={`w-3.5 h-3.5 text-[var(--color-muted)] transition-transform ${showUninstalled ? 'rotate-180' : ''}`}
@@ -343,21 +424,41 @@ export default function Settings() {
                                                     {clients.filter(c => !c.installed).map(client => (
                                                         <div
                                                             key={client.id}
-                                                            className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-[var(--color-surface-hover)]/20"
+                                                            className="group flex items-center gap-2 px-2.5 py-2 rounded-md bg-[var(--color-surface-hover)]/20 hover:bg-[var(--color-surface-hover)]/40 transition-colors"
                                                         >
                                                             <ClientIcon clientId={client.id} size={20}
                                                                         className="opacity-40 flex-shrink-0"/>
                                                             <span
                                                                 className="text-[12px] text-[var(--color-muted)] truncate">{client.name}</span>
+                                                            <button
+                                                                onClick={() => openEditModal(client)}
+                                                                className="ml-auto p-1 rounded text-[var(--color-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-all"
+                                                                title={t('settings.editPath') || 'Edit config path'}
+                                                            >
+                                                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24"
+                                                                     stroke="currentColor" strokeWidth={2}>
+                                                                    <path strokeLinecap="round" strokeLinejoin="round"
+                                                                          d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
+                                                                </svg>
+                                                            </button>
                                                         </div>
                                                     ))}
                                                 </div>
+                                                {/* 始终保留「自定义客户端」入口：点击打开发添加弹窗 */}
+                                                <button
+                                                    onClick={() => setAddingClient(true)}
+                                                    className="mt-1.5 w-full flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-md border border-dashed border-[var(--color-border)] text-[12px] text-[var(--color-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-muted)] hover:bg-[var(--color-surface-hover)]/30 transition-colors"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+                                                    </svg>
+                                                    {t('settings.customClient') || 'Custom client'}
+                                                </button>
                                             </div>
                                         )}
                                     </>
-                                )}
-                            </>
-                        )}
+                                </>
+                            )}
                     </div>
 
                     {/* 运行时环境 */}
@@ -478,6 +579,81 @@ export default function Settings() {
                         </button>
                         <button onClick={saveClientConfig} className="btn btn-primary">
                             {t('common.save')}
+                        </button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* 添加客户端弹窗 */}
+            <Modal
+                isOpen={addingClient}
+                onClose={() => setAddingClient(false)}
+                title={t('settings.addClient') || 'Add Custom Client'}
+            >
+                <div className="space-y-4">
+                    <p className="text-[12px] text-[var(--color-muted2)]">
+                        {t('settings.addClientHint') || 'Add a client by specifying its MCP config file path.'}
+                    </p>
+
+                    <div>
+                        <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">
+                            {t('settings.clientName') || 'Client Name'}
+                        </label>
+                        <input
+                            type="text"
+                            value={addName}
+                            onChange={(e) => setAddName(e.target.value)}
+                            className="w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] text-[12px] focus:border-[var(--color-accent)] transition-colors"
+                            placeholder={t('settings.enterClientName') || 'My Client'}
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">
+                            {t('settings.mcpConfigPath')}
+                        </label>
+                        <input
+                            type="text"
+                            value={addConfigPath}
+                            onChange={(e) => setAddConfigPath(e.target.value)}
+                            className="w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] font-mono text-[12px] focus:border-[var(--color-accent)] transition-colors"
+                            placeholder="/path/to/mcp.json"
+                        />
+                    </div>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={addSupportsSkills}
+                            onChange={(e) => setAddSupportsSkills(e.target.checked)}
+                            className="accent-[var(--color-accent)]"
+                        />
+                        <span className="text-[12px] text-[var(--color-muted2)]">
+                            {t('settings.supportsSkillsLabel') || 'Supports Skills'}
+                        </span>
+                    </label>
+
+                    {addSupportsSkills && (
+                        <div>
+                            <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">
+                                {t('settings.skillsDirectory')}
+                            </label>
+                            <input
+                                type="text"
+                                value={addSkillsPath}
+                                onChange={(e) => setAddSkillsPath(e.target.value)}
+                                className="w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] font-mono text-[12px] focus:border-[var(--color-accent)] transition-colors"
+                                placeholder="/path/to/skills"
+                            />
+                        </div>
+                    )}
+
+                    <div className="flex justify-end gap-2 pt-2">
+                        <button onClick={() => setAddingClient(false)} className="btn btn-secondary">
+                            {t('common.cancel')}
+                        </button>
+                        <button onClick={handleAddClient} className="btn btn-primary">
+                            {t('common.add')}
                         </button>
                     </div>
                 </div>

@@ -13,7 +13,7 @@ import type {
     PlatformSkillListItem
 } from '../main/platform-skill-resolver';
 // 客户端类型统一从主进程 config-manager 引入，避免多端重复定义导致类型不兼容
-import type {ClientInfo, ClientType, SkillClientType} from '../main/config-manager';
+import type {AnyClientId, ClientInfo, ClientType, CustomClientDef, SkillClientType} from '../main/config-manager';
 import type {CloudSyncConfig, CloudSyncConfigInput, CloudSyncResult} from '../shared/cloud-sync-constants';
 
 // 类型定义
@@ -153,13 +153,13 @@ export interface AllSkillsResult {
 }
 
 export interface InstallResult {
-    success: ClientType[];
-    failed: ClientType[];
+    success: AnyClientId[];
+    failed: AnyClientId[];
 }
 
 export interface AllServersResult {
-    servers: Record<string, { config: McpServerConfig; clients: ClientType[] }>;
-    byClient: Record<ClientType, Record<string, McpServerConfig>>;
+    servers: Record<string, { config: McpServerConfig; clients: AnyClientId[] }>;
+    byClient: Record<string, Record<string, McpServerConfig>>;
 }
 
 // 缓存相关类型
@@ -208,41 +208,45 @@ export interface McpTool {
 const api = {
     // 客户端管理
     clients: {
-        getAll: (): Promise<ClientInfo[]> => ipcRenderer.invoke('clients:get-all'),
-        setCustomPath: (client: ClientType, customPath: string | null): Promise<void> =>
+        getAll: (force?: boolean): Promise<ClientInfo[]> => ipcRenderer.invoke('clients:get-all', force),
+        setCustomPath: (client: AnyClientId, customPath: string | null): Promise<void> =>
             ipcRenderer.invoke('clients:set-custom-path', client, customPath),
         setCustomSkillsPath: (client: SkillClientType, customPath: string | null): Promise<void> =>
             ipcRenderer.invoke('clients:set-custom-skills-path', client, customPath),
+        addCustom: (input: { name: string; configPath: string; supportsSkills?: boolean; skillsPath?: string }): Promise<CustomClientDef> =>
+            ipcRenderer.invoke('clients:add-custom', input),
+        removeCustom: (id: string): Promise<void> =>
+            ipcRenderer.invoke('clients:remove-custom', id),
     },
 
     // 配置管理
     config: {
-        read: (client?: ClientType): Promise<any> => ipcRenderer.invoke('config:read', client),
-        write: (config: any, client?: ClientType): Promise<void> =>
+        read: (client?: AnyClientId): Promise<any> => ipcRenderer.invoke('config:read', client),
+        write: (config: any, client?: AnyClientId): Promise<void> =>
             ipcRenderer.invoke('config:write', config, client),
-        getServers: (client?: ClientType): Promise<Record<string, McpServerConfig>> =>
+        getServers: (client?: AnyClientId): Promise<Record<string, McpServerConfig>> =>
             ipcRenderer.invoke('config:get-servers', client),
         getAllServers: (): Promise<AllServersResult> =>
             ipcRenderer.invoke('config:get-all-servers'),
-        installServer: (serverId: string, serverConfig: McpServerConfig, clients: ClientType[]): Promise<InstallResult> =>
+        installServer: (serverId: string, serverConfig: McpServerConfig, clients: AnyClientId[]): Promise<InstallResult> =>
             ipcRenderer.invoke('config:install-server', serverId, serverConfig, clients),
-        uninstallServer: (serverId: string, clients: ClientType[]): Promise<InstallResult> =>
+        uninstallServer: (serverId: string, clients: AnyClientId[]): Promise<InstallResult> =>
             ipcRenderer.invoke('config:uninstall-server', serverId, clients),
-        updateServer: (serverId: string, serverConfig: McpServerConfig, client?: ClientType): Promise<void> =>
+        updateServer: (serverId: string, serverConfig: McpServerConfig, client?: AnyClientId): Promise<void> =>
             ipcRenderer.invoke('config:update-server', serverId, serverConfig, client),
         markServerManual: (serverId: string): Promise<void> =>
             ipcRenderer.invoke('config:mark-server-manual', serverId),
         getManualServers: (): Promise<string[]> =>
             ipcRenderer.invoke('config:get-manual-servers'),
-        syncServer: (serverId: string, sourceClient: ClientType, targetClients: ClientType[]): Promise<InstallResult> =>
+        syncServer: (serverId: string, sourceClient: AnyClientId, targetClients: AnyClientId[]): Promise<InstallResult> =>
             ipcRenderer.invoke('config:sync-server', serverId, sourceClient, targetClients),
         syncServersBatch: (items: {
             serverId: string;
             config: McpServerConfig
-        }[], targetClients: ClientType[]): Promise<{
+        }[], targetClients: AnyClientId[]): Promise<{
             synced: number;
             failed: number;
-            details: { serverId: string; success: ClientType[]; failed: ClientType[] }[]
+            details: { serverId: string; success: AnyClientId[]; failed: AnyClientId[] }[]
         }> =>
             ipcRenderer.invoke('config:sync-servers-batch', items, targetClients),
     },
@@ -279,9 +283,9 @@ const api = {
             ipcRenderer.invoke('system:get-version'),
         openExternal: (url: string): Promise<void> =>
             ipcRenderer.invoke('system:open-external', url),
-        getConfigPath: (client?: ClientType): Promise<string> =>
+        getConfigPath: (client?: AnyClientId): Promise<string> =>
             ipcRenderer.invoke('system:get-config-path', client),
-        openConfigDirectory: (client: ClientType): Promise<string> =>
+        openConfigDirectory: (client: AnyClientId): Promise<string> =>
             ipcRenderer.invoke('system:open-config-directory', client),
         openSkillsDirectory: (client: SkillClientType): Promise<string> =>
             ipcRenderer.invoke('system:open-skills-directory', client),
@@ -404,6 +408,12 @@ const api = {
             ipcRenderer.invoke('cloud-sync:push'),
         pull: (): Promise<CloudSyncResult> =>
             ipcRenderer.invoke('cloud-sync:pull'),
+        // 主进程启动后异步拉取云端完成时通知渲染层刷新（以云端为准覆盖本地暂存区）
+        onPulled: (callback: (result: CloudSyncResult) => void): (() => void) => {
+            const listener = (_e: unknown, result: CloudSyncResult) => callback(result);
+            ipcRenderer.on('cloud-sync:pulled', listener);
+            return () => ipcRenderer.removeListener('cloud-sync:pulled', listener);
+        },
     },
 
     // MCP Inspector

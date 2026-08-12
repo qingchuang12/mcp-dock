@@ -12,7 +12,7 @@ import type {
     PlatformSkillListItem,
 } from '../../../main/platform-skill-resolver';
 // 客户端类型统一从主进程 config-manager 引入，避免渲染端重复定义导致类型不兼容
-import type {ClientInfo, ClientType, SkillClientType} from '../../../main/config-manager';
+import type {AnyClientId, ClientInfo, ClientType, CustomClientDef, SkillClientType} from '../../../main/config-manager';
 import type {CloudSyncConfig, CloudSyncConfigInput, CloudSyncResult} from '../../../shared/cloud-sync-constants';
 import {defaultCloudSyncConfig} from '../../../shared/cloud-sync-constants';
 
@@ -69,7 +69,7 @@ export interface BackupInfo {
     size: number;
     serverCount: number;
     skillCount: number;
-    clients: ClientType[];
+    clients: AnyClientId[];
 }
 
 export interface DiffResult {
@@ -82,7 +82,7 @@ export interface DiffResult {
     skillsRemoved: string[];
 }
 
-export type {ClientType, SkillClientType, ClientInfo};
+export type {ClientType, SkillClientType, ClientInfo, AnyClientId, CustomClientDef};
 
 // Skills 相关类型
 export interface SkillSourceMeta {
@@ -182,13 +182,13 @@ export interface AllSkillsResult {
 }
 
 export interface InstallResult {
-    success: ClientType[];
-    failed: ClientType[];
+    success: AnyClientId[];
+    failed: AnyClientId[];
 }
 
 export interface AllServersResult {
-    servers: Record<string, { config: McpServerConfig; clients: ClientType[] }>;
-    byClient: Record<ClientType, Record<string, McpServerConfig>>;
+    servers: Record<string, { config: McpServerConfig; clients: AnyClientId[] }>;
+    byClient: Record<string, Record<string, McpServerConfig>>;
 }
 
 export interface McpTool {
@@ -224,30 +224,34 @@ export interface McpApi {
 
 interface ElectronAPI {
     clients: {
-        getAll: () => Promise<ClientInfo[]>;
-        setCustomPath: (client: ClientType, customPath: string | null) => Promise<void>;
+        getAll: (force?: boolean) => Promise<ClientInfo[]>;
+        setCustomPath: (client: AnyClientId, customPath: string | null) => Promise<void>;
         setCustomSkillsPath: (client: SkillClientType, customPath: string | null) => Promise<void>;
+        /** 添加用户手动客户端（并指定配置文件位置） */
+        addCustom: (input: { name: string; configPath: string; supportsSkills?: boolean; skillsPath?: string }) => Promise<CustomClientDef>;
+        /** 删除用户手动客户端 */
+        removeCustom: (id: string) => Promise<void>;
     };
     config: {
-        read: (client?: ClientType) => Promise<any>;
-        write: (config: any, client?: ClientType) => Promise<void>;
-        getServers: (client?: ClientType) => Promise<Record<string, McpServerConfig>>;
+        read: (client?: AnyClientId) => Promise<any>;
+        write: (config: any, client?: AnyClientId) => Promise<void>;
+        getServers: (client?: AnyClientId) => Promise<Record<string, McpServerConfig>>;
         getAllServers: () => Promise<AllServersResult>;
-        installServer: (serverId: string, serverConfig: McpServerConfig, clients: ClientType[]) => Promise<InstallResult>;
-        uninstallServer: (serverId: string, clients: ClientType[]) => Promise<InstallResult>;
-        updateServer: (serverId: string, serverConfig: McpServerConfig, client?: ClientType) => Promise<void>;
+        installServer: (serverId: string, serverConfig: McpServerConfig, clients: AnyClientId[]) => Promise<InstallResult>;
+        uninstallServer: (serverId: string, clients: AnyClientId[]) => Promise<InstallResult>;
+        updateServer: (serverId: string, serverConfig: McpServerConfig, client?: AnyClientId) => Promise<void>;
         /** 标记 MCP server 为「手动安装」（编辑保存后调用，避免线上商店更新覆盖本地调整） */
         markServerManual: (serverId: string) => Promise<void>;
         /** 获取所有被标记为「手动安装」的 MCP server id 列表 */
         getManualServers: () => Promise<string[]>;
-        syncServer: (serverId: string, sourceClient: ClientType, targetClients: ClientType[]) => Promise<InstallResult>;
+        syncServer: (serverId: string, sourceClient: AnyClientId, targetClients: AnyClientId[]) => Promise<InstallResult>;
         syncServersBatch: (items: {
             serverId: string;
             config: McpServerConfig
-        }[], targetClients: ClientType[]) => Promise<{
+        }[], targetClients: AnyClientId[]) => Promise<{
             synced: number;
             failed: number;
-            details: { serverId: string; success: ClientType[]; failed: ClientType[] }[]
+            details: { serverId: string; success: AnyClientId[]; failed: AnyClientId[] }[]
         }>;
     };
     env: {
@@ -266,8 +270,8 @@ interface ElectronAPI {
         getPlatform: () => Promise<string>;
         getVersion: () => Promise<string>;
         openExternal: (url: string) => Promise<void>;
-        getConfigPath: (client?: ClientType) => Promise<string>;
-        openConfigDirectory: (client: ClientType) => Promise<string>;
+        getConfigPath: (client?: AnyClientId) => Promise<string>;
+        openConfigDirectory: (client: AnyClientId) => Promise<string>;
         openSkillsDirectory: (client: SkillClientType) => Promise<string>;
     };
     skills: {
@@ -351,6 +355,7 @@ interface ElectronAPI {
         test: () => Promise<CloudSyncResult>;
         push: () => Promise<CloudSyncResult>;
         pull: () => Promise<CloudSyncResult>;
+        onPulled: (callback: (result: CloudSyncResult) => void) => () => void;
     };
     // MCP Inspector
     mcp: McpApi;
@@ -519,15 +524,24 @@ const mockAPI: ElectronAPI = {
                 id: 'cloud',
                 name: '云端存储',
                 installed: false,
-                configPath: '~/.ai-tools/cloud/ai-tool/mcp/mcp.json',
+                configPath: '~/.ai-tools/cloud/ai-tools/mcp/mcp.json',
                 configExists: false,
                 supportsSkills: true,
-                skillsPath: '~/.ai-tools/cloud/ai-tool/skills'
+                skillsPath: '~/.ai-tools/cloud/ai-tools/skills'
             },
         ],
         setCustomPath: async () => {
         },
         setCustomSkillsPath: async () => {
+        },
+        addCustom: async (input: { name: string; configPath: string; supportsSkills?: boolean; skillsPath?: string }) => ({
+            id: `custom:${(input.name || 'client').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+            name: input.name,
+            configPath: input.configPath,
+            supportsSkills: !!input.supportsSkills,
+            skillsPath: input.supportsSkills ? input.skillsPath : undefined,
+        }),
+        removeCustom: async () => {
         },
     },
     config: {
@@ -705,6 +719,7 @@ const mockAPI: ElectronAPI = {
         test: async () => ({ok: false, message: 'Not available in browser'}),
         push: async () => ({ok: false, message: 'Not available in browser'}),
         pull: async () => ({ok: false, message: 'Not available in browser'}),
+        onPulled: () => () => {},
     },
     mcp: {
         connect: async () => ({success: false, error: 'Not available in browser'}),

@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useElectronAPI, type DiffResult, type ClientType } from '../lib/electron';
+import { useElectronAPI, type AnyClientId, type DiffResult } from '../lib/electron';
 import { useIsMac } from '../lib/useIsMac';
 import Modal from '../components/Modal';
 import ClientIcon from '../components/ClientIcon';
@@ -17,7 +17,7 @@ interface BackupInfo {
   size: number;
   serverCount: number;
   skillCount: number;
-  clients: ClientType[];
+  clients: AnyClientId[];
 }
 
 export default function History() {

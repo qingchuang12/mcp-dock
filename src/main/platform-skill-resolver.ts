@@ -589,7 +589,7 @@ export async function searchPlatformServersPaged(
 
     const sp = platform as Exclude<SupportedPlatform, 'unknown'>;
     const def = PLATFORM_SERVER_SEARCH[sp];
-    const log = (...args: unknown[]) => console.log('[direct-server-search]', ...args);
+    const log = (..._args: unknown[]) => {};
 
     if (!def) {
         log(`platform=${sp} 暂未实现 MCP server 搜索（无公开契约），返回空结果`);
@@ -752,7 +752,7 @@ export async function fetchPlatformServerDetail(
     serverId: string
 ): Promise<PlatformServerDetail> {
     const sp = platform as Exclude<SupportedPlatform, 'unknown'>;
-    const log = (...args: unknown[]) => console.log('[direct-server-detail]', ...args);
+    const log = (..._args: unknown[]) => {};
 
     if (sp !== 'modelscope') {
         const msg = `平台 ${sp} 暂不支持 MCP server 详情（无公开契约）`;
@@ -1243,7 +1243,7 @@ async function fetchSkillhubPage(
     pageSize: number,
     category: string
 ): Promise<{ items: PlatformSkillListItem[]; total: number }> {
-    const log = (...args: unknown[]) => console.log('[skillhub]', ...args);
+    const log = (..._args: unknown[]) => {};
 
     const params = new URLSearchParams();
     params.set('page', String(page));
@@ -1425,7 +1425,7 @@ interface ClawhubFetchState {
  * 返回 'stop' 表示已拉到尽头或中途一页失败，'done' 表示达到 maxPages。
  */
 async function fetchClawhubPages(state: ClawhubFetchState, maxPages: number): Promise<'done' | 'stop'> {
-    const log = (...args: unknown[]) => console.log('[clawhub]', ...args);
+    const log = (..._args: unknown[]) => {};
     while (state.fetchPages < maxPages) {
         const limit = CLAWHUB_PAGE_LIMIT;
         const url =
@@ -1478,7 +1478,7 @@ async function fetchClawhubPages(state: ClawhubFetchState, maxPages: number): Pr
 
 /** 阶段一完成后，在后台继续把剩余页拉全并写回缓存 */
 async function completeClawhubInBackground(state: ClawhubFetchState): Promise<void> {
-    const log = (...args: unknown[]) => console.log('[clawhub]', ...args);
+    const log = (..._args: unknown[]) => {};
     try {
         await fetchClawhubPages(state, CLAWHUB_MAX_FETCH_PAGES);
     } catch (e) {
@@ -1492,7 +1492,7 @@ async function completeClawhubInBackground(state: ClawhubFetchState): Promise<vo
 }
 
 async function loadClawhubTrending(): Promise<{ items: PlatformSkillListItem[]; total: number; complete: boolean }> {
-    const log = (...args: unknown[]) => console.log('[clawhub]', ...args);
+    const log = (..._args: unknown[]) => {};
 
     if (clawhubCache && Date.now() - clawhubCache.ts < CLAWHUB_CACHE_TTL) {
         return {items: clawhubCache.items, total: clawhubCache.total, complete: clawhubCache.complete};
@@ -1616,7 +1616,6 @@ export async function searchPlatformDirectPaged(
     // skills 与 mcp 同源，同样受此配额约束。按规则直接预判，越界时无需发起请求即可返回友好提示。
     if (sp === 'modelscope' && safePage * safeSize > MODELSCOPE_QUOTA_PRODUCT) {
         const maxPages = Math.max(1, Math.floor(MODELSCOPE_QUOTA_PRODUCT / safeSize));
-        console.log('[direct-search]', `platform=modelscope(skills) 命中配额上限（page=${safePage} × size=${safeSize} > ${MODELSCOPE_QUOTA_PRODUCT}），直接返回提示`);
         return {
             items: [],
             pageInfo: {page: safePage, pageSize: safeSize, total: MODELSCOPE_QUOTA_PRODUCT, totalPages: maxPages, hasMore: false},
@@ -1746,7 +1745,7 @@ export async function searchPlatformDirectPaged(
     // 对携带无效 Bearer 的请求会直接 401，反而不如匿名可用。
     if (secret) headers['Authorization'] = `Bearer ${secret}`;
 
-    const log = (...args: unknown[]) => console.log('[direct-search]', ...args);
+    const log = (..._args: unknown[]) => {};
 
     log(`begin platform=${sp} base=${baseUrl} q="${query}" page=${safePage} size=${safeSize} auth=${!!secret}`);
 

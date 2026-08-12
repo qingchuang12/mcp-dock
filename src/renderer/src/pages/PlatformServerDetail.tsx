@@ -9,8 +9,8 @@ import {useNavigate} from 'react-router-dom';
 import {useQuery} from '@tanstack/react-query';
 import {useTranslation} from 'react-i18next';
 import {
+    type AnyClientId,
     type ClientInfo,
-    type ClientType,
     type McpServerConfig,
     type PlatformServerDetail as PlatformServerDetailType,
     type RuntimeInfo,
@@ -85,8 +85,8 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
     const {addInstalledServerId, removeInstalledServerId} = useStore();
 
     const [clients, setClients] = useState<ClientInfo[]>([]);
-    const [selectedClients, setSelectedClients] = useState<ClientType[]>([]);
-    const [installedClients, setInstalledClients] = useState<ClientType[]>([]);
+    const [selectedClients, setSelectedClients] = useState<AnyClientId[]>([]);
+    const [installedClients, setInstalledClients] = useState<AnyClientId[]>([]);
     const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | null>(null);
     const [isInstalling, setIsInstalling] = useState(false);
     const [isUninstalling, setIsUninstalling] = useState(false);
@@ -146,7 +146,7 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
         }
     }, [clients]);
 
-    const toggleClient = (id: ClientType) => {
+    const toggleClient = (id: AnyClientId) => {
         setSelectedClients(prev => (prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]));
     };
 

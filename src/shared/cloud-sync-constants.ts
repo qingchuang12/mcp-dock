@@ -2,7 +2,7 @@
  * 云同步共享常量与类型（main / renderer 双端引用）
  *
  * 设计：
- *  - 把云端当作一个「客户端」看待：本地暂存区 ~/.ai-tools/cloud/ai-tool 与云端 <remote>/ai-tool 目录同构。
+ *  - 把云端当作一个「客户端」看待：本地暂存区 ~/.ai-tools/cloud/ai-tools 与云端 <remote>/ai-tools 目录同构。
  *  - 凭据明文不落 cloud-sync.json，只存 SecretStore 里的 secretId 引用。
  *  - 前端表单用 *Input 字段传明文，主进程落盘前换成 secretId。
  */
@@ -11,7 +11,7 @@
 export type CloudProvider = 'git' | 'sftp';
 
 /** 云端自动创建的存储目录名（MCP 与 Skill 都存在它下面） */
-export const CLOUD_ROOT_DIR = 'ai-tool';
+export const CLOUD_ROOT_DIR = 'ai-tools';
 
 /** 云客户端在 ClientType 中的固定 id */
 export const CLOUD_CLIENT_ID = 'cloud';

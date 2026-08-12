@@ -6,12 +6,12 @@ import {useEffect, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import Modal from './Modal';
 import ClientIcon from './ClientIcon';
-import type {ClientInfo, ClientType} from '../lib/electron';
+import type {AnyClientId, ClientInfo} from '../lib/electron';
 
 interface AddServerModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (serverId: string, config: ServerConfig, clients: ClientType[]) => Promise<void>;
+  onSubmit: (serverId: string, config: ServerConfig, clients: AnyClientId[]) => Promise<void>;
   clients: ClientInfo[];
   isLoading?: boolean;
 }
@@ -41,7 +41,7 @@ export default function AddServerModal({
   const [command, setCommand] = useState('');
   const [args, setArgs] = useState('');
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
-  const [selectedClients, setSelectedClients] = useState<ClientType[]>([]);
+  const [selectedClients, setSelectedClients] = useState<AnyClientId[]>([]);
   const [jsonInput, setJsonInput] = useState('');
   const [parseError, setParseError] = useState('');
   const [showJsonInput, setShowJsonInput] = useState(false);
@@ -81,7 +81,7 @@ export default function AddServerModal({
   };
 
   // 切换客户端选择
-  const toggleClient = (clientId: ClientType) => {
+  const toggleClient = (clientId: AnyClientId) => {
     setSelectedClients(prev => 
       prev.includes(clientId)
         ? prev.filter(id => id !== clientId)

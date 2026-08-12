@@ -179,6 +179,18 @@ app.whenReady().then(() => {
 
     createWindow();
 
+    // 启动后后台异步以云端为准拉取一次（覆盖本地暂存区），不阻塞启动。
+    // 拉取完成（无论成败）通知渲染层刷新；仅在已配置云同步时执行。
+    void (async () => {
+        try {
+            if (!getCloudSyncStore().isActive()) return;
+            const res = await cloudSyncService.pull();
+            mainWindow?.webContents.send('cloud-sync:pulled', res);
+        } catch (e: any) {
+            console.error('[CloudSync] startup pull error:', e?.message || e);
+        }
+    })();
+
     // 系统主题跟随：操作系统明暗切换时，经 nativeTheme 桥接通知渲染进程重新计算主题。
     // 渲染进程内 matchMedia 的 change 在 Electron 某些版本下不可靠（窗口失焦/未重绘时不触发），
     // 主进程 nativeTheme.on('updated') 是更权威、更及时的来源。
@@ -213,8 +225,8 @@ app.on('before-quit', () => {
 // ============ IPC 处理器 ============
 
 // 客户端管理
-ipcMain.handle('clients:get-all', async () => {
-    return configManager.getAllClients();
+ipcMain.handle('clients:get-all', async (_, force?: boolean) => {
+    return configManager.getAllClients(force);
 });
 
 // 配置管理
@@ -348,6 +360,16 @@ ipcMain.handle('system:get-config-path', (_, client?: ClientType) => {
 
 ipcMain.handle('clients:set-custom-path', async (_, client: ClientType, customPath: string | null) => {
     return configManager.setCustomConfigPath(client, customPath);
+});
+
+// 添加用户手动客户端（并指定配置文件位置）
+ipcMain.handle('clients:add-custom', async (_, input: { name: string; configPath: string; supportsSkills?: boolean; skillsPath?: string }) => {
+    return configManager.addCustomClient(input);
+});
+
+// 删除用户手动客户端
+ipcMain.handle('clients:remove-custom', async (_, id: string) => {
+    return configManager.removeCustomClient(id);
 });
 
 // 打开配置文件所在目录

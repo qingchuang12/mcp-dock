@@ -2,7 +2,7 @@
  * CloudSyncService - 云端存储传输（单例）
  *
  * 设计：
- *  - 「云端」被当作一个客户端：本地暂存区 ~/.ai-tools/cloud/ai-tool 与云端 <remote>/ai-tool 目录同构。
+ *  - 「云端」被当作一个客户端：本地暂存区 ~/.ai-tools/cloud/ai-tools 与云端 <remote>/ai-tools 目录同构。
  *    同步 MCP / Skill 到云客户端 = 写本地暂存区；push/pull 负责暂存区与远端之间的传输。
  *  - Git 通道调用系统 git CLI（与项目中 tar/PowerShell 解压一致的 shell-out 思路），
  *    凭据不写入 .git/config：token 拼进临时 URL 参数，SSH 走 GIT_SSH_COMMAND。
@@ -32,7 +32,7 @@ export class CloudSyncService {
 
     // ==================== 公开接口 ====================
 
-    /** 测试连接：git 探 ls-remote；sftp 探连接 + 建 ai-tool 目录 */
+    /** 测试连接：git 探 ls-remote；sftp 探连接 + 建 ai-tools 目录 */
     async testConnection(): Promise<CloudSyncResult> {
         const store = getCloudSyncStore();
         const cfg = store.getConfig();
@@ -44,35 +44,71 @@ export class CloudSyncService {
         }
     }
 
-    /** 上传：把本地暂存区推到云端 */
+    /** 上传：把本地暂存区推到云端（失败时自动重试，最多重试 2 次） */
     async push(): Promise<CloudSyncResult> {
         const store = getCloudSyncStore();
         if (!store.isActive()) return {ok: false, message: '云同步未配置或未启用'};
         store.ensureStagingDirs();
         this.writeManifest();
-        try {
-            const cfg = store.getConfig();
-            const res = cfg.provider === 'git' ? await this.gitPush() : await this.sftpPush();
-            if (res.ok) store.recordSync(res.message);
-            return res;
-        } catch (e: any) {
-            return {ok: false, message: this.normalizeError(e)};
+        const maxAttempts = 3; // 1 次 + 重试 2 次
+        let last: CloudSyncResult = {ok: false, message: '未知错误'};
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                const cfg = store.getConfig();
+                const res = cfg.provider === 'git' ? await this.gitPush() : await this.sftpPush();
+                if (res.ok) {
+                    store.recordSync(res.message);
+                    return res;
+                }
+                last = res;
+                // 仅对可重试的传输错误重试，配置类错误直接返回
+                if (!this.isRetryable(res.message)) {
+                    return res;
+                }
+            } catch (e: any) {
+                last = {ok: false, message: this.normalizeError(e)};
+            }
+            if (attempt < maxAttempts) {
+                console.warn(`[CloudSync] push attempt ${attempt} failed, retrying...`, last.message);
+                await new Promise(r => setTimeout(r, 1000 * attempt));
+            }
         }
+        return last;
     }
 
-    /** 下载：把云端拉到本地暂存区 */
+    /** 判断错误是否值得重试（网络/超时/连接类） */
+    private isRetryable(msg: string): boolean {
+        return /timed? out|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|getaddrinfo|Could not resolve|connection (reset|closed)|EOF|reset by peer|EPIPE/i.test(msg);
+    }
+
+    /** 下载：把云端拉到本地暂存区（失败时自动重试，最多重试 2 次） */
     async pull(): Promise<CloudSyncResult> {
         const store = getCloudSyncStore();
         if (!store.isActive()) return {ok: false, message: '云同步未配置或未启用'};
         store.ensureStagingDirs();
-        try {
-            const cfg = store.getConfig();
-            const res = cfg.provider === 'git' ? await this.gitPull() : await this.sftpPull();
-            if (res.ok) store.recordSync(res.message);
-            return res;
-        } catch (e: any) {
-            return {ok: false, message: this.normalizeError(e)};
+        const maxAttempts = 3; // 1 次 + 重试 2 次
+        let last: CloudSyncResult = {ok: false, message: '未知错误'};
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                const cfg = store.getConfig();
+                const res = cfg.provider === 'git' ? await this.gitPull() : await this.sftpPull();
+                if (res.ok) {
+                    store.recordSync(res.message);
+                    return res;
+                }
+                last = res;
+                if (!this.isRetryable(res.message)) {
+                    return res;
+                }
+            } catch (e: any) {
+                last = {ok: false, message: this.normalizeError(e)};
+            }
+            if (attempt < maxAttempts) {
+                console.warn(`[CloudSync] pull attempt ${attempt} failed, retrying...`, last.message);
+                await new Promise(r => setTimeout(r, 1000 * attempt));
+            }
         }
+        return last;
     }
 
     // ==================== Git ====================
@@ -182,7 +218,8 @@ export class CloudSyncService {
         const git = store.getConfig().git;
         await this.ensureRepo();
 
-        await this.git(['add', '-A', CLOUD_ROOT_DIR]);
+        // 跟踪整个暂存区根（.git 所在目录），确保子目录 ai-tools 内的增删改都被纳入
+        await this.git(['add', '-A']);
         const staged = await this.git(['status', '--porcelain']);
         if (staged) {
             await this.git(['commit', '-m', `sync from ${os.hostname()} @ ${new Date().toISOString()}`]);
@@ -193,7 +230,13 @@ export class CloudSyncService {
             return {ok: true, message: '暂存区没有可上传的内容', changed: false};
         }
 
-        await this.git(['push', this.gitRemoteUrl(), `HEAD:refs/heads/${git.branch}`]);
+        const url = this.gitRemoteUrl();
+        try {
+            await this.git(['push', url, `HEAD:refs/heads/${git.branch}`]);
+        } catch (e: any) {
+            console.error('[CloudSync] git push failed:', e?.stderr || e?.message || e);
+            return {ok: false, message: this.normalizeError(e)};
+        }
         return {
             ok: true,
             message: staged ? '已上传到云端' : '云端已是最新，无需上传',
@@ -228,7 +271,7 @@ export class CloudSyncService {
         return client;
     }
 
-    /** 云端根目录：<remoteDir>/ai-tool（posix 分隔符） */
+    /** 云端根目录：<remoteDir>/ai-tools（posix 分隔符） */
     private remoteDataDir(): string {
         const sftp = getCloudSyncStore().getConfig().sftp;
         const base = (sftp.remoteDir || '/').replace(/\/+$/, '');
@@ -243,7 +286,7 @@ export class CloudSyncService {
         const client = await this.sftpConnect();
         try {
             const remote = this.remoteDataDir();
-            // 自动创建云端 ai-tool 存储目录
+            // 自动创建云端 ai-tools 存储目录
             if (!(await client.exists(remote))) await client.mkdir(remote, true);
             return {ok: true, message: `连接成功，云端存储目录：${remote}`};
         } finally {
@@ -255,14 +298,80 @@ export class CloudSyncService {
     private async sftpPush(): Promise<CloudSyncResult> {
         const store = getCloudSyncStore();
         const client = await this.sftpConnect();
+        const local = store.getStagingDataDir();
+        const remote = this.remoteDataDir();
         try {
-            const remote = this.remoteDataDir();
-            if (!(await client.exists(remote))) await client.mkdir(remote, true);
-            await client.uploadDir(store.getStagingDataDir(), remote);
+            // 本地暂存区必须存在且有内容，否则没有可上传的东西
+            let localEntries: string[] = [];
+            try {
+                localEntries = fs.readdirSync(local);
+            } catch {
+                return {ok: false, message: '本地暂存区不存在，请先同步到云端再上传'};
+            }
+            if (localEntries.length === 0) {
+                return {ok: false, message: '本地暂存区为空，没有可上传的内容'};
+            }
+
+            // 稳妥创建远端目录：exists 抛错也视为不存在，mkdir 父链已存在则忽略
+            try {
+                const exists = await client.exists(remote);
+                if (!exists) await client.mkdir(remote, true);
+            } catch (e: any) {
+                console.warn('[CloudSync] sftp mkdir check skipped:', e?.message);
+                try {
+                    await client.mkdir(remote, true);
+                } catch { /* 已存在则忽略 */ }
+            }
+
+            await client.uploadDir(local, remote);
+            // 镜像清理：uploadDir 只增量上传，不会删除远端本地已删除的文件/目录。
+            // 这里递归比对远端与本地，删除远端多余项，使 Skill 卸载等操作真正生效。
+            await this.mirrorRemote(client, local, remote);
             return {ok: true, message: '已上传到云端', changed: true};
+        } catch (e: any) {
+            console.error('[CloudSync] sftp push failed:', e?.message || e, e?.stack);
+            return {ok: false, message: this.normalizeError(e)};
         } finally {
             await client.end().catch(() => {
             });
+        }
+    }
+
+    /**
+     * 镜像清理：删除远端存在但本地暂存区已不存在的文件/目录。
+     * 解决 ssh2-sftp-client 的 uploadDir 只增量上传、不会删除远端遗留项的问题
+     * （例如 Skill 目录级卸载后，远端仍残留该 Skill 目录）。
+     */
+    private async mirrorRemote(
+        client: SftpClient,
+        localDir: string,
+        remoteDir: string
+    ): Promise<void> {
+        let listing: Array<{ name: string; type: string }> = [];
+        try {
+            const status = await client.exists(remoteDir);
+            if (!status) return;
+            listing = await client.list(remoteDir);
+        } catch (e: any) {
+            console.warn('[CloudSync] mirrorRemote list skipped:', e?.message);
+            return;
+        }
+
+        for (const item of listing) {
+            const localPath = path.join(localDir, item.name);
+            const remotePath = `${remoteDir}/${item.name}`;
+            const localExists = fs.existsSync(localPath);
+            if (!localExists) {
+                // 本地已删除 → 远端同步删除
+                try {
+                    await client.rmdir(remotePath, true);
+                } catch (e: any) {
+                    console.warn('[CloudSync] mirrorRemote remove failed:', remotePath, e?.message);
+                }
+            } else if (item.type === 'd') {
+                // 目录：递归比对子级
+                await this.mirrorRemote(client, localPath, remotePath);
+            }
         }
     }
 
@@ -276,11 +385,51 @@ export class CloudSyncService {
                 return {ok: true, message: '云端存储目录为空，没有可下载的内容', changed: false};
             }
             await client.downloadDir(remote, store.getStagingDataDir());
+            // 以云端为准：删除本地暂存区中云端已不存在的文件/目录，
+            // 否则 downloadDir 仅增量下载，本地残留会保留并与云端不一致。
+            await this.mirrorLocal(client, remote, store.getStagingDataDir());
             store.ensureStagingDirs();
             return {ok: true, message: '已从云端下载最新内容', changed: true};
         } finally {
             await client.end().catch(() => {
             });
+        }
+    }
+
+    /**
+     * 以云端为准清理本地：删除本地暂存区存在但远端已不存在的文件/目录。
+     * 解决 ssh2-sftp-client 的 downloadDir 只增量下载、不删除本地多余项的问题
+     * （表现：启动拉取后「本地还有、云端没有」）。
+     */
+    private async mirrorLocal(
+        client: SftpClient,
+        remoteDir: string,
+        localDir: string
+    ): Promise<void> {
+        let localEntries: Array<{ name: string; isDirectory: () => boolean }> = [];
+        try {
+            localEntries = fs.readdirSync(localDir, {withFileTypes: true});
+        } catch {
+            return;
+        }
+        for (const entry of localEntries) {
+            const localPath = path.join(localDir, entry.name);
+            const remotePath = `${remoteDir}/${entry.name}`;
+            let remoteExists = false;
+            try {
+                remoteExists = !!await client.exists(remotePath);
+            } catch {
+                remoteExists = false;
+            }
+            if (!remoteExists) {
+                try {
+                    fs.rmSync(localPath, {recursive: true, force: true});
+                } catch (e: any) {
+                    console.warn('[CloudSync] mirrorLocal remove failed:', localPath, e?.message);
+                }
+            } else if (entry.isDirectory()) {
+                await this.mirrorLocal(client, remotePath, localPath);
+            }
         }
     }
 

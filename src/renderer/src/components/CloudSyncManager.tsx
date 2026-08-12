@@ -1,6 +1,6 @@
 /**
  * 云同步设置卡片
- * 支持 Git（系统 git CLI）与 SFTP（ssh2-sftp-client）两种通道，云端自动创建 ai-tool 目录存放 mcp / skill。
+ * 支持 Git（系统 git CLI）与 SFTP（ssh2-sftp-client）两种通道，云端自动创建 ai-tools 目录存放 mcp / skill。
  * 凭据以明文提交给主进程，落盘时换成 SecretStore 的 secretId；已保存的凭据在这里只显示占位符。
  */
 import {useEffect, useState} from 'react';

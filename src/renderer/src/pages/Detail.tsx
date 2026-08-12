@@ -18,7 +18,7 @@ import {
     type OfficialRemote,
     type SmitheryDetail,
 } from '../api/registry';
-import {type ClientInfo, type ClientType, type RuntimeInfo, useElectronAPI} from '../lib/electron';
+import {type AnyClientId, type ClientInfo, type RuntimeInfo, useElectronAPI} from '../lib/electron';
 import {useIsMac} from '../lib/useIsMac';
 import {useStore} from '../store/useStore';
 import Modal from '../components/Modal';
@@ -105,8 +105,8 @@ export default function Detail() {
     const [isInstalling, setIsInstalling] = useState(false);
     const [isUninstalling, setIsUninstalling] = useState(false);
     const [clients, setClients] = useState<ClientInfo[]>([]);
-    const [selectedClients, setSelectedClients] = useState<ClientType[]>([]);
-    const [installedClients, setInstalledClients] = useState<ClientType[]>([]);
+    const [selectedClients, setSelectedClients] = useState<AnyClientId[]>([]);
+    const [installedClients, setInstalledClients] = useState<AnyClientId[]>([]);
     const [installError, setInstallError] = useState<string | null>(null);
     const [selectedPackage, setSelectedPackage] = useState<OfficialPackage | null>(null);
     const [readme, setReadme] = useState<string | null>(null);
@@ -221,7 +221,7 @@ export default function Detail() {
     }, [clients]);
 
     // 切换客户端选择
-    const toggleClient = (clientId: ClientType) => {
+    const toggleClient = (clientId: AnyClientId) => {
         setSelectedClients(prev =>
             prev.includes(clientId)
                 ? prev.filter(c => c !== clientId)
@@ -402,7 +402,7 @@ export default function Detail() {
     };
 
     // 卸载服务器
-    const handleUninstall = async (clientsToRemove?: ClientType[]) => {
+    const handleUninstall = async (clientsToRemove?: AnyClientId[]) => {
         const targets = clientsToRemove || installedClients;
         if (targets.length === 0) return;
 
