@@ -337,8 +337,8 @@ const DIRECT_UA = UA;
  */
 const PLATFORM_SEARCH_ENDPOINTS: Record<Exclude<SupportedPlatform, 'unknown'>, string[]> = {
     modelscope: [
-        // ModelScope skills 公开分页接口：GET /openapi/v1/skills?name={q}&page={page}&page_size={size}
-        '/openapi/v1/skills?name={q}&page={page}&page_size={size}',
+        // ModelScope skills 公开分页接口：GET /openapi/v1/skills?name={q}&page_number={page}&page_size={size}
+        '/openapi/v1/skills?name={q}&page_number={page}&page_size={size}',
     ],
     safeskill: [
         '/api/v1/skills?query={q}&page={page}',
@@ -884,7 +884,7 @@ export const MODELSCOPE_QUOTA_PRODUCT = 100;
  * 从平台响应中提取分页元信息。
  *
  * 实测各平台契约：
- *  - ModelScope：请求 ?name=&page=&page_size=（见 PLATFORM_SEARCH_ENDPOINTS）；响应分页字段经下方回退链同时兼容 page/size 与 page_number/page_size
+ *  - ModelScope：请求 ?name=&page_number=&page_size=（见 PLATFORM_SEARCH_ENDPOINTS）；响应分页字段经下方回退链同时兼容 page/size 与 page_number/page_size
  *  - SkillsMP  ：{skills,pagination:{page,limit,total,totalPages}}
  *  - 其它/兜底 ：无分页字段时，用「本页条数 == 请求 size」推断是否还有下一页
  */
