@@ -78,12 +78,23 @@ export class SecretStore {
     }
 
     // ---------- 加密 ----------
+    /**
+     * 派生加密密钥。
+     *
+     * 关键约束：密钥必须「开发模式（electron .）」与「打包安装模式」完全一致，
+     * 否则打包后无法解密开发期写入的密文（反之亦然），表现为「更新后云同步密码错误」。
+     *
+     * 因此密钥只依赖机器级、跨模式稳定的特征：
+     *   - process.platform / process.arch：运行环境，dev 与打包相同
+     *   - app.getPath('home')：用户主目录，dev 与打包相同
+     * 不依赖 app.getName() / productName 等会随打包/启动方式变化的字段（这正是此前
+     * dev↔打包 密钥不一致的隐患来源）。
+     */
     private deriveKey(): Buffer {
         const machineId = [
             process.platform,
             process.arch,
             app.getPath('home'),
-            app.getName(),
         ].join('-');
         return crypto.scryptSync(machineId, 'mcp-dock-secret-v1', KEY_LENGTH);
     }
@@ -252,8 +263,21 @@ export class SecretStore {
     getRawSecret(id: string): string | null {
         try {
             return this.decrypt(fs.readFileSync(this.secretPath(id)));
-        } catch {
+        } catch (e) {
+            // 解密失败通常是「密钥与写入时不一致」（如 dev↔打包 切换导致派生密钥变化）。
+            // 静默返回 null 会让上层误报「密码错误」且无从排查，这里打印明确告警。
+            console.error(`[SecretStore] 解密密文失败 secretId=${id}（可能因密钥与写入时不一致，密文已失效需重新保存）:`, (e as Error).message);
             return null;
+        }
+    }
+
+    /** 密文文件是否存在（用于区分「从未保存」与「已保存但解密失败」） */
+    existsRawSecret(id: string): boolean {
+        try {
+            fs.accessSync(this.secretPath(id));
+            return true;
+        } catch {
+            return false;
         }
     }
 

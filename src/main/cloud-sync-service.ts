@@ -123,7 +123,13 @@ export class CloudSyncService {
         const url = git.repoUrl.trim();
         if (git.authType !== 'https-token') return url;
         const token = store.revealSecret(git.tokenSecretId);
-        if (!token) return url;
+        if (!token) {
+            // secretId 已配置但解密失败（密文失效），明确提示重存而非走无令牌的 URL
+            if (store.isSecretStale(git.tokenSecretId)) {
+                throw new Error('CLOUD_CREDENTIAL_STALE: 访问令牌已失效，请重新保存云同步凭据');
+            }
+            return url;
+        }
         try {
             const u = new URL(url);
             u.username = encodeURIComponent(token);
@@ -259,12 +265,23 @@ export class CloudSyncService {
         };
 
         if (sftp.authType === 'password') {
-            opts.password = store.revealSecret(sftp.passwordSecretId) || '';
+            const password = store.revealSecret(sftp.passwordSecretId);
+            if (!password) {
+                if (store.isSecretStale(sftp.passwordSecretId)) {
+                    throw new Error('CLOUD_CREDENTIAL_STALE: 登录密码已失效，请重新保存云同步凭据');
+                }
+                opts.password = '';
+            } else {
+                opts.password = password;
+            }
         } else {
             if (!sftp.privateKeyPath) throw new Error('请填写私钥文件路径');
             opts.privateKey = fs.readFileSync(sftp.privateKeyPath);
             const passphrase = store.revealSecret(sftp.passphraseSecretId);
             if (passphrase) opts.passphrase = passphrase;
+            else if (store.isSecretStale(sftp.passphraseSecretId)) {
+                throw new Error('CLOUD_CREDENTIAL_STALE: 私钥口令已失效，请重新保存云同步凭据');
+            }
         }
 
         await client.connect(opts as any);
@@ -456,6 +473,11 @@ export class CloudSyncService {
     private normalizeError(e: any): string {
         const raw = [e?.stderr, e?.message, String(e)].find(x => x && String(x).trim()) || '未知错误';
         const msg = String(raw);
+
+        // 凭据密文失效（密钥变化导致解密失败）：明确提示用户重新保存，而非报「密码错误」
+        if (msg.includes('CLOUD_CREDENTIAL_STALE:')) {
+            return msg.split('CLOUD_CREDENTIAL_STALE:')[1].trim() || '云同步凭据已失效，请重新保存密码';
+        }
 
         if (e?.code === 'ENOENT' && /git/i.test(msg)) return '未检测到 git，请先安装 Git 后重试';
         if (e?.killed || /ETIMEDOUT|timed? out/i.test(msg)) return '连接超时，请检查网络或主机地址';

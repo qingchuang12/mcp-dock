@@ -2,7 +2,7 @@
  * AI-Tools - Electron 主进程入口
  */
 
-import {app, BrowserWindow, ipcMain, nativeTheme, session, shell} from 'electron';
+import {app, BrowserWindow, dialog, ipcMain, nativeTheme, session, shell} from 'electron';
 import path from 'path';
 import {ClientType, ConfigManager, SkillClientType} from './config-manager';
 import {EnvManager} from './env-manager';
@@ -561,6 +561,16 @@ ipcMain.handle('skills:read-skill-md', async (_, skillName: string, client: Skil
 // 从本地 .zip / .skill 文件解析 Skill（解包后读取 SKILL.md），用于「我的库」上传创建
 ipcMain.handle('skills:import-file', async (_, filePath: string) => {
     return skillsManager.importFromFile(filePath);
+});
+
+// 打开系统对话框选择一个已解压的 skill 文件夹，用于「我的库」上传创建
+ipcMain.handle('skills:pick-folder', async () => {
+    const result = await dialog.showOpenDialog({
+        title: '选择 Skill 文件夹',
+        properties: ['openDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return {canceled: true};
+    return {canceled: false, path: result.filePaths[0]};
 });
 
 // 获取本地 Skill 详情

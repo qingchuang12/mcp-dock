@@ -29,6 +29,8 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
+    // 折叠态：保存后缩小，点击「编辑」展开
+    const [expanded, setExpanded] = useState(false);
 
     // 明文凭据输入：undefined = 未改动（保留原值），'' = 清除，其他 = 覆盖
     const [gitToken, setGitToken] = useState<string | undefined>(undefined);
@@ -101,6 +103,8 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
         setGitPassphrase(undefined);
         setSftpPassword(undefined);
         setSftpPassphrase(undefined);
+        // 保存成功后折叠卡片，回到缩小态；点击「编辑」再展开
+        setExpanded(false);
         onChanged?.();
         return next;
     };
@@ -133,18 +137,35 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
 
     const gitMissing = cfg.provider === 'git' && runtimes ? !runtimes.git.available : false;
 
+    const summary = !loading && cfg.enabled
+        ? (cfg.provider === 'git'
+            ? `Git · ${cfg.git.repoUrl || t('cloudSync.notSet')}`
+            : `SFTP · ${cfg.sftp.host || t('cloudSync.notSet')}`)
+        : '';
+
     return (
         <div className="card p-4">
             <div className="flex items-center justify-between mb-1">
                 <h2 className="text-[13px] font-semibold text-[var(--color-text)]">{t('cloudSync.title')}</h2>
-                <button
-                    onClick={() => setCfg({...cfg, enabled: !cfg.enabled})}
-                    className={`relative w-9 h-5 rounded-full transition-colors ${cfg.enabled ? 'bg-[#34c759]' : 'bg-[var(--color-surface-hover)]'}`}
-                    title={cfg.enabled ? t('cloudSync.disableTitle') : t('cloudSync.enableTitle')}
-                >
-                    <span
-                        className={`absolute top-[2px] w-4 h-4 rounded-full bg-[var(--color-surface)] transition-all ${cfg.enabled ? 'left-[18px]' : 'left-[2px]'}`}/>
-                </button>
+                <div className="flex items-center gap-2">
+                    {!expanded && cfg.enabled && (
+                        <button
+                            onClick={() => setExpanded(true)}
+                            className="px-2.5 py-1 rounded-md text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors"
+                            title={t('cloudSync.edit') || 'Edit'}
+                        >
+                            {t('cloudSync.edit') || 'Edit'}
+                        </button>
+                    )}
+                    <button
+                        onClick={() => setCfg({...cfg, enabled: !cfg.enabled})}
+                        className={`relative w-9 h-5 rounded-full transition-colors ${cfg.enabled ? 'bg-[#34c759]' : 'bg-[var(--color-surface-hover)]'}`}
+                        title={cfg.enabled ? t('cloudSync.disableTitle') : t('cloudSync.enableTitle')}
+                    >
+                        <span
+                            className={`absolute top-[2px] w-4 h-4 rounded-full bg-[var(--color-surface)] transition-all ${cfg.enabled ? 'left-[18px]' : 'left-[2px]'}`}/>
+                    </button>
+                </div>
             </div>
             <p className="text-[12px] text-[var(--color-muted2)] mb-3">
                 {t('cloudSync.desc', {dir: CLOUD_ROOT_DIR})}
@@ -152,6 +173,25 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
 
             {loading ? (
                 <div className="h-24 rounded-md bg-[var(--color-surface-hover)]/40 animate-pulse"/>
+            ) : !expanded ? (
+                // 折叠态：仅显示状态摘要，节省空间
+                <div className="flex items-center justify-between">
+                    <p className="text-[12px] text-[var(--color-muted)]">
+                        {cfg.enabled
+                            ? summary
+                            : t('cloudSync.disabled')}
+                    </p>
+                    {cfg.enabled && (
+                        <p className="text-[12px] text-[var(--color-muted)]">
+                            {cfg.lastSyncAt
+                                ? t('cloudSync.lastSync', {
+                                    time: new Date(cfg.lastSyncAt).toLocaleString(),
+                                    msg: cfg.lastSyncMessage ? ` · ${cfg.lastSyncMessage}` : ''
+                                })
+                                : t('cloudSync.neverSynced')}
+                        </p>
+                    )}
+                </div>
             ) : (
                 <div className={cfg.enabled ? '' : 'opacity-50 pointer-events-none'}>
                     {/* 通道切换 */}
@@ -359,14 +399,22 @@ export default function CloudSyncManager({runtimes, onChanged}: Props) {
                     )}
 
                     <div className="flex items-center justify-between mt-4 pt-3 border-t border-[var(--color-border)]">
-                        <p className="text-[12px] text-[var(--color-muted)]">
-                            {cfg.lastSyncAt
-                                ? t('cloudSync.lastSync', {
-                                    time: new Date(cfg.lastSyncAt).toLocaleString(),
-                                    msg: cfg.lastSyncMessage ? ` · ${cfg.lastSyncMessage}` : ''
-                                })
-                                : t('cloudSync.neverSynced')}
-                        </p>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => setExpanded(false)}
+                                className="text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:underline transition-colors"
+                            >
+                                {t('cloudSync.collapse') || 'Collapse'}
+                            </button>
+                            <p className="text-[12px] text-[var(--color-muted)]">
+                                {cfg.lastSyncAt
+                                    ? t('cloudSync.lastSync', {
+                                        time: new Date(cfg.lastSyncAt).toLocaleString(),
+                                        msg: cfg.lastSyncMessage ? ` · ${cfg.lastSyncMessage}` : ''
+                                    })
+                                    : t('cloudSync.neverSynced')}
+                            </p>
+                        </div>
                         <div className="flex gap-2">
                             <button
                                 onClick={handleTest}

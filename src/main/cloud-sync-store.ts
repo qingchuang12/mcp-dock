@@ -165,6 +165,19 @@ export class CloudSyncStore {
         if (!id) return undefined;
         return getSecretStore().getRawSecret(id) ?? undefined;
     }
+
+    /**
+     * 判断某 secretId 是否「已配置但解密失败」（密文失效）。
+     * 用于区分「用户从未填过凭据」与「填过但因密钥变化等导致解密失败」，
+     * 后者应提示用户重新保存，而非笼统报「密码错误」。
+     */
+    isSecretStale(id?: string): boolean {
+        if (!id) return false;
+        const ss = getSecretStore();
+        // 文件不存在 → 不算 stale（本来就没收过凭据）；存在却解密失败 → stale
+        if (!ss.existsRawSecret(id)) return false;
+        return ss.getRawSecret(id) === null;
+    }
 }
 
 // ==================== 单例 ====================

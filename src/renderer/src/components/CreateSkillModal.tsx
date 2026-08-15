@@ -2,6 +2,7 @@ import {useEffect, useRef, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import ClientIcon from './ClientIcon';
 import {type ClientInfo, type SkillClientType, useElectronAPI} from '../lib/electron';
+import {parseFrontmatter} from '../../../shared/frontmatter';
 
 export interface CreateSkillModalProps {
     onClose: () => void;
@@ -83,10 +84,47 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
             setError(res.error || (t('library.uploadFailed') || '解析失败'));
             return;
         }
-        if (res.name) setName(res.name);
-        if (res.description) setDescription(res.description);
-        if (res.body) setBody(res.body);
+        // 用户已手动填写的字段不覆盖，仅在为空时填充（避免覆盖用户输入）
+        if (res.name && !name.trim()) setName(res.name);
+        if (res.description && !description.trim()) setDescription(res.description);
+        if (res.body && !body.trim()) setBody(res.body);
         setError('');
+    };
+
+    /**
+     * 从正文自动识别技能名称与描述：
+     *   1) 优先解析 YAML frontmatter 的 name / description
+     *   2) 否则取首个「# 标题」作为名称，首个非空段落作为描述
+     */
+    const inferSkillMeta = (text: string): { name?: string; description?: string } => {
+        const trimmed = (text || '').trim();
+        if (!trimmed) return {};
+        const fm = parseFrontmatter(trimmed);
+        if (fm.name || fm.description) {
+            return {name: fm.name, description: fm.description};
+        }
+        let nameCandidate: string | undefined;
+        let descCandidate: string | undefined;
+        const lines = trimmed.split(/\r?\n/);
+        for (const line of lines) {
+            const h = line.match(/^#{1,3}\s+(.+)$/);
+            if (h && !nameCandidate) {
+                nameCandidate = h[1].trim();
+                continue;
+            }
+            if (!descCandidate && line.trim() && !/^#{1,6}\s/.test(line) && !/^---/.test(line)) {
+                descCandidate = line.trim().replace(/\s+/g, ' ');
+            }
+        }
+        return {name: nameCandidate, description: descCandidate};
+    };
+
+    // 正文失焦时，若名称/描述仍为空，则自动识别填充
+    const handleBodyBlur = () => {
+        if (name.trim() && description.trim()) return;
+        const inferred = inferSkillMeta(body);
+        if (!name.trim() && inferred.name) setName(inferred.name);
+        if (!description.trim() && inferred.description) setDescription(inferred.description);
     };
 
     const handleFile = async (file: File) => {
@@ -96,8 +134,9 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
             return;
         }
         const lower = filePath.toLowerCase();
-        if (!lower.endsWith('.zip') && !lower.endsWith('.skill')) {
-            setError(t('library.uploadOnlyZip') || '仅支持 .zip 和 .skill 文件');
+        const ok = lower.endsWith('.zip') || lower.endsWith('.skill') || lower.endsWith('.md');
+        if (!ok) {
+            setError(t('library.uploadOnlyFormats') || '仅支持 .zip / .skill / .md 文件');
             return;
         }
         setUploading(true);
@@ -105,6 +144,23 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
         try {
             const res = await api.skills.importFromFile(filePath);
             handleParsedSkill(res);
+        } catch (e: any) {
+            setError(e?.message || (t('library.uploadFailed') || '解析失败'));
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    // 选择已解压的 skill 文件夹
+    const handlePickFolder = async () => {
+        if (isEdit || uploading) return;
+        setUploading(true);
+        setError('');
+        try {
+            const res = await api.skills.pickFolder();
+            if (res.canceled || !res.path) return;
+            const parsed = await api.skills.importFromFile(res.path);
+            handleParsedSkill(parsed);
         } catch (e: any) {
             setError(e?.message || (t('library.uploadFailed') || '解析失败'));
         } finally {
@@ -215,7 +271,7 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
                             <input
                                 ref={fileInputRef}
                                 type="file"
-                                accept=".zip,.skill"
+                                accept=".zip,.skill,.md"
                                 className="hidden"
                                 onChange={handleFileInput}
                             />
@@ -235,7 +291,18 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
                                               d="M12 16.5V9m0 0L8.25 12.75M12 9l3.75 3.75M3 15v1.5A2.25 2.25 0 0 0 5.25 19.5h13.5A2.25 2.25 0 0 0 21 16.5V15"/>
                                     </svg>
                                     <p className="text-[12px] font-medium text-[var(--color-text)]">{t('library.uploadSkillHint') || '拖入 Skill 文件，或点击选择'}</p>
-                                    <p className="text-[12px] text-[var(--color-muted)]">{t('library.uploadFormats') || '支持 .zip / .skill 格式'}</p>
+                                    <p className="text-[12px] text-[var(--color-muted)]">{t('library.uploadFormats') || '支持 .zip / .skill / 已解压文件夹 / .md 文档'}</p>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            void handlePickFolder();
+                                        }}
+                                        disabled={uploading}
+                                        className="mt-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:border-[var(--color-muted)] disabled:opacity-50"
+                                    >
+                                        {t('library.chooseFolder') || '选择 Skill 文件夹'}
+                                    </button>
                                 </>
                             )}
                         </div>
@@ -271,6 +338,7 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
                         <textarea
                             value={body}
                             onChange={e => setBody(e.target.value)}
+                            onBlur={handleBodyBlur}
                             rows={10}
                             placeholder={t('library.skillBodyPlaceholder') || '描述 Skill 的用途、使用场景与示例……'}
                             className="w-full resize-y rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 font-mono text-[12px] leading-relaxed text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"

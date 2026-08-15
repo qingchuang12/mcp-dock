@@ -10,6 +10,7 @@ import zlib from 'zlib';
 import {execFile} from 'child_process';
 import {SKILL_SUPPORTED_CLIENTS, SkillClientType} from './config-manager';
 import {CLOUD_ROOT_DIR} from '../shared/cloud-sync-constants';
+import {parseFrontmatter} from '../shared/frontmatter';
 
 // GitHub 仓库中发现的 Skill 信息
 export interface DiscoveredSkill {
@@ -368,8 +369,11 @@ export class SkillsManager {
     }
 
     /**
-     * 从本地 .zip / .skill 文件解析 Skill（解包 ZIP，读取 SKILL.md 的 frontmatter + 正文）。
-     * 用于「我的库」中通过上传/拖拽文件快速创建 Skill。.skill 本质是 ZIP 归档。
+     * 从本地文件或目录解析 Skill，用于「我的库」快速创建。
+     * 支持三种来源：
+     *   - .zip / .skill：解包后读取 SKILL.md（.skill 本质是 ZIP 归档）
+     *   - .md：直接作为 SKILL.md 文本读取
+     *   - 目录（已解压的 skill 文件夹）：递归查找 SKILL.md
      */
     async importFromFile(filePath: string): Promise<{
         success: boolean;
@@ -379,48 +383,109 @@ export class SkillsManager {
         error?: string;
     }> {
         try {
-            const buffer = await fs.readFile(filePath);
-            const entries = this.extractZipEntries(buffer);
-            // 选取 SKILL.md：优先路径层级最浅（根目录）的那个
-            let skillMdKey: string | undefined;
-            let bestDepth = Infinity;
-            for (const key of entries.keys()) {
-                if (/SKILL\.md$/i.test(key)) {
-                    const depth = key.split(/[\\/]/).length;
-                    if (depth < bestDepth) {
-                        bestDepth = depth;
-                        skillMdKey = key;
+            const stat = await fs.stat(filePath);
+            let skillMdText: string | undefined;
+            let fallbackName: string | undefined;
+
+            if (stat.isDirectory()) {
+                // 目录：递归查找首个 SKILL.md（优先根目录，其次子目录）
+                const found = await this.findSkillMdInDir(filePath);
+                if (!found) {
+                    return {success: false, error: '所选目录内未找到 SKILL.md'};
+                }
+                skillMdText = await fs.readFile(path.join(found.dir, 'SKILL.md'), 'utf-8');
+                fallbackName = found.dir === filePath ? path.basename(filePath) : path.basename(found.dir);
+            } else if (filePath.toLowerCase().endsWith('.md')) {
+                // 单文件 .md：整份作为 SKILL.md
+                skillMdText = await fs.readFile(filePath, 'utf-8');
+                fallbackName = path.basename(filePath, '.md');
+            } else {
+                // .zip / .skill：解包后读取 SKILL.md
+                const buffer = await fs.readFile(filePath);
+                const entries = this.extractZipEntries(buffer);
+                let skillMdKey: string | undefined;
+                let bestDepth = Infinity;
+                for (const key of entries.keys()) {
+                    if (/SKILL\.md$/i.test(key)) {
+                        const depth = key.split(/[\\/]/).length;
+                        if (depth < bestDepth) {
+                            bestDepth = depth;
+                            skillMdKey = key;
+                        }
                     }
                 }
-            }
-            if (!skillMdKey) {
-                return {success: false, error: '压缩包内未找到 SKILL.md'};
-            }
-            const text = entries.get(skillMdKey)!.toString('utf-8');
-            const match = text.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
-            let name: string | undefined;
-            let description = '';
-            let body = text.trim();
-            if (match) {
-                const fm: Record<string, string> = {};
-                match[1].split('\n').forEach(line => {
-                    const idx = line.indexOf(':');
-                    if (idx > 0) fm[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
-                });
-                name = fm.name || undefined;
-                description = fm.description || '';
-                body = match[2].trim();
-            }
-            // 名称兜底：取 SKILL.md 所在目录名
-            if (!name) {
+                if (!skillMdKey) {
+                    return {success: false, error: '压缩包内未找到 SKILL.md'};
+                }
+                skillMdText = entries.get(skillMdKey)!.toString('utf-8');
                 const parts = skillMdKey.split(/[\\/]/);
                 parts.pop();
-                name = parts[parts.length - 1] || undefined;
+                fallbackName = parts[parts.length - 1] || undefined;
             }
-            return {success: true, name, description, body};
+
+            return this.parseSkillMd(skillMdText!, fallbackName);
         } catch (error) {
             return {success: false, error: (error as Error).message || '无法解析文件'};
         }
+    }
+
+    /** 递归查找目录内的 SKILL.md，优先根目录的，其次任意子目录；返回其所在目录 */
+    private async findSkillMdInDir(dir: string): Promise<{ dir: string } | null> {
+        const rootEntry = path.join(dir, 'SKILL.md');
+        try {
+            await fs.access(rootEntry);
+            return {dir};
+        } catch {
+            // 根目录无 SKILL.md，继续递归
+        }
+        const stack = [dir];
+        while (stack.length) {
+            const cur = stack.pop()!;
+            let entries: string[];
+            try {
+                entries = await fs.readdir(cur);
+            } catch {
+                continue;
+            }
+            for (const e of entries) {
+                const full = path.join(cur, e);
+                let st: import('fs').Stats;
+                try {
+                    st = await fs.stat(full);
+                } catch {
+                    continue;
+                }
+                if (st.isDirectory()) {
+                    if (e.toLowerCase() === 'node_modules' || e.startsWith('.')) continue;
+                    stack.push(full);
+                } else if (e.toLowerCase() === 'skill.md') {
+                    return {dir: cur};
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 解析 SKILL.md 文本，提取 name / description / body */
+    private parseSkillMd(text: string, fallbackName?: string): {
+        success: boolean;
+        name?: string;
+        description?: string;
+        body?: string;
+        error?: string;
+    } {
+        const fm = parseFrontmatter(text);
+        let name = fm.name || fallbackName;
+        let description = fm.description || '';
+        let body = text.trim();
+        const match = text.match(/^---[^\n]*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
+        if (match) {
+            body = match[2].trim();
+        }
+        if (!name) {
+            return {success: false, error: '无法识别 Skill 名称（SKILL.md 缺少 name 且无可用目录名）'};
+        }
+        return {success: true, name, description, body};
     }
 
     /** 极简 ZIP 解包：读取中央目录，支持 Store(0) 与 Deflate(8)。返回 条目路径 -> 文件内容 */

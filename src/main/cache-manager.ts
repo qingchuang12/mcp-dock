@@ -133,12 +133,13 @@ export class CacheManager {
      * 使用 scrypt 算法确保密钥强度
      */
     private deriveKey(): Buffer {
-        // 组合多个机器特征作为密钥材料
+        // 组合机器级、跨模式稳定的特征作为密钥材料。
+        // 注意：不依赖 app.getName()/productName —— 这些会随打包/启动方式（dev vs 打包）变化，
+        // 一旦变化，dev 期写入的密文在打包后就无法解密。仅保留 platform/arch/home 三项稳定特征。
         const machineId = [
             process.platform,
             process.arch,
             app.getPath('home'),
-            app.getName(),
         ].join('-');
 
         return crypto.scryptSync(machineId, 'mcp-dock-cache-v2', KEY_LENGTH);

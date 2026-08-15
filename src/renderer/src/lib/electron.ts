@@ -296,8 +296,10 @@ interface ElectronAPI {
             description: string;
             body: string
         } | null>;
-        /** 从本地 .zip / .skill 文件解析 Skill（解包后读取 SKILL.md），用于「我的库」上传创建 */
+        /** 从本地 .zip / .skill 文件或目录解析 Skill（用于「我的库」上传创建） */
         importFromFile: (filePath: string) => Promise<ImportSkillFileResult>;
+        /** 打开系统对话框选择一个已解压的 skill 文件夹 */
+        pickFolder: () => Promise<{ canceled: boolean; path?: string }>;
         /** 远程 GitHub Registry skill 详情：解析仓库并取回首个 Skill 的源 / SKILL.md（替代渲染端抛错的 fetchSkillDetail 桩） */
         getRemoteDetail: (githubPath: string) => Promise<{
             success: boolean;
@@ -647,6 +649,7 @@ const mockAPI: ElectronAPI = {
         updateCustom: async (originalName) => ({success: true, skillName: originalName}),
         readSkillMd: async (skillName) => ({name: skillName, description: '', body: ''}),
         importFromFile: async () => ({success: false, error: 'Not available in browser'}),
+        pickFolder: async () => ({canceled: true}),
         getLocalDetail: async () => null,
         getRemoteDetail: async () => ({success: false, skill: null, error: 'Not available in browser'}),
         sync: async () => ({success: [], failed: [], errors: {}}),

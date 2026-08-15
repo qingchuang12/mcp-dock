@@ -325,6 +325,9 @@ const api = {
             ipcRenderer.invoke('skills:read-skill-md', skillName, client),
         importFromFile: (filePath: string): Promise<ImportSkillFileResult> =>
             ipcRenderer.invoke('skills:import-file', filePath),
+        /** 打开系统对话框选择一个已解压的 skill 文件夹 */
+        pickFolder: (): Promise<{ canceled: boolean; path?: string }> =>
+            ipcRenderer.invoke('skills:pick-folder'),
         getLocalDetail: (skillId: string): Promise<LocalSkillDetail | null> =>
             ipcRenderer.invoke('skills:get-local-detail', skillId),
         getRemoteDetail: (githubPath: string): Promise<{
