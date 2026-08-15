@@ -64,6 +64,51 @@ export default function Inspector() {
   
   // 跟踪是否是通过 URL 参数进入
   const hasPresetConfig = useRef(false);
+
+  // 日志区域可拖拽调整高度
+  const MIN_LOG_HEIGHT = 80;
+  const MAX_LOG_HEIGHT = 500;
+  const DEFAULT_LOG_HEIGHT = 128;
+  const [logHeight, setLogHeight] = useState(() => {
+    const saved = localStorage.getItem('inspectorLogHeight');
+    return saved ? Math.min(Math.max(parseInt(saved, 10), MIN_LOG_HEIGHT), MAX_LOG_HEIGHT) : DEFAULT_LOG_HEIGHT;
+  });
+  const [isResizingLog, setIsResizingLog] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('inspectorLogHeight', String(logHeight));
+  }, [logHeight]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizingLog) return;
+      const container = document.getElementById('inspector-container');
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const newHeight = Math.min(Math.max(rect.bottom - e.clientY, MIN_LOG_HEIGHT), MAX_LOG_HEIGHT);
+      setLogHeight(newHeight);
+    };
+    const handleMouseUp = () => {
+      setIsResizingLog(false);
+    };
+    if (isResizingLog) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'row-resize';
+      document.body.style.userSelect = 'none';
+    }
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizingLog]);
+
+  const handleLogResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizingLog(true);
+  }, []);
   
   // 从 URL 参数获取预设的服务器配置
   const presetConfig = useMemo(() => {
@@ -377,7 +422,7 @@ export default function Inspector() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[var(--color-bg)]">
+    <div className="flex flex-col h-full bg-[var(--color-bg)]" id="inspector-container">
       {/* 顶部控制栏（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
       <div className={`flex items-center justify-between px-4 h-[38px] drag-region relative border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-xl ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
         <div className="flex items-center gap-3 no-drag">
@@ -732,8 +777,14 @@ export default function Inspector() {
         </div>
       </div>
 
+      {/* 拖拽调整日志高度的手柄 */}
+      <div
+        onMouseDown={handleLogResizeMouseDown}
+        className={`h-1 cursor-row-resize hover:bg-[var(--color-accent)]/50 transition-colors flex-shrink-0 ${isResizingLog ? 'bg-[var(--color-accent)]' : ''}`}
+      />
+
       {/* 底部日志区域 */}
-      <div className="h-32 border-t border-[var(--color-border)] overflow-hidden flex flex-col">
+      <div className="border-t border-[var(--color-border)] overflow-hidden flex flex-col" style={{ height: logHeight }}>
         <div className="px-3 py-1.5 text-[12px] text-[var(--color-muted)] uppercase border-b border-[var(--color-border)] flex-shrink-0">
           {t('inspector.logs') || 'Logs'}
         </div>

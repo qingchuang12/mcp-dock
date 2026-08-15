@@ -138,6 +138,13 @@ export interface SkillBatchSyncResult {
     }>;
 }
 
+export interface SkillCloudConflict {
+    name: string;
+    localUpdatedAt: string | null;
+    cloudUpdatedAt: string | null;
+    resolution: 'local_newer' | 'cloud_newer' | 'same';
+}
+
 export interface DiscoveredSkill {
     name: string;
     path: string;
@@ -311,6 +318,16 @@ interface ElectronAPI {
             name: string;
             sourceClient: SkillClientType
         }>, targetClients: SkillClientType[]) => Promise<SkillBatchSyncResult>;
+        /** 检查 Skill 同步到云端前的冲突 */
+        checkCloudConflicts: (items: Array<{
+            name: string;
+            sourceClient: SkillClientType
+        }>) => Promise<SkillCloudConflict[]>;
+        /** 按用户确认结果同步 Skill 到云端 */
+        syncToCloudResolved: (items: Array<{
+            name: string;
+            sourceClient: SkillClientType
+        }>, resolutions: Record<string, 'overwrite' | 'skip'>) => Promise<SkillBatchSyncResult>;
     };
     // API 令牌管理
     apiTokens: {
@@ -654,6 +671,8 @@ const mockAPI: ElectronAPI = {
         getRemoteDetail: async () => ({success: false, skill: null, error: 'Not available in browser'}),
         sync: async () => ({success: [], failed: [], errors: {}}),
         syncBatch: async () => ({synced: 0, failed: 0, details: []}),
+        checkCloudConflicts: async () => [],
+        syncToCloudResolved: async () => ({synced: 0, failed: 0, details: []}),
     },
     apiTokens: {
         list: async () => [],

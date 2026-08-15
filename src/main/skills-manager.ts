@@ -8,7 +8,7 @@ import path from 'path';
 import os from 'os';
 import zlib from 'zlib';
 import {execFile} from 'child_process';
-import {SKILL_SUPPORTED_CLIENTS, SkillClientType} from './config-manager';
+import {CustomClientDef, SKILL_SUPPORTED_CLIENTS, SkillClientType} from './config-manager';
 import {CLOUD_ROOT_DIR} from '../shared/cloud-sync-constants';
 import {parseFrontmatter} from '../shared/frontmatter';
 
@@ -82,9 +82,19 @@ export interface SkillBatchSyncResult {
     }>;
 }
 
+// Skill 云端同步冲突信息
+export interface SkillCloudConflict {
+    name: string;
+    localUpdatedAt: string | null;
+    cloudUpdatedAt: string | null;
+    /** 'local_newer' | 'cloud_newer' | 'same' */
+    resolution: 'local_newer' | 'cloud_newer' | 'same';
+}
+
 // 用户设置
 interface SkillsSettings {
     customSkillsPaths?: Partial<Record<SkillClientType, string>>;
+    customClients?: CustomClientDef[];
 }
 
 export class SkillsManager {
@@ -124,6 +134,7 @@ export class SkillsManager {
             const allSettings = JSON.parse(content);
             this.settings = {
                 customSkillsPaths: allSettings.customSkillsPaths,
+                customClients: allSettings.customClients,
             };
         } catch {
             this.settings = {};
@@ -134,6 +145,8 @@ export class SkillsManager {
      * 获取 Skills 目录路径
      */
     getSkillsPath(client: SkillClientType): string {
+        const custom = this.settings.customClients?.find(c => c.id === client);
+        if (custom?.skillsPath) return custom.skillsPath;
         return this.settings.customSkillsPaths?.[client] || this.defaultSkillsPaths[client];
     }
 
@@ -1604,7 +1617,15 @@ export class SkillsManager {
         sourceClient: SkillClientType,
         targetClients: SkillClientType[]
     ): Promise<SkillSyncResult> {
-        const sourcePath = path.join(this.getSkillsPath(sourceClient), skillName);
+        const sourceSkillsPath = this.getSkillsPath(sourceClient);
+        if (!sourceSkillsPath) {
+            return {
+                success: [],
+                failed: [...targetClients],
+                errors: {[skillName]: `源客户端 "${sourceClient}" 未配置 Skills 路径`},
+            };
+        }
+        const sourcePath = path.join(sourceSkillsPath, skillName);
         try {
             await fs.access(sourcePath);
         } catch {
@@ -1621,7 +1642,13 @@ export class SkillsManager {
 
         for (const client of targetClients) {
             if (client === sourceClient) continue;
-            const targetPath = path.join(this.getSkillsPath(client), skillName);
+            const targetSkillsPath = this.getSkillsPath(client);
+            if (!targetSkillsPath) {
+                failed.push(client);
+                errors[client as string] = `目标客户端 "${client}" 未配置 Skills 路径`;
+                continue;
+            }
+            const targetPath = path.join(targetSkillsPath, skillName);
             try {
                 await this.ensureSkillsDir(client);
                 await fs.rm(targetPath, {recursive: true, force: true});
@@ -1655,5 +1682,102 @@ export class SkillsManager {
         }
 
         return {synced, failed, details};
+    }
+
+    /**
+     * 检查 Skill 同步到云端时的冲突
+     * 对比本地 skill 与云端 skill 的修改时间（.source.json 的 updatedAt 或 SKILL.md 的 mtime）
+     * 仅返回云端已存在同名 skill 的条目（即存在冲突的）
+     */
+    async checkCloudSyncConflicts(
+        items: Array<{ name: string; sourceClient: SkillClientType }>
+    ): Promise<SkillCloudConflict[]> {
+        const conflicts: SkillCloudConflict[] = [];
+        const cloudSkillsPath = this.getSkillsPath('cloud');
+
+        for (const item of items) {
+            const sourceSkillsPath = this.getSkillsPath(item.sourceClient);
+            if (!sourceSkillsPath || !cloudSkillsPath) continue;
+            const sourcePath = path.join(sourceSkillsPath, item.name);
+            const cloudPath = path.join(cloudSkillsPath, item.name);
+
+            let localUpdatedAt: string | null = null;
+            let cloudUpdatedAt: string | null = null;
+
+            // 读取本地 skill 的修改时间
+            try {
+                const sourceJsonPath = path.join(sourcePath, '.source.json');
+                const sourceContent = await fs.readFile(sourceJsonPath, 'utf-8');
+                const sourceMeta: SkillSourceMeta = JSON.parse(sourceContent);
+                localUpdatedAt = sourceMeta.updatedAt || sourceMeta.installedAt;
+            } catch {
+                // 无 .source.json，使用 SKILL.md 的 mtime
+                try {
+                    const stat = await fs.stat(path.join(sourcePath, 'SKILL.md'));
+                    localUpdatedAt = stat.mtime.toISOString();
+                } catch { /* ignore */ }
+            }
+
+            // 读取云端 skill 的修改时间
+            try {
+                const cloudJsonPath = path.join(cloudPath, '.source.json');
+                const cloudContent = await fs.readFile(cloudJsonPath, 'utf-8');
+                const cloudMeta: SkillSourceMeta = JSON.parse(cloudContent);
+                cloudUpdatedAt = cloudMeta.updatedAt || cloudMeta.installedAt;
+            } catch {
+                try {
+                    const stat = await fs.stat(path.join(cloudPath, 'SKILL.md'));
+                    cloudUpdatedAt = stat.mtime.toISOString();
+                } catch { /* ignore */ }
+            }
+
+            // 仅云端已存在同名 skill 时才报告冲突
+            if (!cloudUpdatedAt) continue;
+
+            let resolution: SkillCloudConflict['resolution'];
+            if (!localUpdatedAt) {
+                resolution = 'cloud_newer';
+            } else if (localUpdatedAt === cloudUpdatedAt) {
+                resolution = 'same';
+            } else if (localUpdatedAt > cloudUpdatedAt) {
+                resolution = 'local_newer';
+            } else {
+                resolution = 'cloud_newer';
+            }
+
+            conflicts.push({
+                name: item.name,
+                localUpdatedAt,
+                cloudUpdatedAt,
+                resolution,
+            });
+        }
+
+        return conflicts;
+    }
+
+    /**
+     * 按用户确认结果同步 Skill 到云端
+     * resolutions: { [skillName]: 'overwrite' | 'skip' }
+     */
+    async syncSkillsToCloudResolved(
+        items: Array<{ name: string; sourceClient: SkillClientType }>,
+        resolutions: Record<string, 'overwrite' | 'skip'>
+    ): Promise<SkillBatchSyncResult> {
+        const toSync = items.filter(item => resolutions[item.name] !== 'skip');
+        const skipped = items.filter(item => resolutions[item.name] === 'skip');
+
+        const result = await this.syncSkillsToClients(toSync, ['cloud']);
+
+        // 添加跳过的 skill 到结果详情
+        for (const item of skipped) {
+            result.details.push({
+                name: item.name,
+                success: [],
+                failed: [],
+            });
+        }
+
+        return result;
     }
 }

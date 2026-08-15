@@ -13,6 +13,7 @@ import {
     type InstalledSkill,
     type McpServerConfig,
     type SkillClientType,
+    type SkillCloudConflict,
     useElectronAPI
 } from '../lib/electron';
 import {useIsMac} from '../lib/useIsMac';
@@ -264,6 +265,10 @@ export default function Library() {
     // 云同步：仅在设置里配置好 Git / SFTP 后，'cloud' 才会作为已安装客户端出现
     const [cloudBusy, setCloudBusy] = useState<'push' | 'pull' | null>(null);
     const [cloudUploadConfirmOpen, setCloudUploadConfirmOpen] = useState(false);
+    // 云端冲突检测与确认
+    const [cloudConflictOpen, setCloudConflictOpen] = useState(false);
+    const [cloudConflicts, setCloudConflicts] = useState<SkillCloudConflict[]>([]);
+    const [conflictResolutions, setConflictResolutions] = useState<Record<string, 'overwrite' | 'skip'>>({});
     const cloudAvailable = clients.some(c => c.id === 'cloud' && c.installed);
 
     const openUninstall = (type: 'mcp' | 'skill', id: string, displayName: string, clients: string[]) => {
@@ -741,6 +746,7 @@ export default function Library() {
 
     // 云上传：按当前 Tab 只把对应类型（MCP 或 Skill）写入云端暂存区，远端传输异步进行。
     // 点击顶部「云上传」按钮时先弹确认框，确认后才执行真正上传。
+    // Skill 上传时会先检测同名冲突，若有冲突则弹窗让用户逐个确认。
     const doCloudUpload = async () => {
         setCloudBusy('push');
         try {
@@ -751,6 +757,10 @@ export default function Library() {
                         ['cloud']
                     );
                 }
+                // 本地暂存区已就绪，立即刷新界面，远端推送在后台异步完成
+                await loadData();
+                toast.success(t('library.cloudUploadStarted') || '云端上传中…');
+                pushCloudAsync();
             } else {
                 const skillItems = skills
                     .map(s => ({
@@ -758,11 +768,53 @@ export default function Library() {
                         sourceClient: (skillClients[s.name] || []).find(c => c !== 'cloud') as SkillClientType
                     }))
                     .filter(i => i.sourceClient);
-                if (skillItems.length > 0) {
-                    await api.skills.syncBatch(skillItems, ['cloud']);
+                if (skillItems.length === 0) {
+                    setCloudBusy(null);
+                    return;
                 }
+                // 检测云端同名冲突
+                const conflicts = await api.skills.checkCloudConflicts(skillItems);
+                if (conflicts.length > 0) {
+                    // 有冲突：弹窗让用户确认
+                    setCloudConflicts(conflicts);
+                    // 默认全部覆盖
+                    const defaultResolutions: Record<string, 'overwrite' | 'skip'> = {};
+                    for (const c of conflicts) {
+                        defaultResolutions[c.name] = 'overwrite';
+                    }
+                    setConflictResolutions(defaultResolutions);
+                    setCloudConflictOpen(true);
+                    setCloudBusy(null);
+                    return;
+                }
+                // 无冲突：直接同步
+                await api.skills.syncBatch(skillItems, ['cloud']);
+                await loadData();
+                toast.success(t('library.cloudUploadStarted') || '云端上传中…');
+                pushCloudAsync();
             }
-            // 本地暂存区已就绪，立即刷新界面，远端推送在后台异步完成
+        } catch (error: any) {
+            console.error('Cloud upload failed:', error);
+            toast.error(error?.message || '上传失败');
+        } finally {
+            setCloudBusy(null);
+        }
+    };
+
+    // 按用户确认结果同步 Skill 到云端
+    const doCloudUploadResolved = async () => {
+        setCloudConflictOpen(false);
+        setCloudBusy('push');
+        try {
+            const skillItems = skills
+                .map(s => ({
+                    name: s.name,
+                    sourceClient: (skillClients[s.name] || []).find(c => c !== 'cloud') as SkillClientType
+                }))
+                .filter(i => i.sourceClient);
+            if (skillItems.length > 0) {
+                await api.skills.syncToCloudResolved(skillItems, conflictResolutions);
+            }
             await loadData();
             toast.success(t('library.cloudUploadStarted') || '云端上传中…');
             pushCloudAsync();
@@ -772,6 +824,14 @@ export default function Library() {
         } finally {
             setCloudBusy(null);
         }
+    };
+
+    // 切换冲突项的覆盖/跳过
+    const toggleConflictResolution = (skillName: string) => {
+        setConflictResolutions(prev => ({
+            ...prev,
+            [skillName]: prev[skillName] === 'overwrite' ? 'skip' : 'overwrite',
+        }));
     };
 
     // 顶部「云上传」入口：先确认是否覆盖云端，再全量上传
@@ -853,14 +913,14 @@ export default function Library() {
         <div className="flex flex-col h-full bg-[var(--color-bg)]">
             {/* 头部工具栏（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
             <div
-                className={`flex items-center justify-between px-4 h-[38px] drag-region relative border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-xl ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
-                <div className="flex items-center gap-4 no-drag">
-                    <h1 className="text-[14px] font-semibold text-[var(--color-text)] tracking-tight">
+                className={`flex items-center justify-between gap-3 px-4 h-[38px] drag-region border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-xl sticky top-0 z-10 ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
+                <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden no-drag">
+                    <h1 className="text-[14px] font-semibold text-[var(--color-text)] whitespace-nowrap tracking-tight">
                         {t('nav.library') || 'Library'}
                     </h1>
 
                     {/* Tab 切换 */}
-                    <div className="flex items-center bg-[var(--color-surface-hover)] rounded-lg p-0.5">
+                    <div className="flex items-center bg-[var(--color-surface-hover)] rounded-lg p-0.5 shrink-0">
                         <button
                             onClick={() => changeTab('mcp')}
                             className={`px-3 py-1 rounded-md text-[12px] font-medium transition-colors ${
@@ -884,7 +944,7 @@ export default function Library() {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 no-drag">
+                <div className="flex items-center gap-2 shrink-0 whitespace-nowrap no-drag">
                     {/* 刷新 */}
                     <button
                         onClick={handleRefresh}
@@ -1579,6 +1639,133 @@ export default function Library() {
                                 ? (t('library.cloudUploading') || '上传中…')
                                 : (t('library.cloudUploadConfirmBtn') || '确认上传')}
                         </button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* 云端冲突确认：同名 Skill 逐个选择覆盖/跳过 */}
+            <Modal
+                isOpen={cloudConflictOpen}
+                onClose={() => setCloudConflictOpen(false)}
+                title={t('library.cloudConflictTitle') || '云端 Skill 冲突确认'}
+            >
+                <div className="space-y-4">
+                    <p className="text-[13px] text-[var(--color-muted2)]">
+                        {t('library.cloudConflictHint') || '以下 Skill 在云端已存在同名版本，请逐个确认是否覆盖：'}
+                    </p>
+                    <div className="max-h-[300px] overflow-y-auto space-y-2">
+                        {cloudConflicts.map(conflict => {
+                            const isOverwrite = conflictResolutions[conflict.name] === 'overwrite';
+                            const localTime = conflict.localUpdatedAt
+                                ? new Date(conflict.localUpdatedAt).toLocaleString()
+                                : '—';
+                            const cloudTime = conflict.cloudUpdatedAt
+                                ? new Date(conflict.cloudUpdatedAt).toLocaleString()
+                                : '—';
+                            const resolutionLabel = conflict.resolution === 'local_newer'
+                                ? (t('library.cloudConflictLocalNewer') || '本地更新')
+                                : conflict.resolution === 'cloud_newer'
+                                    ? (t('library.cloudConflictCloudNewer') || '云端更新')
+                                    : (t('library.cloudConflictSame') || '时间相同');
+                            const resolutionColor = conflict.resolution === 'local_newer'
+                                ? 'text-green-400'
+                                : conflict.resolution === 'cloud_newer'
+                                    ? 'text-orange-400'
+                                    : 'text-[var(--color-muted2)]';
+
+                            return (
+                                <div
+                                    key={conflict.name}
+                                    className={`flex items-center gap-3 p-3 rounded-md border transition-all ${
+                                        isOverwrite
+                                            ? 'bg-[var(--color-accent)]/10 border-[var(--color-accent)]/30'
+                                            : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] opacity-60'
+                                    }`}
+                                >
+                                    <button
+                                        onClick={() => toggleConflictResolution(conflict.name)}
+                                        className="flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors"
+                                        style={{
+                                            borderColor: isOverwrite ? 'var(--color-accent)' : 'var(--color-muted)',
+                                            backgroundColor: isOverwrite ? 'var(--color-accent)' : 'transparent',
+                                        }}
+                                    >
+                                        {isOverwrite && (
+                                            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+                                            </svg>
+                                        )}
+                                    </button>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-[13px] font-medium text-[var(--color-text)] truncate">
+                                            {conflict.name}
+                                        </div>
+                                        <div className="flex flex-col gap-0.5 mt-1">
+                                            <span className="text-[11px] text-[var(--color-muted2)]">
+                                                {t('library.cloudConflictLocalTime') || '本地时间'}: {localTime}
+                                            </span>
+                                            <span className="text-[11px] text-[var(--color-muted2)]">
+                                                {t('library.cloudConflictCloudTime') || '云端时间'}: {cloudTime}
+                                            </span>
+                                            <span className={`text-[11px] font-medium ${resolutionColor}`}>
+                                                {resolutionLabel}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <span className={`flex-shrink-0 text-[12px] font-medium px-2 py-0.5 rounded ${
+                                        isOverwrite
+                                            ? 'bg-[var(--color-accent)]/20 text-[var(--color-accent)]'
+                                            : 'bg-[var(--color-surface-hover)] text-[var(--color-muted2)]'
+                                    }`}>
+                                        {isOverwrite
+                                            ? (t('library.cloudConflictOverwrite') || '覆盖')
+                                            : (t('library.cloudConflictSkip') || '跳过')}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <div className="flex justify-between items-center pt-2">
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => {
+                                    const all: Record<string, 'overwrite' | 'skip'> = {};
+                                    cloudConflicts.forEach(c => { all[c.name] = 'overwrite'; });
+                                    setConflictResolutions(all);
+                                }}
+                                className="text-[12px] text-[var(--color-accent)] hover:underline"
+                            >
+                                {t('library.cloudConflictSelectAll') || '全选覆盖'}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const all: Record<string, 'overwrite' | 'skip'> = {};
+                                    cloudConflicts.forEach(c => { all[c.name] = 'skip'; });
+                                    setConflictResolutions(all);
+                                }}
+                                className="text-[12px] text-[var(--color-muted2)] hover:underline"
+                            >
+                                {t('library.cloudConflictSkipAll') || '全部跳过'}
+                            </button>
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setCloudConflictOpen(false)}
+                                className="btn btn-secondary"
+                                disabled={cloudBusy !== null}
+                            >
+                                {t('common.cancel')}
+                            </button>
+                            <button
+                                onClick={doCloudUploadResolved}
+                                className="btn btn-primary disabled:opacity-50"
+                                disabled={cloudBusy !== null}
+                            >
+                                {cloudBusy === 'push'
+                                    ? (t('library.cloudUploading') || '上传中…')
+                                    : (t('library.cloudUploadConfirmBtn') || '确认上传')}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </Modal>

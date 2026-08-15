@@ -87,6 +87,13 @@ export interface SkillBatchSyncResult {
     }>;
 }
 
+export interface SkillCloudConflict {
+    name: string;
+    localUpdatedAt: string | null;
+    cloudUpdatedAt: string | null;
+    resolution: 'local_newer' | 'cloud_newer' | 'same';
+}
+
 export interface DiscoveredSkill {
     name: string;
     path: string;
@@ -201,6 +208,14 @@ declare const api: {
             name: string;
             sourceClient: SkillClientType
         }>, targetClients: SkillClientType[]) => Promise<SkillBatchSyncResult>;
+        checkCloudConflicts: (items: Array<{
+            name: string;
+            sourceClient: SkillClientType
+        }>) => Promise<SkillCloudConflict[]>;
+        syncToCloudResolved: (items: Array<{
+            name: string;
+            sourceClient: SkillClientType
+        }>, resolutions: Record<string, 'overwrite' | 'skip'>) => Promise<SkillBatchSyncResult>;
     };
     cloudSync: {
         getConfig: () => Promise<CloudSyncConfig>;

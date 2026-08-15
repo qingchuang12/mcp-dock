@@ -377,7 +377,18 @@
     "cloudUploadConfirmBtn": "Confirm Upload",
     "cloudUploading": "Uploading…",
     "cloudUploadStarted": "Uploading to cloud…",
-    "cloudUninstallStarted": "Deleting from cloud…"
+    "cloudUninstallStarted": "Deleting from cloud…",
+    "cloudConflictTitle": "Cloud Skill Conflict",
+    "cloudConflictHint": "The following skills already exist in the cloud with the same name. Please confirm each one individually:",
+    "cloudConflictLocalTime": "Local",
+    "cloudConflictCloudTime": "Cloud",
+    "cloudConflictLocalNewer": "Local is newer",
+    "cloudConflictCloudNewer": "Cloud is newer",
+    "cloudConflictSame": "Same time",
+    "cloudConflictOverwrite": "Overwrite",
+    "cloudConflictSkip": "Skip",
+    "cloudConflictSelectAll": "Select All",
+    "cloudConflictSkipAll": "Skip All"
   },
   "skill": {
     "author": "Author",

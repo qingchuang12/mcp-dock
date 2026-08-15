@@ -343,6 +343,16 @@ const api = {
             sourceClient: SkillClientType
         }>, targetClients: SkillClientType[]): Promise<SkillBatchSyncResult> =>
             ipcRenderer.invoke('skills:sync-batch', items, targetClients),
+        checkCloudConflicts: (items: Array<{
+            name: string;
+            sourceClient: SkillClientType
+        }>): Promise<import('../renderer/src/lib/electron').SkillCloudConflict[]> =>
+            ipcRenderer.invoke('skills:check-cloud-conflicts', items),
+        syncToCloudResolved: (items: Array<{
+            name: string;
+            sourceClient: SkillClientType
+        }>, resolutions: Record<string, 'overwrite' | 'skip'>): Promise<SkillBatchSyncResult> =>
+            ipcRenderer.invoke('skills:sync-to-cloud-resolved', items, resolutions),
     },
 
     // API 令牌管理

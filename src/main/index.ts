@@ -7,7 +7,7 @@ import path from 'path';
 import {ClientType, ConfigManager, SkillClientType} from './config-manager';
 import {EnvManager} from './env-manager';
 import {HistoryManager} from './history-manager';
-import {DiscoveredSkill, SkillsManager, SkillSourceMeta} from './skills-manager';
+import {DiscoveredSkill, SkillCloudConflict, SkillsManager, SkillSourceMeta} from './skills-manager';
 import type {
     PlatformSearchPage,
     PlatformServerDetail,
@@ -604,6 +604,22 @@ ipcMain.handle('skills:sync-batch', async (_, items: Array<{
     sourceClient: SkillClientType
 }>, targetClients: SkillClientType[]) => {
     return skillsManager.syncSkillsToClients(items, targetClients);
+});
+
+// 检查 Skill 同步到云端前的冲突
+ipcMain.handle('skills:check-cloud-conflicts', async (_, items: Array<{
+    name: string;
+    sourceClient: SkillClientType
+}>): Promise<SkillCloudConflict[]> => {
+    return skillsManager.checkCloudSyncConflicts(items);
+});
+
+// 按用户确认结果同步 Skill 到云端
+ipcMain.handle('skills:sync-to-cloud-resolved', async (_, items: Array<{
+    name: string;
+    sourceClient: SkillClientType
+}>, resolutions: Record<string, 'overwrite' | 'skip'>) => {
+    return skillsManager.syncSkillsToCloudResolved(items, resolutions);
 });
 
 // 设置自定义 Skills 路径

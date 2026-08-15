@@ -377,7 +377,18 @@
     "cloudUploadConfirmBtn": "确认上传",
     "cloudUploading": "上传中…",
     "cloudUploadStarted": "云端上传中…",
-    "cloudUninstallStarted": "云端删除中…"
+    "cloudUninstallStarted": "云端删除中…",
+    "cloudConflictTitle": "云端 Skill 冲突确认",
+    "cloudConflictHint": "以下 Skill 在云端已存在同名版本，请逐个确认是否覆盖：",
+    "cloudConflictLocalTime": "本地时间",
+    "cloudConflictCloudTime": "云端时间",
+    "cloudConflictLocalNewer": "本地更新",
+    "cloudConflictCloudNewer": "云端更新",
+    "cloudConflictSame": "时间相同",
+    "cloudConflictOverwrite": "覆盖",
+    "cloudConflictSkip": "跳过",
+    "cloudConflictSelectAll": "全选覆盖",
+    "cloudConflictSkipAll": "全部跳过"
   },
   "skill": {
     "author": "作者",
