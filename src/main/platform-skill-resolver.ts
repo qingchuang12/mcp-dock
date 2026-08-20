@@ -35,7 +35,7 @@ import {parseFrontmatter} from '../shared/frontmatter';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
-export type SupportedPlatform = 'modelscope' | 'safeskill' | 'skillhub' | 'skillsmp' | 'clawhub' | 'unknown';
+export type SupportedPlatform = 'modelscope' | 'safeskill' | 'skillhub' | 'skillsmp' | 'clawhub' | 'bailian' | 'unknown';
 
 export interface ResolvePlatformResult extends ImportParseResult {
     platform: SupportedPlatform;
@@ -49,6 +49,7 @@ const PLATFORM_NAMES: Record<SupportedPlatform, string> = {
     skillhub: 'SkillHub',
     skillsmp: 'SkillsMP',
     clawhub: 'ClawHub',
+    bailian: '百炼',
     unknown: 'Unknown',
 };
 
@@ -63,6 +64,22 @@ export function detectPlatform(url: string): SupportedPlatform {
     if (u.includes('skillsmp.com')) return 'skillsmp';
     if (u.includes('clawhub.ai')) return 'clawhub';
     return 'unknown';
+}
+
+/**
+ * 从 ClawHub 的 skill 详情 URL 中提取 slug。
+ * 详情页形态：/<owner>/skills/<slug> 或 /skills/<owner>/<slug> 或 /api/v1/skills/<slug>，
+ * slug 始终为路径最后一段（如 tavily）。无 slug 时返回 ''。
+ */
+function extractClawhubSlug(url: string): string {
+    try {
+        const u = new URL(url);
+        const seg = u.pathname.split('/').filter(Boolean);
+        const slug = seg[seg.length - 1] ?? '';
+        return /^[A-Za-z0-9._-]+$/.test(slug) ? slug : '';
+    } catch {
+        return '';
+    }
 }
 
 /**
@@ -196,6 +213,21 @@ export async function resolvePlatformSkillUrl(
             }
             if (lastError) {
                 return {success: false, skills: [], platform, resolvedVia: 'list', error: lastError};
+            }
+        }
+    }
+
+    // ClawHub 原生 skill：SPA 详情页抓不到源（GitHub 链接也非真实仓库），改用站内 zip 直链。
+    // 详情页形态为 /<owner>/skills/<slug> 或 /api/v1/skills/<slug>，slug 均为路径最后一段；
+    // 下载通道 https://clawhub.ai/api/v1/download?slug=<slug> 实测返回 application/zip（含 SKILL.md）。
+    if (platform === 'clawhub') {
+        const slug = extractClawhubSlug(url);
+        if (slug) {
+            const downloadUrl = `${CLAWHUB_DOWNLOAD_BASE}?slug=${encodeURIComponent(slug)}`;
+            const zipResult = await resolveZipSkill(skillsManager, downloadUrl, platform);
+            // 成功直接返回；下载/解压失败则携带明确错误（resolvedVia 复用 'zip' 标记，platform 标 clawhub）
+            if (zipResult.success || zipResult.resolvedVia === 'zip') {
+                return zipResult;
             }
         }
     }
@@ -358,6 +390,10 @@ const PLATFORM_SEARCH_ENDPOINTS: Record<Exclude<SupportedPlatform, 'unknown'>, s
         // 故优先用扁平端点；其 {skills,pagination} 结构与 githubUrl/stars/updatedAt 字段已被 locateSkillArray/extractPageInfo/toListItem 兼容。
         '/api/skills?search={q}&page={page}&limit={size}',
         '/api/skills?search={q}&page={page}',
+    ],
+    bailian: [
+        // 百炼离线索引，不走搜索端点
+        '/api/v1/skills?search={q}&page={page}',
     ],
 };
 

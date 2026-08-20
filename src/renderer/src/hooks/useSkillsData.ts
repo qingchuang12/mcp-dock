@@ -1,11 +1,7 @@
 import {useQuery} from '@tanstack/react-query';
-import {
-    fetchSkillsList,
-    inferSkillCategoryId,
-    type SkillListItem,
-} from '../api/registry';
-import {useElectronAPI} from '../lib/electron';
+import {fetchSkillsList, inferSkillCategoryId, type SkillListItem,} from '../api/registry';
 import type {ApiConnection, PlatformSkillListItem} from '../lib/electron';
+import {useElectronAPI} from '../lib/electron';
 import type {StoreData, StoreResourceType} from './storeTypes';
 import {STORE_QUERY_STALE_MS} from './storeTypes';
 
@@ -17,8 +13,8 @@ function mapPlatformSkill(item: PlatformSkillListItem): SkillListItem {
         name: item.name,
         description: item.description || '',
         descriptions: item.descriptions,
-        author: item.source,
-        authorUrl: item.sourceUrl,
+        author: (item.extra?.author as string) || item.source,
+        authorUrl: (item.extra?.authorUrl as string) || item.sourceUrl,
         downloadUrl: item.downloadUrl,
         category: categoryId,
         categoryId,
@@ -26,6 +22,7 @@ function mapPlatformSkill(item: PlatformSkillListItem): SkillListItem {
         forks: 0,
         updatedAt: item.updatedAt || new Date().toISOString(),
         repository: {url: item.downloadUrl || item.sourceUrl, branch: '', skillPath: ''},
+        extra: item.extra,
     };
 }
 
@@ -39,6 +36,8 @@ interface UseSkillsDataParams {
     page: number;
     pageSize: number;
     debouncedSearch: string;
+    category?: string;
+    sort?: string;
 }
 
 /**
@@ -52,7 +51,7 @@ interface UseSkillsDataParams {
  * 仍会强制绕过缓存重新请求。
  */
 export function useSkillsData(params: UseSkillsDataParams): StoreData<SkillListItem> {
-    const {resourceType, selectedConn, isDirectSkillSource, selectedSkillSourceId, page, pageSize, debouncedSearch} = params;
+    const {resourceType, selectedConn, isDirectSkillSource, selectedSkillSourceId, page, pageSize, debouncedSearch, category, sort} = params;
     const api = useElectronAPI();
     const enabled = resourceType === 'skills';
 
@@ -72,11 +71,12 @@ export function useSkillsData(params: UseSkillsDataParams): StoreData<SkillListI
     });
 
     const platform = useQuery({
-        queryKey: ['skillsPlatform', selectedConn?.id, debouncedSearch, page],
+        queryKey: ['skillsPlatform', selectedConn?.id, debouncedSearch, page, category, sort],
         queryFn: async () => {
             if (!selectedConn) return null;
-            const res = await api.apiConnections.searchPlatformPaged(
-                selectedConn.id, debouncedSearch, page, pageSize, ''
+            // 平台直连源走统一适配器通道（支持分类/排序）；回退旧通道保持兼容
+            const res = await api.platforms.searchSkills(
+                selectedConn.platformType, debouncedSearch, page, pageSize, category || 'all', sort || 'relevance'
             );
             return res;
         },
@@ -91,7 +91,7 @@ export function useSkillsData(params: UseSkillsDataParams): StoreData<SkillListI
         const items = (res?.items ?? []).map(mapPlatformSkill);
         const total = res ? (res.pageInfo.total ?? res.serverTotal ?? items.length) : 0;
         const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 0;
-        const startIndex = total > 0 ? (page - 1) * pageSize + 1 : 0;
+        const startIndex = total > 0 ? (page - 1) * pageSize : 0;
         const endIndex = Math.min((page - 1) * pageSize + items.length, total);
         return {
             items,
@@ -111,17 +111,32 @@ export function useSkillsData(params: UseSkillsDataParams): StoreData<SkillListI
     }
 
     const list = github.data ?? [];
-    const filtered = debouncedSearch
-        ? list.filter(skill =>
+    const filtered = list.filter(skill => {
+        const matchQ = !debouncedSearch ||
             skill.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
             (skill.description || '').toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-            skill.author.toLowerCase().includes(debouncedSearch.toLowerCase()))
-        : list;
-    const total = filtered.length;
+            skill.author.toLowerCase().includes(debouncedSearch.toLowerCase());
+        const matchCat = !category || category === 'all' || skill.categoryId === category;
+        return matchQ && matchCat;
+    });
+    // 客户端排序（内置源无服务端排序）
+    const sorted = [...filtered];
+    if (sort && sort !== 'relevance') {
+        if (sort === 'stars') {
+            sorted.sort((a, b) => (b.stars || 0) - (a.stars || 0));
+        } else if (sort === 'updated') {
+            sorted.sort((a, b) => {
+                const da = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+                const db = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+                return db - da;
+            });
+        }
+    }
+    const total = sorted.length;
     const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 0;
     const startIdx = (page - 1) * pageSize;
-    const items = filtered.slice(startIdx, startIdx + pageSize);
-    const startIndex = total > 0 ? startIdx + 1 : 0;
+    const items = sorted.slice(startIdx, startIdx + pageSize);
+    const startIndex = total > 0 ? startIdx : 0;
     const endIndex = Math.min(startIdx + pageSize, total);
     return {
         items,

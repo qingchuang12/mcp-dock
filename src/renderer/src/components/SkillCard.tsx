@@ -4,7 +4,7 @@
  * 紧凑高度设计，与 ServerCard 一致
  */
 
-import {useState} from 'react';
+import {memo, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {useTranslation} from 'react-i18next';
 import type {SkillListItem} from '../api/registry';
@@ -99,7 +99,7 @@ function SkillIcon({skill}: { skill: SkillListItem }) {
     );
 }
 
-export default function SkillCard({skill, isInstalled, connectionId, sourceUrl}: SkillCardProps) {
+function SkillCard({skill, isInstalled, connectionId, sourceUrl}: SkillCardProps) {
     const {t, i18n} = useTranslation();
     const navigate = useNavigate();
 
@@ -190,3 +190,5 @@ export default function SkillCard({skill, isInstalled, connectionId, sourceUrl}:
         </div>
     );
 }
+
+export default memo(SkillCard);

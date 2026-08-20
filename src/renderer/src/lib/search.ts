@@ -1,7 +1,7 @@
 /**
  * 搜索工具
  * 使用 Fuse.js 进行本地模糊搜索
- * 
+ *
  * 搜索范围：
  * - displayName: MCP 名称
  * - id: MCP ID（通常包含作者信息，如 "io.github.author/mcp-name"）
@@ -11,6 +11,7 @@
 import type {IFuseOptions} from 'fuse.js';
 import Fuse from 'fuse.js';
 import type {ServerListItem} from '../api/registry';
+import {inferSkillCategoryId} from '../api/registry';
 
 // Fuse.js 配置 - 只搜索名称和作者
 const fuseOptions: IFuseOptions<ServerListItem> = {
@@ -78,4 +79,37 @@ export function paginateServers(
     startIndex,
     endIndex,
   };
+}
+
+/**
+ * 按分类过滤 MCP 服务器列表。
+ * 官方内置源无 categoryId 字段，通过 displayName 关键词推断分类。
+ */
+export function filterServersByCategory(
+  servers: ServerListItem[],
+  categoryId: string
+): ServerListItem[] {
+  if (!categoryId || categoryId === 'all') return servers;
+  return servers.filter(s => {
+    const cat = inferSkillCategoryId(s.displayName);
+    return cat === categoryId;
+  });
+}
+
+/**
+ * 对 MCP 服务器列表排序。
+ * - relevance（默认）：保持原序
+ * - stars：按星标数降序（无星标数据时保持原序）
+ * - updated：按更新时间降序（内置源无此字段，保持原序）
+ */
+export function sortServers(
+  servers: ServerListItem[],
+  sortId: string
+): ServerListItem[] {
+  if (!sortId || sortId === 'relevance') return servers;
+  const sorted = [...servers];
+  if (sortId === 'stars') {
+    sorted.sort((a, b) => (Number(b.stars) || 0) - (Number(a.stars) || 0));
+  }
+  return sorted;
 }

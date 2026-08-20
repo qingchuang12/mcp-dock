@@ -7,11 +7,12 @@ import {contextBridge, ipcRenderer} from 'electron';
 import type {TokenMeta, TokenScope} from '../main/secret-store';
 import type {ApiConnection} from '../main/connections-store';
 import type {
+    PlatformFacets,
     PlatformSearchPage,
     PlatformServerDetail,
     PlatformServerSearchPage,
     PlatformSkillListItem
-} from '../main/platform-skill-resolver';
+} from '../main/platforms/types';
 // 客户端类型统一从主进程 config-manager 引入，避免多端重复定义导致类型不兼容
 import type {AnyClientId, ClientInfo, ClientType, CustomClientDef, SkillClientType} from '../main/config-manager';
 import type {CloudSyncConfig, CloudSyncConfigInput, CloudSyncResult} from '../shared/cloud-sync-constants';
@@ -407,6 +408,22 @@ const api = {
             ipcRenderer.invoke('api-connections:restore-builtin-mcp'),
         restoreBuiltinSkill: (): Promise<ApiConnection[]> =>
             ipcRenderer.invoke('api-connections:restore-builtin-skill'),
+    },
+
+    // 统一平台适配器通道（新架构：platforms/registry 调度，前端可逐步迁移）
+    platforms: {
+        list: (): Promise<{id: string; name: string}[]> =>
+            ipcRenderer.invoke('platforms:list'),
+        searchSkills: (platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string): Promise<PlatformSearchPage> =>
+            ipcRenderer.invoke('platforms:search-skills', platformType, query, page, pageSize, category, sort),
+        searchServers: (platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string, source?: string): Promise<PlatformServerSearchPage> =>
+            ipcRenderer.invoke('platforms:search-servers', platformType, query, page, pageSize, category, sort, source),
+        getServerDetail: (platformType: string, serverId: string): Promise<PlatformServerDetail> =>
+            ipcRenderer.invoke('platforms:server-detail', platformType, serverId),
+        facets: (platformType: string): Promise<PlatformFacets> =>
+            ipcRenderer.invoke('platforms:facets', platformType),
+        diagnostics: (platformType: string): Promise<any> =>
+            ipcRenderer.invoke('platforms:diagnostics', platformType),
     },
 
     // 云同步（Git / SFTP）

@@ -90,6 +90,19 @@ export interface ServerListItem {
   displayName: string;
   description: string;
   iconUrl: string | null;
+  source?: string;
+  repository?: { url: string; source?: string; subfolder?: string };
+  categories?: string[];
+  tags?: string[];
+  lastCommitAt?: string;
+  updatedAt?: string;
+  version?: string;
+  author?: string;
+  stars?: number;
+  downloads?: number;
+  verified?: boolean;
+  extra?: Record<string, unknown>;
+  isHosted?: boolean;
   [key: string]: unknown;
 }
 
@@ -189,6 +202,8 @@ export interface SkillListItem {
     branch: string;
     skillPath: string;
   };
+  /** 平台直连源透传的额外元数据（图标、作者、下载量等） */
+  extra?: Record<string, unknown>;
 }
 
 // Skill detail
@@ -314,7 +329,7 @@ async function fetchOfficialServers(signal?: AbortSignal): Promise<ServerListIte
     description: `Official MCP server: ${dir.name}`,
     iconUrl: null,
     source: 'official',
-    repository: dir.html_url,
+    repository: { url: dir.html_url },
     homepage: dir.html_url,
   }));
 }
@@ -357,7 +372,7 @@ async function fetchSmitheryServers(signal?: AbortSignal): Promise<ServerListIte
     description: s.description || '',
     iconUrl: s.iconUrl,
     source: 'smithery',
-    repository: s.homepage || `https://smithery.ai/server/${s.qualifiedName}`,
+    repository: s.homepage ? { url: s.homepage } : undefined,
     homepage: s.homepage,
     downloads: s.useCount ?? 0,
     verified: s.verified,
@@ -392,7 +407,7 @@ export async function fetchSmitheryServersPaged(
     description: s.description || '',
     iconUrl: s.iconUrl,
     source: 'smithery',
-    repository: s.homepage || `https://smithery.ai/server/${s.qualifiedName}`,
+    repository: s.homepage ? { url: s.homepage } : undefined,
     homepage: s.homepage,
     downloads: s.useCount ?? 0,
     verified: s.verified,

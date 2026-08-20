@@ -18,6 +18,12 @@ interface UseStoreDataParams {
     page: number;
     pageSize: number;
     debouncedSearch: string;
+    /** 分类筛选（平台源透传；内置源前端切片） */
+    category?: string;
+    /** 排序选项 id */
+    sort?: string;
+    /** 来源过滤（如百炼 source slug） */
+    source?: string;
 }
 
 /**
@@ -28,10 +34,14 @@ export function useStoreData(params: UseStoreDataParams): StoreData<ServerListIt
     const mcp = useMcpData({
         resourceType: params.resourceType,
         mcpConnId: params.mcpConnId,
+        platformType: params.selectedConn?.platformType,
         dataSource: params.dataSource,
         page: params.page,
         pageSize: params.pageSize,
         debouncedSearch: params.debouncedSearch,
+        category: params.category,
+        sort: params.sort,
+        source: params.source,
     });
     const skills = useSkillsData({
         resourceType: params.resourceType,
@@ -41,6 +51,8 @@ export function useStoreData(params: UseStoreDataParams): StoreData<ServerListIt
         page: params.page,
         pageSize: params.pageSize,
         debouncedSearch: params.debouncedSearch,
+        category: params.category,
+        sort: params.sort,
     });
     return params.resourceType === 'mcp' ? mcp : skills;
 }

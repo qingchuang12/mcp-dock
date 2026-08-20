@@ -6,11 +6,12 @@ import type {TokenMeta, TokenScope} from '../../../main/secret-store';
 import type {ApiConnection} from '../../../main/connections-store';
 import type {
     DirectSearchDiagnostics,
+    PlatformFacets,
     PlatformSearchPage,
     PlatformServerDetail,
     PlatformServerSearchPage,
     PlatformSkillListItem,
-} from '../../../main/platform-skill-resolver';
+} from '../../../main/platforms/types';
 // 客户端类型统一从主进程 config-manager 引入，避免渲染端重复定义导致类型不兼容
 import type {AnyClientId, ClientInfo, ClientType, CustomClientDef, SkillClientType} from '../../../main/config-manager';
 import type {CloudSyncConfig, CloudSyncConfigInput, CloudSyncResult} from '../../../shared/cloud-sync-constants';
@@ -37,7 +38,11 @@ export type {
     PlatformServerDetail,
     PlatformSearchPage,
     PlatformPageInfo,
-} from '../../../main/platform-skill-resolver';
+    PlatformFacets,
+    CategoryNode,
+    SortOption,
+    SourceFilter,
+} from '../../../main/platforms/types';
 
 export interface McpServerConfig {
     command?: string;
@@ -366,6 +371,15 @@ interface ElectronAPI {
         restoreBuiltinMcp: () => Promise<ApiConnection[]>;
         /** 恢复被删除的内置 Skill 源（GitHub Registry） */
         restoreBuiltinSkill: () => Promise<ApiConnection[]>;
+    };
+    // 统一平台适配器通道（新架构）
+    platforms: {
+        list: () => Promise<{id: string; name: string}[]>;
+        searchSkills: (platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string) => Promise<PlatformSearchPage>;
+        searchServers: (platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string, source?: string) => Promise<PlatformServerSearchPage>;
+        getServerDetail: (platformType: string, serverId: string) => Promise<PlatformServerDetail>;
+        facets: (platformType: string) => Promise<PlatformFacets>;
+        diagnostics: (platformType: string) => Promise<any>;
     };
     // 云同步（Git / SFTP）：把云端存储当作一个客户端
     cloudSync: {
@@ -734,6 +748,14 @@ const mockAPI: ElectronAPI = {
         setEnabled: async (id: string, enabled: boolean) => ({id, enabled} as ApiConnection),
         restoreBuiltinMcp: async () => [],
         restoreBuiltinSkill: async () => [],
+    },
+    platforms: {
+        list: async () => [],
+        searchSkills: async () => ({items: [], pageInfo: {page: 1, pageSize: 20, total: 0, totalPages: 0, hasMore: false}}),
+        searchServers: async () => ({items: [], pageInfo: {page: 1, pageSize: 20, total: 0, totalPages: 0, hasMore: false}}),
+        getServerDetail: async () => { throw new Error('Not available in browser'); },
+        facets: async () => ({categories: [], sortOptions: [], supportsSubcategories: false}),
+        diagnostics: async () => null,
     },
     cloudSync: {
         getConfig: async () => defaultCloudSyncConfig(),

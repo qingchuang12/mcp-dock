@@ -1,0 +1,188 @@
+import {useTranslation} from 'react-i18next';
+import WindowControls from '../components/WindowControls';
+import type {ApiConnection} from '../lib/electron';
+import type {DataSource} from '../api/registry';
+import type {StoreResourceType} from '../hooks/storeTypes';
+
+interface StoreToolbarProps {
+  isMac: boolean;
+  resourceType: StoreResourceType;
+  displayTotal: number;
+  searchQuery: string;
+  dataSource: DataSource;
+  mcpSources: ApiConnection[];
+  selectedMcpSourceId: string | null;
+  selectedMcpConn: ApiConnection | null;
+  connections: ApiConnection[];
+  selectedSkillSourceId: string | null;
+  isForceRefreshing: boolean;
+  isLoading: boolean;
+  isFetching: boolean;
+  onResourceTypeChange: (type: StoreResourceType) => void;
+  onSearchQueryChange: (query: string) => void;
+  onMcpSourceChange: (sourceId: string) => void;
+  onSkillSourceChange: (sourceId: string | null) => void;
+  onForceRefresh: () => void;
+  onPageReset: () => void;
+}
+
+export default function StoreToolbar({
+  isMac,
+  resourceType,
+  displayTotal,
+  searchQuery,
+  mcpSources,
+  selectedMcpSourceId,
+  connections,
+  selectedSkillSourceId,
+  isForceRefreshing,
+  isLoading,
+  isFetching,
+  onResourceTypeChange,
+  onSearchQueryChange,
+  onMcpSourceChange,
+  onSkillSourceChange,
+  onForceRefresh,
+  onPageReset,
+}: StoreToolbarProps) {
+  const { t } = useTranslation();
+
+  return (
+    <div
+      className={`flex items-center justify-between gap-3 px-4 h-[38px] drag-region border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-xl sticky top-0 z-10 ${isMac ? 'pl-20' : 'pr-[140px]'}`}
+    >
+      <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden no-drag">
+        <h1 className="text-[14px] font-semibold text-[var(--color-text)] whitespace-nowrap tracking-tight">
+          {t('store.title')}
+        </h1>
+
+        <div className="flex items-center bg-[var(--color-surface-hover)] rounded-lg p-0.5 shrink-0">
+          <button
+            onClick={() => onResourceTypeChange('mcp')}
+            className={`px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors ${
+              resourceType === 'mcp'
+                ? 'bg-[var(--color-surface-active)] text-[var(--color-text)]'
+                : 'text-[var(--color-muted2)] hover:text-[var(--color-text)]'
+            }`}
+          >
+            {t('store.mcpTab')}
+          </button>
+          <button
+            onClick={() => onResourceTypeChange('skills')}
+            className={`px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors ${
+              resourceType === 'skills'
+                ? 'bg-[var(--color-surface-active)] text-[var(--color-text)]'
+                : 'text-[var(--color-muted2)] hover:text-[var(--color-text)]'
+            }`}
+          >
+            {t('store.skillsTab')}
+          </button>
+        </div>
+
+        <span className="text-[12px] text-[var(--color-muted2)] whitespace-nowrap shrink-0 tabular-nums">
+          {displayTotal} {resourceType === 'mcp' ? (t('store.servers') || 'servers') : (t('store.skills') || 'skills')}
+        </span>
+
+        {resourceType === 'mcp' && (
+          <select
+            value={selectedMcpSourceId || ''}
+            onChange={e => {
+              const v = e.target.value;
+              if (v === '__add__') {
+                window.location.hash = '#/settings';
+                return;
+              }
+              onMcpSourceChange(v);
+              onPageReset();
+            }}
+            className="px-2.5 py-1 rounded-full text-[12px] font-medium bg-[var(--color-accent)]/15 text-[var(--color-accent)] border border-[var(--color-accent)]/40 focus:outline-none whitespace-nowrap shrink-0"
+            title={t('store.selectMcpSource')}
+          >
+            {mcpSources.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+            {mcpSources.length === 0 && (
+              <option value="__add__">{t('store.addMcpSource')}</option>
+            )}
+          </select>
+        )}
+
+        {resourceType === 'skills' && (
+          <select
+            value={selectedSkillSourceId || ''}
+            onChange={e => {
+              const v = e.target.value;
+              if (v === '__add__') {
+                window.location.hash = '#/settings';
+                return;
+              }
+              onSkillSourceChange(v || null);
+              onPageReset();
+            }}
+            className="px-2.5 py-1 rounded-full text-[12px] font-medium bg-[var(--color-accent)]/15 text-[var(--color-accent)] border border-[var(--color-accent)]/40 focus:outline-none whitespace-nowrap shrink-0"
+            title={t('store.selectSkillSource')}
+          >
+            {connections.map(c => (
+              <option key={c.id} value={c.id}>{c.name}{c.isDefault ? t('store.defaultLabel') : ''}</option>
+            ))}
+            {connections.length === 0 && (
+              <option value="__add__">{t('store.addSkillSource')}</option>
+            )}
+          </select>
+        )}
+
+        <button
+          onClick={onForceRefresh}
+          disabled={isForceRefreshing || isLoading || isFetching}
+          className="p-1.5 rounded-md text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors disabled:opacity-50 shrink-0"
+          title={t('store.forceRefresh') || 'Force refresh data'}
+        >
+          <svg
+            className={`w-3.5 h-3.5 ${isForceRefreshing ? 'animate-spin' : ''}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round"
+              d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="relative w-[240px] shrink-0 no-drag">
+        <svg
+          className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-muted)]"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+          />
+        </svg>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={e => onSearchQueryChange(e.target.value)}
+          placeholder={resourceType === 'mcp' ? t('store.search') : (t('store.searchSkills') || 'Search skills...')}
+          className={`w-full pl-9 ${searchQuery ? 'pr-8' : 'pr-3'} py-1.5 rounded-lg bg-[var(--color-surface-hover)] text-[13px] text-[var(--color-text)] placeholder:text-[var(--color-muted)] border-none focus:ring-1 focus:ring-[#0a84ff] text-ellipsis`}
+        />
+        {searchQuery && (
+          <button
+            onClick={() => onSearchQueryChange('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-[var(--color-muted)] hover:text-[var(--color-text)] cursor-pointer transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </div>
+      <WindowControls />
+    </div>
+  );
+}

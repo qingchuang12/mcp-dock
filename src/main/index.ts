@@ -9,11 +9,13 @@ import {EnvManager} from './env-manager';
 import {HistoryManager} from './history-manager';
 import {DiscoveredSkill, SkillCloudConflict, SkillsManager, SkillSourceMeta} from './skills-manager';
 import type {
+    PlatformFacets,
     PlatformSearchPage,
     PlatformServerDetail,
     PlatformServerSearchPage,
     PlatformSkillListItem
-} from './platform-skill-resolver';
+} from './platforms/types';
+import {platformTypeToSupported} from './platforms/types';
 import {
     fetchPlatformServerDetail,
     getLastDirectSearchDiagnostics,
@@ -23,6 +25,7 @@ import {
     searchPlatformDirectPaged,
     searchPlatformServersPaged
 } from './platform-skill-resolver';
+import {getAdapter, getFacets, listAdapters} from './platforms/registry';
 import {getCacheManager} from './cache-manager';
 import {getSecretStore, TokenMeta, TokenScope} from './secret-store';
 import {ApiConnection, getConnectionsStore} from './connections-store';
@@ -747,6 +750,55 @@ ipcMain.handle('api-connections:get-server-detail', async (_, connectionId: stri
     if (!conn) throw new Error('连接不存在');
     const secret = conn.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
     return fetchPlatformServerDetail(conn.platformType, conn.baseUrl, secret, serverId);
+});
+
+// ============ 统一平台适配器通道（新架构） ============
+// 以上旧通道保留向后兼容；以下通道委托 platforms/registry 统一调度，新增平台无需改动此处。
+ipcMain.handle('platforms:search-skills', async (_, platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string): Promise<PlatformSearchPage> => {
+    const sp = platformTypeToSupported(platformType);
+    const adapter = sp ? getAdapter(sp) : null;
+    if (!adapter || !adapter.searchSkills) throw new Error(`该平台不支持 skill 搜索：${platformType}`);
+    const conn = connectionsStore.list().find(c => c.platformType === platformType);
+    const baseUrl = conn?.baseUrl || '';
+    const secret = conn?.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
+    return adapter.searchSkills({query, page, pageSize: pageSize || 20, category, sort, baseUrl, secret});
+});
+
+ipcMain.handle('platforms:search-servers', async (_, platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string, source?: string): Promise<PlatformServerSearchPage> => {
+    const sp = platformTypeToSupported(platformType);
+    const adapter = sp ? getAdapter(sp) : null;
+    if (!adapter) throw new Error(`不支持的平台直连类型：${platformType}`);
+    const conn = connectionsStore.list().find(c => c.platformType === platformType);
+    const baseUrl = conn?.baseUrl || '';
+    const secret = conn?.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
+    if (!adapter.searchServers) return {items: [], pageInfo: {page, pageSize: pageSize || 20, total: 0, totalPages: 0, hasMore: false}};
+    return adapter.searchServers({query, page, pageSize: pageSize || 20, category, sort, source, baseUrl, secret});
+});
+
+ipcMain.handle('platforms:server-detail', async (_, platformType: string, serverId: string): Promise<PlatformServerDetail> => {
+    const sp = platformTypeToSupported(platformType);
+    const adapter = sp ? getAdapter(sp) : null;
+    if (!adapter || !adapter.fetchServerDetail) throw new Error(`该平台不支持 server 详情：${platformType}`);
+    const conn = connectionsStore.list().find(c => c.platformType === platformType);
+    const baseUrl = conn?.baseUrl || '';
+    const secret = conn?.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
+    return adapter.fetchServerDetail({query: '', page: 1, pageSize: 20, baseUrl, secret}, serverId);
+});
+
+ipcMain.handle('platforms:facets', async (_, platformType: string): Promise<PlatformFacets> => {
+    const sp = platformTypeToSupported(platformType);
+    if (!sp) return {categories: [], sortOptions: [], supportsSubcategories: false};
+    return getFacets(sp);
+});
+
+ipcMain.handle('platforms:diagnostics', async (_, platformType: string) => {
+    const sp = platformTypeToSupported(platformType);
+    if (!sp) return null;
+    return getLastDirectSearchDiagnostics(sp);
+});
+
+ipcMain.handle('platforms:list', async () => {
+    return listAdapters().map(a => ({id: a.id, name: a.name}));
 });
 
 // ============ API 直连默认来源 ============

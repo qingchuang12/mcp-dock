@@ -131,7 +131,9 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
         } else {
             api.env.checkRuntime(runtime).then(setRuntimeInfo);
         }
-        const initEnv: Record<string, string> = {...(detail.install.env ?? {})};
+        const initEnv: Record<string, string> = Object.fromEntries(
+            Object.entries(detail.install.env ?? {}).map(([k, v]) => [k, String(v)])
+        );
         setEnvInputs(initEnv);
     }, [detail, api]);
 
@@ -150,11 +152,12 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
         setSelectedClients(prev => (prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]));
     };
 
-    const envProps = (detail?.envSchema?.properties ?? {}) as Record<string, {
+    const envSchemaObj = (detail?.envSchema ?? {}) as {properties?: Record<string, unknown>; required?: string[]};
+    const envProps = (envSchemaObj.properties ?? {}) as Record<string, {
         description?: string;
         [k: string]: unknown
     }>;
-    const requiredEnv = detail?.envSchema?.required ?? [];
+    const requiredEnv = envSchemaObj.required ?? [];
     const hasEnvForm = Object.keys(envProps).length > 0;
 
     const handleInstall = async () => {
@@ -180,7 +183,9 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                 api.env.getNpxPath,
                 api.env.getUvxPath
             );
-            const env: Record<string, string> = {...(detail.install.env ?? {})};
+            const env: Record<string, string> = Object.fromEntries(
+                Object.entries(detail.install.env ?? {}).map(([k, v]) => [k, String(v)])
+            );
             for (const k of Object.keys(envProps)) {
                 if (envInputs[k]) env[k] = envInputs[k];
             }
@@ -228,7 +233,9 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
         const config: { command: string; args?: string[]; env?: Record<string, string> } = {
             command: detail.install.command,
             args: detail.install.args,
-            ...(detail.install.env ? {env: detail.install.env} : {}),
+            ...(detail.install.env
+                ? {env: Object.fromEntries(Object.entries(detail.install.env).map(([k, v]) => [k, String(v)]))}
+                : {}),
         };
         const configStr = encodeURIComponent(JSON.stringify(config));
         navigate(`/inspector?config=${configStr}`);
@@ -332,9 +339,9 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                             </div>
 
                             {/* 分类标签 */}
-                            {detail.categories.length > 0 && (
+                            {(detail.categories ?? []).length > 0 && (
                                 <div className="flex flex-wrap gap-1.5 mt-3">
-                                    {detail.categories.map(cat => (
+                                    {(detail.categories ?? []).map(cat => (
                                         <span
                                             key={cat}
                                             className="px-2 py-0.5 rounded-full text-[12px] bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20"
@@ -497,11 +504,11 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                                     <span className="text-[var(--color-text)]">{detail.publisher}</span>
                                 </div>
                             )}
-                            {detail.tags.length > 0 && (
+                            {(detail.tags ?? []).length > 0 && (
                                 <div className="flex justify-between">
                                     <span className="text-[var(--color-muted)]">Tags</span>
                                     <span
-                                        className="text-[var(--color-text)] text-right max-w-[160px] truncate">{detail.tags.join(', ')}</span>
+                                        className="text-[var(--color-text)] text-right max-w-[160px] truncate">{(detail.tags ?? []).join(', ')}</span>
                                 </div>
                             )}
                         </div>

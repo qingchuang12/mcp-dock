@@ -1,8 +1,9 @@
-import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import {lazy, Suspense} from 'react';
+import {Navigate, Route, Routes} from 'react-router-dom';
 import Layout from './components/Layout';
-import { ToastContainer } from './components/Toast';
-import { useApplyTheme } from './lib/useTheme';
+import {ToastContainer} from './components/Toast';
+import ErrorBoundary from './components/ErrorBoundary';
+import {useApplyTheme} from './lib/useTheme';
 
 // 页面懒加载：避免 Settings / Inspector 等重依赖（CloudSyncManager、react-syntax-highlighter）
 // 进入首屏 bundle，减小首屏解析/执行体积，加快启动到可交互。
@@ -24,7 +25,7 @@ function App() {
         <Suspense fallback={<div className="p-6 text-[var(--color-muted)]">Loading…</div>}>
           <Routes>
             <Route path="/" element={<Navigate to="/store" replace />} />
-            <Route path="/store" element={<Store />} />
+            <Route path="/store" element={<ErrorBoundary><Store /></ErrorBoundary>} />
             {/* MCP Server 详情 */}
             <Route path="/detail/:source/:id" element={<Detail />} />
             {/* Skill 详情 */}

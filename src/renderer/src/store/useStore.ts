@@ -5,7 +5,7 @@
 
 import {create} from 'zustand';
 import {persist} from 'zustand/middleware';
-import type {DataSource, ResourceType, ServerListItem, SkillListItem} from '../api/registry';
+import type {DataSource, ResourceType, ServerListItem} from '../api/registry';
 import type {TokenMeta} from '../lib/electron';
 
 // Inspector 配置状态
@@ -37,10 +37,6 @@ interface StoreState {
     // 服务器列表缓存 (按数据源分开)
     serverLists: Record<DataSource, ServerListItem[]>;
     setServerList: (source: DataSource, list: ServerListItem[]) => void;
-
-    // Skills 列表缓存
-    skillsList: SkillListItem[];
-    setSkillsList: (list: SkillListItem[]) => void;
 
     // 已安装服务器 ID 列表 (用于快速查询)
     installedServerIds: Set<string>;
@@ -76,9 +72,6 @@ interface StoreState {
 
     // 重置分页
     resetPagination: () => void;
-
-    // 获取当前数据源的服务器列表
-    getCurrentServerList: () => ServerListItem[];
 }
 
 // 主题模式
@@ -91,7 +84,7 @@ const VALID_THEMES = ['light', 'dark', 'auto'] as const;
 
 export const useStore = create<StoreState>()(
     persist(
-        (set, get) => ({
+        (set) => ({
             // 资源类型 - 默认 MCP
             resourceType: 'mcp',
             setResourceType: (type) => set({
@@ -129,10 +122,6 @@ export const useStore = create<StoreState>()(
                     [source]: list,
                 },
             })),
-
-            // Skills 列表
-            skillsList: [],
-            setSkillsList: (list) => set({skillsList: list}),
 
             // 已安装服务器
             installedServerIds: new Set(),
@@ -193,12 +182,6 @@ export const useStore = create<StoreState>()(
 
             // 重置分页
             resetPagination: () => set({currentPage: 1, searchQuery: ''}),
-
-            // 获取当前数据源的服务器列表
-            getCurrentServerList: () => {
-                const state = get();
-                return state.serverLists[state.dataSource] || [];
-            },
         }),
         {
             name: 'mcp-dock-store',

@@ -1,13 +1,8 @@
 import {useQuery} from '@tanstack/react-query';
-import {
-    fetchServerList,
-    fetchSmitheryServersPaged,
-    type DataSource,
-    type ServerListItem,
-} from '../api/registry';
-import {useElectronAPI} from '../lib/electron';
+import {type DataSource, fetchServerList, fetchSmitheryServersPaged, type ServerListItem,} from '../api/registry';
 import type {PlatformServerListItem} from '../lib/electron';
-import {paginateServers, searchServers} from '../lib/search';
+import {useElectronAPI} from '../lib/electron';
+import {filterServersByCategory, paginateServers, searchServers, sortServers} from '../lib/search';
 import type {StoreData, StoreResourceType} from './storeTypes';
 import {STORE_QUERY_STALE_MS} from './storeTypes';
 
@@ -19,10 +14,14 @@ function mapPlatformServer(item: PlatformServerListItem): ServerListItem {
         description: item.description,
         iconUrl: item.iconUrl ?? null,
         source: 'platform',
-        author: item.source,
+        author: item.author || item.source,
         stars: item.stars ?? 0,
         categories: item.categories,
+        tags: item.tags,
+        isHosted: item.isHosted,
+        verified: item.isVerified,
         repository: item.sourceUrl ? {url: item.sourceUrl, branch: '', owner: '', repo: ''} : undefined,
+        extra: item.extra,
     } as ServerListItem;
 }
 
@@ -30,10 +29,15 @@ interface UseMcpDataParams {
     resourceType: StoreResourceType;
     /** 选中的 MCP 平台连接 ID；为 null 时走内置源（official/smithery） */
     mcpConnId: string | null;
+    /** 平台直连源类型（如 'modelscope'），用于统一适配器通道 */
+    platformType?: string;
     dataSource: DataSource;
     page: number;
     pageSize: number;
     debouncedSearch: string;
+    category?: string;
+    sort?: string;
+    source?: string;
 }
 
 /**
@@ -46,7 +50,7 @@ interface UseMcpDataParams {
  * 仍会强制绕过缓存重新请求。
  */
 export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> {
-    const {resourceType, mcpConnId, dataSource, page, pageSize, debouncedSearch} = params;
+    const {resourceType, mcpConnId, platformType, dataSource, page, pageSize, debouncedSearch, category, sort, source} = params;
     const api = useElectronAPI();
     const enabled = resourceType === 'mcp';
 
@@ -77,11 +81,12 @@ export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> 
     });
 
     const platform = useQuery({
-        queryKey: ['mcpPlatform', mcpConnId, debouncedSearch, page],
+        queryKey: ['mcpPlatform', mcpConnId, debouncedSearch, page, category, sort, source],
         queryFn: async () => {
             if (!mcpConnId) return null;
-            const res = await api.apiConnections.searchPlatformServersPaged(
-                mcpConnId, debouncedSearch, page, pageSize, ''
+            // 平台源走统一适配器通道（支持分类/排序/来源筛选）
+            const res = await api.platforms.searchServers(
+                platformType || '', debouncedSearch, page, pageSize, category || 'all', sort || 'relevance', source || 'all'
             );
             return res;
         },
@@ -97,7 +102,7 @@ export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> 
         const items = (res?.items ?? []).map(mapPlatformServer);
         const total = res ? (res.pageInfo.total ?? res.items.length) : 0;
         const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 0;
-        const startIndex = total > 0 ? (page - 1) * pageSize + 1 : 0;
+        const startIndex = total > 0 ? (page - 1) * pageSize : 0;
         const endIndex = Math.min((page - 1) * pageSize + items.length, total);
         return {
             items,
@@ -123,7 +128,7 @@ export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> 
         const items = res ? searchServers(res.items, debouncedSearch) : [];
         const total = res?.total ?? 0;
         const totalPages = res?.totalPages ?? 0;
-        const startIndex = total > 0 ? (page - 1) * pageSize + 1 : 0;
+        const startIndex = total > 0 ? (page - 1) * pageSize : 0;
         const endIndex = Math.min((page - 1) * pageSize + items.length, total);
         return {
             items,
@@ -143,7 +148,9 @@ export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> 
 
     const list = builtin.data ?? [];
     const filtered = searchServers(list, debouncedSearch);
-    const paginated = paginateServers(filtered, page, pageSize);
+    const categorized = filterServersByCategory(filtered, category || '');
+    const sorted = sortServers(categorized, sort || '');
+    const paginated = paginateServers(sorted, page, pageSize);
     return {
         items: paginated.items,
         total: paginated.totalItems,
