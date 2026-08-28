@@ -3,7 +3,7 @@
  * 交互式调试 MCP Server
  */
 
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useSearchParams} from 'react-router-dom';
 import {useElectronAPI} from '../lib/electron';
@@ -46,10 +46,21 @@ interface McpPrompt {
 }
 
 interface ServerConfig {
-  command: string;
+  command?: string;
   args?: string[];
   env?: Record<string, string>;
+  cwd?: string;
+  url?: string;
+  type?: 'stdio' | 'streamable-http' | 'sse';
+  headers?: Record<string, string>;
 }
+
+type TransportType = 'stdio' | 'streamable-http' | 'sse';
+
+// 归一化历史/预设中的旧 'http' 值到规范的 'streamable-http'（二者在代码里等价，
+// 仅在 UI 上合并为一种，避免下拉出现两个重复的 HTTP 选项）。
+const normalizeTransport = (t?: string): TransportType =>
+  t === 'http' ? 'streamable-http' : ((t as TransportType) || 'stdio');
 
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 type ActiveTab = 'tools' | 'resources' | 'prompts';
@@ -62,9 +73,6 @@ export default function Inspector() {
   const { inspectorState, setInspectorState, theme } = useStore();
   const isDark = getEffectiveTheme(theme) === 'dark';
   
-  // 跟踪是否是通过 URL 参数进入
-  const hasPresetConfig = useRef(false);
-
   // 日志区域可拖拽调整高度
   const MIN_LOG_HEIGHT = 80;
   const MAX_LOG_HEIGHT = 500;
@@ -116,7 +124,6 @@ export default function Inspector() {
     if (configStr) {
       try {
         const config = JSON.parse(decodeURIComponent(configStr)) as ServerConfig;
-        hasPresetConfig.current = true;
         return config;
       } catch {
         return null;
@@ -125,12 +132,91 @@ export default function Inspector() {
     return null;
   }, [searchParams]);
 
-  // 连接状态
-  const [status, setStatus] = useState<ConnectionStatus>('disconnected');
-  const [serverInfo, setServerInfo] = useState<{ name?: string; version?: string } | null>(null);
+  // 当前预设配置的标识：用于在「同一 /inspector 路由、仅 config 查询参数不同」时
+  // 区分调试的是哪一台 server，避免表单与会话错乱（见下方 sessionId 派生）。
+  const presetKey = useMemo(
+    () => (presetConfig ? JSON.stringify(presetConfig) : null),
+    [presetConfig]
+  );
+
+  // ===== 连接 / 调试运行时状态提升到 store，左侧菜单切换页面时保持连接与上下文 =====
+  const {
+    inspectorRuntime,
+    setInspectorRuntime,
+    appendInspectorLog,
+    clearInspectorLog,
+  } = useStore();
+
+  // 懒初始化 sessionId：
+  // - 若当前 store 会话的 presetKey 与本次预设配置一致（含两侧均为 null 的手动模式），
+  //   则复用同一会话，从而保留已建立的连接与调试上下文（左侧菜单切回时）。
+  // - 若 presetKey 变化（从「我的库」点了另一台 server 的「调试」），则新建会话并重置运行时，
+  //   避免显示/连接错乱到上一台。
+  const sessionId = useMemo(() => {
+    if (inspectorRuntime.sessionId && inspectorRuntime.presetKey === presetKey) {
+      return inspectorRuntime.sessionId;
+    }
+    const id = `inspector-${Date.now()}`;
+    setInspectorRuntime({
+      sessionId: id,
+      presetKey,
+      status: 'disconnected',
+      serverInfo: null,
+      tools: [],
+      resources: [],
+      prompts: [],
+      selectedToolName: null,
+      activeTab: 'tools',
+      logs: [],
+    });
+    return id;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetKey]);
+
+  // 以下值由 store 派生，导航切换卸载组件后重新挂载仍可恢复
+  const status = inspectorRuntime.status;
+  const serverInfo = inspectorRuntime.serverInfo;
+  const logs = inspectorRuntime.logs;
+  const tools = inspectorRuntime.tools as McpTool[];
+  const resources = inspectorRuntime.resources as McpResource[];
+  const prompts = inspectorRuntime.prompts as McpPrompt[];
+  const activeTab = inspectorRuntime.activeTab;
+  const selectedTool = useMemo(
+    () => tools.find((t) => t.name === inspectorRuntime.selectedToolName) || null,
+    [tools, inspectorRuntime.selectedToolName]
+  );
   const [, setErrorMessage] = useState<string>('');
-  const [logs, setLogs] = useState<string[]>([]);
-  
+
+  // 将 store 写入封装为与原本 useState setter 同签名的本地代理，缩小改动面
+  const setStatus = useCallback(
+    (s: ConnectionStatus) => setInspectorRuntime({ status: s }),
+    [setInspectorRuntime]
+  );
+  const setServerInfo = useCallback(
+    (s: { name?: string; version?: string } | null) => setInspectorRuntime({ serverInfo: s }),
+    [setInspectorRuntime]
+  );
+  const setTools = useCallback(
+    (t: McpTool[]) => setInspectorRuntime({ tools: t }),
+    [setInspectorRuntime]
+  );
+  const setResources = useCallback(
+    (r: McpResource[]) => setInspectorRuntime({ resources: r }),
+    [setInspectorRuntime]
+  );
+  const setPrompts = useCallback(
+    (p: McpPrompt[]) => setInspectorRuntime({ prompts: p }),
+    [setInspectorRuntime]
+  );
+  const setActiveTab = useCallback(
+    (tab: ActiveTab) => setInspectorRuntime({ activeTab: tab }),
+    [setInspectorRuntime]
+  );
+  const setSelectedToolName = useCallback(
+    (name: string | null) => setInspectorRuntime({ selectedToolName: name }),
+    [setInspectorRuntime]
+  );
+
   // 配置 - 优先使用 URL 参数，否则使用 store 中保存的状态
   const [command, setCommandState] = useState(
     presetConfig?.command || inspectorState.command || 'npx'
@@ -162,29 +248,93 @@ export default function Inspector() {
       return newValue;
     });
   }, [setInspectorState]);
+
+  // cwd（工作目录）
+  const [cwd, setCwdState] = useState(presetConfig?.cwd || inspectorState.cwd || '');
+  const setCwd = useCallback((value: string) => {
+    setCwdState(value);
+    setInspectorState({ cwd: value });
+  }, [setInspectorState]);
+
+  // 远程传输（http / sse / streamable-http）相关配置
+  const [transportType, setTransportTypeState] = useState<TransportType>(
+    normalizeTransport(presetConfig?.type || inspectorState.type)
+  );
+  const [url, setUrlState] = useState(
+    presetConfig?.url || inspectorState.url || ''
+  );
+  const [headers, setHeadersState] = useState<{ key: string; value: string }[]>(
+    presetConfig?.headers
+      ? Object.entries(presetConfig.headers).map(([key, value]) => ({ key, value }))
+      : inspectorState.headers || []
+  );
+
+  const setTransportType = useCallback((value: TransportType) => {
+    setTransportTypeState(value);
+    setInspectorState({ type: value });
+  }, [setInspectorState]);
+
+  const setUrl = useCallback((value: string) => {
+    setUrlState(value);
+    setInspectorState({ url: value });
+  }, [setInspectorState]);
+
+  const setHeaders = useCallback((updater: { key: string; value: string }[] | ((prev: { key: string; value: string }[]) => { key: string; value: string }[])) => {
+    setHeadersState(prev => {
+      const newValue = typeof updater === 'function' ? updater(prev) : updater;
+      setInspectorState({ headers: newValue });
+      return newValue;
+    });
+  }, [setInspectorState]);
+
+  // 预设配置变化（从「我的库」点不同 server 的「调试」，路由同为 /inspector 仅 query 不同，
+  // 组件不重挂载）时，把表单字段同步为该配置。presetConfig 优先于 inspectorState 的历史值，
+  // 避免沿用上一台 server 的残留输入；手动模式（无 presetConfig）不触发，保留用户手动输入。
+  useEffect(() => {
+    if (!presetConfig) return;
+    const nextEnv = presetConfig.env
+      ? Object.entries(presetConfig.env).map(([key, value]) => ({ key, value }))
+      : [];
+    const nextHeaders = presetConfig.headers
+      ? Object.entries(presetConfig.headers).map(([key, value]) => ({ key, value }))
+      : [];
+    setCommandState(presetConfig.command || '');
+    setArgsState(presetConfig.args?.join(' ') || '');
+    setEnvVarsState(nextEnv);
+    setCwdState(presetConfig.cwd || '');
+    setTransportTypeState(normalizeTransport(presetConfig.type));
+    setUrlState(presetConfig.url || '');
+    setHeadersState(nextHeaders);
+    setInspectorState({
+      command: presetConfig.command || '',
+      args: presetConfig.args?.join(' ') || '',
+      envVars: nextEnv,
+      cwd: presetConfig.cwd || '',
+      type: normalizeTransport(presetConfig.type),
+      url: presetConfig.url || '',
+      headers: nextHeaders,
+    });
+    // 仅在预设配置身份变化时同步一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetKey]);
+
+  // 远程请求头增删改（与 envVars 同构）
+  const addHeader = () => setHeaders(prev => [...prev, { key: '', value: '' }]);
+  const removeHeader = (index: number) => setHeaders(prev => prev.filter((_, i) => i !== index));
+  const updateHeader = (index: number, field: 'key' | 'value', value: string) =>
+    setHeaders(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
   
-  // 工具列表
-  const [tools, setTools] = useState<McpTool[]>([]);
-  const [selectedTool, setSelectedTool] = useState<McpTool | null>(null);
-  
-  // Resources 和 Prompts
-  const [resources, setResources] = useState<McpResource[]>([]);
-  const [prompts, setPrompts] = useState<McpPrompt[]>([]);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('tools');
-  
-  // 工具调用
+  // 工具调用（瞬时 UI 状态，可随导航重置，不影响已建立的连接与工具列表）
   const [toolArgs, setToolArgs] = useState<Record<string, string>>({});
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<unknown>(null);
   const [resultError, setResultError] = useState<string>('');
-
-  // Session ID
-  const sessionId = useMemo(() => `inspector-${Date.now()}`, []);
+  const runningToolRef = useRef<string | null>(null);
 
   // 添加日志
   const addLog = useCallback((message: string) => {
-    setLogs(prev => [...prev.slice(-99), `[${new Date().toLocaleTimeString()}] ${message}`]);
-  }, []);
+    appendInspectorLog(`[${new Date().toLocaleTimeString()}] ${message}`);
+  }, [appendInspectorLog]);
 
   // 设置事件监听
   useEffect(() => {
@@ -216,12 +366,20 @@ export default function Inspector() {
     };
   }, [api, sessionId, addLog]);
 
-  // 组件卸载时断开连接，避免资源泄漏
+  // 注意：导航切换到其他页面时本组件会卸载，但 MCP 连接保留在主进程（以 sessionId 标识），
+  // 因此这里不再卸载即断开；切回时复用同一 sessionId 即可恢复调试上下文。
+  // 真正的清理由主进程在应用退出（before-quit / window-all-closed）时统一断开。
+
+  // 当切换到不同 server（sessionId 实际变化）时，断开上一个会话，避免主进程连接堆积泄漏。
+  // 左侧菜单切回同一 server 时 sessionId 不变，不会误断。
+  const prevSessionRef = useRef<string | null>(null);
   useEffect(() => {
-    return () => {
-      api.mcp.disconnect(sessionId);
-    };
-  }, [api, sessionId]);
+    const prev = prevSessionRef.current;
+    if (prev && prev !== sessionId) {
+      api.mcp.disconnect(prev).catch(() => {});
+    }
+    prevSessionRef.current = sessionId;
+  }, [sessionId, api]);
 
   // 连接到服务器
   const handleConnect = async () => {
@@ -233,7 +391,7 @@ export default function Inspector() {
       setTools([]);
       setResources([]);
       setPrompts([]);
-      setSelectedTool(null);
+      setSelectedToolName(null);
       setResult(null);
       addLog('Disconnected');
       return;
@@ -244,22 +402,40 @@ export default function Inspector() {
     setTools([]);
     setResources([]);
     setPrompts([]);
-    setSelectedTool(null);
+    setSelectedToolName(null);
     setResult(null);
 
-    // 构建配置
-    const config: ServerConfig = {
-      command,
-      args: args.trim() ? args.trim().split(/\s+/) : [],
-      env: envVars.reduce((acc, { key, value }) => {
-        if (key.trim()) {
-          acc[key.trim()] = value;
+    // 构建配置：stdio 走本地命令，远程类型（http/sse/streamable-http）走 URL + 请求头
+    const config: ServerConfig = transportType === 'stdio'
+      ? {
+          type: 'stdio',
+          command,
+          args: args.trim() ? args.trim().split(/\s+/) : [],
+          env: envVars.reduce((acc, { key, value }) => {
+            if (key.trim()) {
+              acc[key.trim()] = value;
+            }
+            return acc;
+          }, {} as Record<string, string>),
+          ...(cwd.trim() ? {cwd: cwd.trim()} : {}),
         }
-        return acc;
-      }, {} as Record<string, string>),
-    };
+      : {
+          type: transportType,
+          url: url.trim(),
+          headers: headers.reduce((acc, { key, value }) => {
+            if (key.trim()) {
+              acc[key.trim()] = value;
+            }
+            return acc;
+          }, {} as Record<string, string>),
+        };
 
-    addLog(`Connecting to: ${command} ${args}`);
+    // HTTP/远程类型没有 command/args，改用 URL 显示，避免日志空白；
+    // stdio 模式下把 cwd 也打出来，便于确认工作目录是否生效（避免误判 cwd 丢失）。
+    const connectTarget = transportType === 'stdio'
+      ? `${command} ${args}`.trim() + (cwd.trim() ? `  [cwd: ${cwd.trim()}]` : '')
+      : url.trim();
+    addLog(`Connecting to: ${connectTarget || transportType}`);
 
     const result = await api.mcp.connect(sessionId, config);
     
@@ -298,7 +474,8 @@ export default function Inspector() {
 
   // 选择工具
   const handleSelectTool = (tool: McpTool) => {
-    setSelectedTool(tool);
+    runningToolRef.current = null;
+    setSelectedToolName(tool.name);
     setToolArgs({});
     setResult(null);
     setResultError('');
@@ -308,10 +485,12 @@ export default function Inspector() {
   const handleRunTool = async () => {
     if (!selectedTool) return;
 
+    const toolName = selectedTool.name;
+    runningToolRef.current = toolName;
     setIsRunning(true);
     setResult(null);
     setResultError('');
-    addLog(`Calling tool: ${selectedTool.name}`);
+    addLog(`Calling tool: ${toolName}`);
 
     // 解析参数
     const parsedArgs: Record<string, unknown> = {};
@@ -326,8 +505,11 @@ export default function Inspector() {
       }
     }
 
-    const response = await api.mcp.callTool(sessionId, selectedTool.name, parsedArgs);
-    
+    const response = await api.mcp.callTool(sessionId, toolName, parsedArgs);
+
+    // 如果用户已切换到其他工具，丢弃结果
+    if (runningToolRef.current !== toolName) return;
+
     if (response.success) {
       setResult(response.result);
       addLog(`Tool call successful`);
@@ -337,6 +519,7 @@ export default function Inspector() {
     }
 
     setIsRunning(false);
+    runningToolRef.current = null;
   };
 
   // 添加环境变量
@@ -391,7 +574,7 @@ export default function Inspector() {
                 onChange={(e) => setToolArgs(prev => ({ ...prev, [key]: e.target.value }))}
                 className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
               >
-                <option value="">Select...</option>
+                <option value="">{t('inspector.selectPlaceholder')}</option>
                 {schema.enum.map(opt => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
@@ -402,7 +585,7 @@ export default function Inspector() {
                 onChange={(e) => setToolArgs(prev => ({ ...prev, [key]: e.target.value }))}
                 className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
               >
-                <option value="">Select...</option>
+                <option value="">{t('inspector.selectPlaceholder')}</option>
                 <option value="true">true</option>
                 <option value="false">false</option>
               </select>
@@ -411,7 +594,7 @@ export default function Inspector() {
                 type="text"
                 value={toolArgs[key] || ''}
                 onChange={(e) => setToolArgs(prev => ({ ...prev, [key]: e.target.value }))}
-                placeholder={schema.default !== undefined ? String(schema.default) : `Enter ${key}...`}
+                placeholder={schema.default !== undefined ? String(schema.default) : t('inspector.enterParam', { key })}
                 className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)]"
               />
             )}
@@ -424,7 +607,7 @@ export default function Inspector() {
   return (
     <div className="flex flex-col h-full bg-[var(--color-bg)]" id="inspector-container">
       {/* 顶部控制栏（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
-      <div className={`flex items-center justify-between px-4 h-[38px] drag-region relative border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-xl ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
+      <div className={`flex items-center justify-between px-4 h-[38px] drag-region relative border-b border-[var(--color-border)] bg-[var(--color-bg)] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
         <div className="flex items-center gap-3 no-drag">
           <h1 className="text-[14px] font-semibold text-[var(--color-text)] tracking-tight">
             {t('inspector.title') || 'MCP Inspector'}
@@ -474,76 +657,171 @@ export default function Inspector() {
         <div className="w-72 border-r border-[var(--color-border)] flex flex-col overflow-hidden">
           {/* 配置区域 */}
           <div className="p-3 border-b border-[var(--color-border)] space-y-3">
+            {/* 传输类型选择 */}
             <div>
               <label className="block text-[12px] text-[var(--color-muted)] uppercase mb-1">
-                {t('inspector.command') || 'Command'}
+                {t('inspector.transport') || 'Transport'}
               </label>
-              <input
-                type="text"
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
+              <select
+                value={transportType}
+                onChange={(e) => setTransportType(e.target.value as TransportType)}
                 disabled={status === 'connected'}
-                placeholder="npx, uvx, node..."
-                className="w-full px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
-              />
+                className="w-full px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
+              >
+                <option value="stdio">{t('inspector.transportStdio') || 'Local command (stdio)'}</option>
+                <option value="streamable-http">{t('inspector.transportStreamable') || 'Streamable HTTP'}</option>
+                <option value="sse">{t('inspector.transportSse') || 'SSE'}</option>
+              </select>
             </div>
-            <div>
-              <label className="block text-[12px] text-[var(--color-muted)] uppercase mb-1">
-                {t('inspector.arguments') || 'Arguments'}
-              </label>
-              <input
-                type="text"
-                value={args}
-                onChange={(e) => setArgs(e.target.value)}
-                disabled={status === 'connected'}
-                placeholder="-y @modelcontextprotocol/server-..."
-                className="w-full px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
-              />
-            </div>
-            
-            {/* 环境变量 */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[12px] text-[var(--color-muted)] uppercase">
-                  {t('inspector.envVars') || 'Environment'}
-                </label>
-                <button
-                  onClick={addEnvVar}
-                  disabled={status === 'connected'}
-                  className="text-[12px] text-[var(--color-accent)] hover:text-[#5ac8fa] disabled:opacity-50"
-                >
-                  + Add
-                </button>
-              </div>
-              {envVars.map((env, index) => (
-                <div key={index} className="flex gap-1 mb-1">
+
+            {transportType === 'stdio' ? (
+              <>
+                <div>
+                  <label className="block text-[12px] text-[var(--color-muted)] uppercase mb-1">
+                    {t('inspector.command') || 'Command'}
+                  </label>
                   <input
                     type="text"
-                    value={env.key}
-                    onChange={(e) => updateEnvVar(index, 'key', e.target.value)}
+                    value={command}
+                    onChange={(e) => setCommand(e.target.value)}
                     disabled={status === 'connected'}
-                    placeholder="KEY"
-                    className="flex-1 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
+                    placeholder={t('inspector.commandPlaceholder')}
+                    className="w-full px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
                   />
-                  <input
-                    type="text"
-                    value={env.value}
-                    onChange={(e) => updateEnvVar(index, 'value', e.target.value)}
-                    disabled={status === 'connected'}
-                    placeholder="value"
-                    className="flex-1 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeEnvVar(index)}
-                    disabled={status === 'connected'}
-                    className="w-6 h-6 flex items-center justify-center text-[#ff3b30] hover:text-[#ff6961] hover:bg-[#ff3b30]/10 rounded disabled:opacity-50 disabled:hover:bg-transparent"
-                  >
-                    ×
-                  </button>
                 </div>
-              ))}
-            </div>
+                <div>
+                  <label className="block text-[12px] text-[var(--color-muted)] uppercase mb-1">
+                    {t('inspector.arguments') || 'Arguments'}
+                  </label>
+                  <input
+                    type="text"
+                    value={args}
+                    onChange={(e) => setArgs(e.target.value)}
+                    disabled={status === 'connected'}
+                    placeholder={t('inspector.argumentsPlaceholder')}
+                    className="w-full px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] text-[var(--color-muted)] uppercase mb-1">
+                    {t('inspector.cwd') || 'CWD'}
+                  </label>
+                  <input
+                    type="text"
+                    value={cwd}
+                    onChange={(e) => setCwd(e.target.value)}
+                    disabled={status === 'connected'}
+                    placeholder={t('inspector.cwdPlaceholder') || 'Optional, defaults to home directory'}
+                    className="w-full px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
+                  />
+                </div>
+
+                {/* 环境变量 */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[12px] text-[var(--color-muted)] uppercase">
+                      {t('inspector.envVars') || 'Environment'}
+                    </label>
+                    <button
+                      onClick={addEnvVar}
+                      disabled={status === 'connected'}
+                      className="text-[12px] text-[var(--color-accent)] hover:text-[#5ac8fa] disabled:opacity-50"
+                    >
+                      {t('inspector.add')}
+                    </button>
+                  </div>
+                  {envVars.map((env, index) => (
+                    <div key={index} className="flex gap-1 mb-1">
+                      <input
+                        type="text"
+                        value={env.key}
+                        onChange={(e) => updateEnvVar(index, 'key', e.target.value)}
+                        disabled={status === 'connected'}
+                        placeholder={t('inspector.keyPlaceholder')}
+                        className="flex-1 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
+                      />
+                      <input
+                        type="text"
+                        value={env.value}
+                        onChange={(e) => updateEnvVar(index, 'value', e.target.value)}
+                        disabled={status === 'connected'}
+                        placeholder={t('inspector.valuePlaceholder')}
+                        className="flex-1 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeEnvVar(index)}
+                        disabled={status === 'connected'}
+                        className="w-6 h-6 flex items-center justify-center text-[#ff3b30] hover:text-[#ff6961] hover:bg-[#ff3b30]/10 rounded disabled:opacity-50 disabled:hover:bg-transparent"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                {/* 远程 URL */}
+                <div>
+                  <label className="block text-[12px] text-[var(--color-muted)] uppercase mb-1">
+                    {t('inspector.url') || 'URL'}
+                  </label>
+                  <input
+                    type="text"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    disabled={status === 'connected'}
+                    placeholder={t('inspector.urlPlaceholder')}
+                    className="w-full px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
+                  />
+                </div>
+
+                {/* 远程请求头 */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[12px] text-[var(--color-muted)] uppercase">
+                      {t('inspector.headers') || 'Headers'}
+                    </label>
+                    <button
+                      onClick={addHeader}
+                      disabled={status === 'connected'}
+                      className="text-[12px] text-[var(--color-accent)] hover:text-[#5ac8fa] disabled:opacity-50"
+                    >
+                      {t('inspector.add')}
+                    </button>
+                  </div>
+                  {headers.map((hdr, index) => (
+                    <div key={index} className="flex gap-1 mb-1">
+                      <input
+                        type="text"
+                        value={hdr.key}
+                        onChange={(e) => updateHeader(index, 'key', e.target.value)}
+                        disabled={status === 'connected'}
+                        placeholder={t('inspector.headerNamePlaceholder')}
+                        className="flex-1 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
+                      />
+                      <input
+                        type="text"
+                        value={hdr.value}
+                        onChange={(e) => updateHeader(index, 'value', e.target.value)}
+                        disabled={status === 'connected'}
+                        placeholder={t('inspector.valuePlaceholder')}
+                        className="flex-1 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeHeader(index)}
+                        disabled={status === 'connected'}
+                        className="w-6 h-6 flex items-center justify-center text-[#ff3b30] hover:text-[#ff6961] hover:bg-[#ff3b30]/10 rounded disabled:opacity-50 disabled:hover:bg-transparent"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Tabs: Tools / Resources / Prompts */}
@@ -700,7 +978,7 @@ export default function Inspector() {
         {/* 右侧：工具详情 + 结果 */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {selectedTool ? (
-            <>
+            <React.Fragment key={selectedTool.name}>
               {/* 工具详情头部（固定） */}
               <div className="flex-shrink-0 px-4 pt-4 pb-3 border-b border-[var(--color-border)]">
                 <div className="flex items-center justify-between">
@@ -758,7 +1036,7 @@ export default function Inspector() {
                   </div>
                 )}
               </div>
-            </>
+            </React.Fragment>
           ) : (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
@@ -785,8 +1063,17 @@ export default function Inspector() {
 
       {/* 底部日志区域 */}
       <div className="border-t border-[var(--color-border)] overflow-hidden flex flex-col" style={{ height: logHeight }}>
-        <div className="px-3 py-1.5 text-[12px] text-[var(--color-muted)] uppercase border-b border-[var(--color-border)] flex-shrink-0">
-          {t('inspector.logs') || 'Logs'}
+        <div className="px-3 py-1.5 text-[12px] text-[var(--color-muted)] uppercase border-b border-[var(--color-border)] flex-shrink-0 flex items-center justify-between">
+          <span>{t('inspector.logs') || 'Logs'}</span>
+          <button
+            type="button"
+            onClick={() => clearInspectorLog()}
+            disabled={logs.length === 0}
+            className="text-[11px] normal-case px-2 py-0.5 rounded border border-[var(--color-border)] text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:border-[var(--color-muted)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title={t('inspector.clearLogs') || 'Clear logs'}
+          >
+            {t('inspector.clearLogs') || 'Clear'}
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto p-2 font-mono text-[12px] text-[var(--color-muted2)] bg-[var(--color-surface)]">
           {logs.length === 0 ? (

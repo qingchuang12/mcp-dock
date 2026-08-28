@@ -16,7 +16,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import {app} from 'electron';
+import {app, safeStorage} from 'electron';
 
 // ==================== 加密常量 ====================
 
@@ -146,9 +146,36 @@ export class CacheManager {
     }
 
     /**
-     * 加密数据
+     * 优先使用 Electron safeStorage（OS 级钥匙串，P1-4），不可用时回退 AES（兼容旧缓存）。
+     * 新格式以魔法前缀 `SS1\n` 标记。
      */
+    private static safeStorageAvailable(): boolean {
+        try {
+            return !!safeStorage && safeStorage.isEncryptionAvailable();
+        } catch {
+            return false;
+        }
+    }
+
     private encrypt(plaintext: string): Buffer {
+        if (CacheManager.safeStorageAvailable()) {
+            const enc = safeStorage.encryptString(plaintext);
+            return Buffer.concat([Buffer.from('SS1\n', 'latin1'), enc]);
+        }
+        return this.encryptLegacy(plaintext);
+    }
+
+    private decrypt(ciphertext: Buffer): string {
+        if (ciphertext.length > 4 && ciphertext.subarray(0, 4).toString('latin1') === 'SS1\n') {
+            if (!CacheManager.safeStorageAvailable()) {
+                throw new Error('safeStorage 不可用，无法解密缓存');
+            }
+            return safeStorage.decryptString(ciphertext.subarray(4));
+        }
+        return this.decryptLegacy(ciphertext);
+    }
+
+    private encryptLegacy(plaintext: string): Buffer {
         if (!this.encryptionKey) {
             throw new Error('Encryption key not initialized');
         }
@@ -167,10 +194,7 @@ export class CacheManager {
         return Buffer.concat([iv, authTag, encrypted]);
     }
 
-    /**
-     * 解密数据
-     */
-    private decrypt(ciphertext: Buffer): string {
+    private decryptLegacy(ciphertext: Buffer): string {
         if (!this.encryptionKey) {
             throw new Error('Encryption key not initialized');
         }

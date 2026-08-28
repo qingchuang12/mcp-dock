@@ -18,10 +18,12 @@ import {useIsMac} from '../lib/useIsMac';
 import {pickSkillDescription} from '../lib/localizedText';
 import {parseFrontmatter} from '../../../shared/frontmatter';
 import ClientIcon from '../components/ClientIcon';
+import ClientMultiSelect from '../components/ClientMultiSelect';
 import Modal from '../components/Modal';
 import {toast} from '../components/Toast';
-import {ClockIcon, ForkIcon, StarIcon} from '../components/Icons';
+import {ClockIcon, DownloadIcon, EyeIcon, ForkIcon, StarIcon} from '../components/Icons';
 import WindowControls from '../components/WindowControls';
+import {localizeKey} from '../lib/format';
 
 function formatNumber(count: number): string {
     if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
@@ -79,6 +81,10 @@ interface SkillView {
     category?: string;
     stars?: number;
     forks?: number;
+    /** 浏览量（ModelScope 列表字段 view_count） */
+    viewCount?: number | null;
+    /** 下载量（ModelScope 列表字段 downloads） */
+    downloads?: number | null;
     updatedAt?: string;
     repositoryUrl?: string;
     branch?: string;
@@ -99,7 +105,12 @@ interface SkillMeta {
     descriptions?: Record<string, string>;
     author?: string;
     categoryId?: string;
+    category?: string;
     stars?: number;
+    /** 浏览量（ModelScope view_count） */
+    viewCount?: number | null;
+    /** 下载量（ModelScope downloads） */
+    downloads?: number | null;
     sourceUrl?: string | null;
 }
 
@@ -175,6 +186,8 @@ export default function SkillDetail() {
                 category: undefined,
                 stars: undefined,
                 forks: undefined,
+                viewCount: meta?.viewCount ?? null,
+                downloads: meta?.downloads ?? null,
                 updatedAt: undefined,
                 repositoryUrl: resolved.repository.url,
                 branch: resolved.repository.branch,
@@ -211,6 +224,8 @@ export default function SkillDetail() {
                 category: undefined,
                 stars: undefined,
                 forks: undefined,
+                viewCount: meta?.viewCount ?? null,
+                downloads: meta?.downloads ?? null,
                 updatedAt: undefined,
                 repositoryUrl: remoteDetail.repository.url,
                 branch: remoteDetail.repository.branch,
@@ -274,9 +289,11 @@ export default function SkillDetail() {
             name: meta.name || decodedId,
             author: meta.author || '',
             categoryId: meta.categoryId,
-            category: meta.categoryId,
+            category: meta.category ?? meta.categoryId,
             stars: meta.stars,
             forks: undefined,
+            viewCount: meta.viewCount ?? null,
+            downloads: meta.downloads ?? null,
             updatedAt: undefined,
             repositoryUrl: meta.sourceUrl || '',
             branch: '',
@@ -407,11 +424,32 @@ export default function SkillDetail() {
     const handleUninstall = async () => {
         if (!skillView || installedInClients.length === 0) return;
         if (!confirm(t('skill.confirmUninstall') || 'Are you sure you want to uninstall this skill from all clients?')) return;
+        const targets = installedInClients;
         try {
-            await api.skills.uninstall(skillView.name, installedInClients);
+            await api.skills.uninstall(skillView.name, targets);
             setInstalledInClients([]);
+            // 卸载目标含云端存储：本地暂存区已删除，需在后台把 skills 范围的变更推送到远端，
+            // 否则云端仍残留该 Skill 目录（补齐此前卸载未触发云端同步的缺口）。
+            if (targets.includes('cloud')) {
+                const title = t('syncTasks.pushSkillsTitle') || '上传技能到云端';
+                if (api.syncTasks) {
+                    void api.syncTasks.enqueue('cloud-push', title, 'skills').then(() => {
+                        toast.info(t('library.cloudEnqueued') || '已加入后台同步队列，可在左侧「同步任务」查看');
+                    }).catch((err) => {
+                        toast.error(err?.message || '加入同步队列失败');
+                    });
+                } else {
+                    void api.cloudSync.push().then((res) => {
+                        if (res.ok) toast.success(res.message || '已上传到云端');
+                        else toast.error(res.message || '上传云端失败');
+                    }).catch((err) => {
+                        toast.error(err?.message || '上传云端失败');
+                    });
+                }
+            }
         } catch (error) {
             console.error('Failed to uninstall skill:', error);
+            toast.error('卸载技能失败，请重试');
         }
     };
 
@@ -464,6 +502,11 @@ export default function SkillDetail() {
     const isInstalled = installedInClients.length > 0;
     const hasCategory = !!skillView.categoryId;
     const {bg, text, border} = hasCategory ? getCategoryColor(skillView.categoryId!) : {bg: '', text: '', border: ''};
+    // 分类展示名：优先用 locale 中 slug 的翻译（registry 源），否则回退到列表/详情提供的友好名（如 ModelScope 的中文名），最后回退原 slug。
+    // 注意：不能用 `t('skillCategory.' + id) || fallback`，因为 i18next 在 key 缺失时返回 key 本身（truthy），兜底永远不生效。
+    const catLabel = hasCategory
+        ? localizeKey(t, i18n, `skillCategory.${skillView.categoryId}`, skillView.category ?? skillView.categoryId!)
+        : '';
     const skillDirUrl = skillView.repositoryUrl && skillView.branch && skillView.skillPath
         ? `${skillView.repositoryUrl}/tree/${skillView.branch}/${skillView.skillPath}`
         : skillView.repositoryUrl || '';
@@ -472,7 +515,7 @@ export default function SkillDetail() {
         <div className="flex flex-col h-full bg-[var(--color-bg)]">
             {/* 头部导航（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
             <div
-                className={`flex items-center gap-2 px-4 h-[32px] drag-region relative border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-xl text-[12px] text-[var(--color-muted)] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
+                className={`flex items-center gap-2 px-4 h-[32px] drag-region relative border-b border-[var(--color-border)] bg-[var(--color-bg)] text-[12px] text-[var(--color-muted)] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
                 <button onClick={() => navigate(-1)} className="no-drag hover:text-[var(--color-text)] transition-colors">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/>
@@ -486,7 +529,7 @@ export default function SkillDetail() {
                         {hasCategory && (
                             <>
                                 <span
-                                    className="hover:text-[var(--color-text)] cursor-pointer">{t(`skillCategory.${skillView.categoryId}`) || skillView.category}</span>
+                                    className="hover:text-[var(--color-text)] cursor-pointer">{catLabel}</span>
                                 <span>/</span>
                             </>
                         )}
@@ -531,16 +574,28 @@ export default function SkillDetail() {
                             {hasCategory && (
                                 <span
                                     className={`inline-block px-2 py-1 rounded-md text-[12px] font-medium border ${bg} ${text} ${border}`}>
-                  {t(`skillCategory.${skillView.categoryId}`) || skillView.category}
+                  {catLabel}
                 </span>
                             )}
 
-                            {(skillView.stars != null || skillView.forks != null || skillView.updatedAt) && (
-                                <div className="flex items-center gap-4 mt-4 text-[13px] text-[var(--color-muted2)]">
+                            {(skillView.stars != null || skillView.forks != null || skillView.updatedAt || skillView.viewCount != null || skillView.downloads != null) && (
+                                <div className="flex items-center gap-4 mt-4 text-[13px] text-[var(--color-muted2)] flex-wrap">
                                     {skillView.stars != null && (
                                         <span className="flex items-center gap-1">
                       <StarIcon className="w-4 h-4 text-yellow-400"/>
                                             {formatNumber(skillView.stars)} Stars
+                    </span>
+                                    )}
+                                    {skillView.viewCount != null && skillView.viewCount > 0 && (
+                                        <span className="flex items-center gap-1">
+                      <EyeIcon className="w-4 h-4"/>
+                                            {formatNumber(skillView.viewCount)} {t('detail.views') || 'views'}
+                    </span>
+                                    )}
+                                    {skillView.downloads != null && skillView.downloads > 0 && (
+                                        <span className="flex items-center gap-1">
+                      <DownloadIcon className="w-4 h-4"/>
+                                            {formatNumber(skillView.downloads)} {t('store.downloads') || 'downloads'}
                     </span>
                                     )}
                                     {skillView.forks != null && (
@@ -710,12 +765,16 @@ export default function SkillDetail() {
                                         <span className="text-[var(--color-text)]">{skillView.branch}</span>
                                     </div>
                                 )}
-                                {(skillView.stars != null || skillView.forks != null) && (
+                                {(skillView.stars != null || skillView.forks != null || skillView.viewCount != null || skillView.downloads != null) && (
                                     <div className="flex justify-between">
                                         <span className="text-[var(--color-muted)]">Community</span>
                                         <span className="text-[var(--color-text)] flex items-center gap-1">
                       {skillView.stars != null && <><StarIcon
                           className="w-3 h-3 text-yellow-400"/>{formatNumber(skillView.stars)}</>}
+                                            {skillView.viewCount != null && skillView.viewCount > 0 && <><EyeIcon
+                          className="w-3 h-3 ml-1"/>{formatNumber(skillView.viewCount)}</>}
+                                            {skillView.downloads != null && skillView.downloads > 0 && <><DownloadIcon
+                          className="w-3 h-3 ml-1"/>{formatNumber(skillView.downloads)}</>}
                                             {skillView.forks != null && <><ForkIcon
                                                 className="w-3 h-3 text-[var(--color-muted)] ml-1"/>{formatNumber(skillView.forks)}</>}
                     </span>
@@ -799,36 +858,20 @@ export default function SkillDetail() {
                     <div>
                         <label
                             className="block text-[12px] font-medium text-[var(--color-text)] mb-2">{t('detail.selectClients')}</label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {clients.filter(c => c.installed && c.supportsSkills).map(client => {
-                                const isSelected = selectedClients.includes(client.id as SkillClientType);
-                                const isAlreadyInstalled = installedInClients.includes(client.id as SkillClientType);
-                                return (
-                                    <button key={client.id}
-                                            onClick={() => !isAlreadyInstalled && toggleClient(client.id as SkillClientType)}
-                                            disabled={isAlreadyInstalled}
-                                            className={`flex items-center gap-2 p-3 rounded-md border text-left transition-colors
-                      ${isAlreadyInstalled ? 'bg-[#34c759]/10 border-[#34c759]/30 text-[#34c759]'
-                                                : isSelected ? 'bg-[var(--color-accent)]/10 border-[var(--color-accent)]/30 text-[var(--color-accent)]'
-                                                    : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[#636366]'}`}>
-                                        <ClientIcon clientId={client.id} size={20}/>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="text-[12px] font-medium">{client.name}</div>
-                                            <div className="text-[12px] opacity-60">
-                                                {isAlreadyInstalled ? t('detail.alreadyInstalled') : t('detail.available')}
-                                            </div>
-                                        </div>
-                                        {(isSelected || isAlreadyInstalled) && (
-                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                                <path fillRule="evenodd"
-                                                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                                      clipRule="evenodd"/>
-                                            </svg>
-                                        )}
-                                    </button>
-                                );
-                            })}
-                        </div>
+                        <ClientMultiSelect
+                            clients={clients.filter(c => c.installed && c.supportsSkills)}
+                            selected={selectedClients}
+                            onToggle={(id) => toggleClient(id as SkillClientType)}
+                            className="grid grid-cols-2 gap-2"
+                            iconSize={20}
+                            check="check"
+                            checkClassName="w-4 h-4"
+                            variant="install"
+                            stackedSublabel
+                            disabledIds={installedInClients}
+                            sublabel={{installed: t('detail.alreadyInstalled'), available: t('detail.available')}}
+                            unselectedClass="bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[#636366]"
+                        />
                     </div>
 
                     {clients.filter(c => c.installed && c.supportsSkills).length === 0 && (

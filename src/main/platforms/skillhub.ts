@@ -24,9 +24,9 @@ const SORT_MAP: Record<string, string> = {
     relevance: 'score',
     stars: 'stars',
     downloads: 'downloads',
-    newest: 'created_at',
+    installs: 'installs',
+    newest: 'updated_at',
     updated: 'updated_at',
-    name: 'name',
 };
 
 /** SkillHub 12 大类 + 子类（来自 doc 对接文档）。 */
@@ -130,12 +130,14 @@ const SKILLHUB_CATEGORIES: CategoryNode[] = [
     {id: 'other', name: '其他', children: [{id: 'other-misc', name: '未分类'}]},
 ];
 
+// 按文档 5 档对齐：score/stars/downloads/installs/updated_at
+// 增补 installs 与 stars 两档，删除文档不存在的 name 档
 const SKILLHUB_SORTS: SortOption[] = [
     {id: 'relevance', name: '相关度', field: 'score', order: 'desc'},
+    {id: 'stars', name: '星标最多', field: 'stars', order: 'desc'},
     {id: 'downloads', name: '下载最多', field: 'downloads', order: 'desc'},
-    {id: 'newest', name: '最新发布', field: 'created_at', order: 'desc'},
+    {id: 'installs', name: '安装最多', field: 'installs', order: 'desc'},
     {id: 'updated', name: '最近更新', field: 'updated_at', order: 'desc'},
-    {id: 'name', name: '名称', field: 'name', order: 'asc'},
 ];
 
 interface RawSkillhub {
@@ -160,7 +162,7 @@ interface RawSkillhub {
     repo?: string;
 }
 
-function mapEntry(raw: RawSkillhub): PlatformSkillListItem {
+export function mapEntry(raw: RawSkillhub): PlatformSkillListItem {
     const desc = raw.description_zh || raw.description || raw.long_description_zh || raw.long_description || '';
     const id = raw.slug;
     const sourceUrl = raw.upstream_url || `https://skillhub.cn/skills/${raw.slug}`;
@@ -221,7 +223,7 @@ export const skillhubAdapter: PlatformAdapter = {
             totalDurationMs: Date.now() - started,
             hint: probe.matchedUrl
                 ? undefined
-                : buildHint('skillhub', 'SkillHub', probe.attempts, safePage),
+                : buildHint('skillhub', probe.attempts, safePage),
         });
 
         if (!probe.matchedUrl) {

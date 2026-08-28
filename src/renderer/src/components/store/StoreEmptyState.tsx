@@ -1,5 +1,6 @@
 import {useTranslation} from 'react-i18next';
-import type {StoreResourceType} from '../hooks/storeTypes';
+import {useNavigate} from 'react-router-dom';
+import type {StoreResourceType} from '../../hooks/storeTypes';
 
 interface StoreEmptyStateProps {
   resourceType: StoreResourceType;
@@ -19,6 +20,7 @@ export default function StoreEmptyState({
   connName,
 }: StoreEmptyStateProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
 
   return (
     <div className="flex flex-col items-center justify-center h-full px-8">
@@ -35,23 +37,16 @@ export default function StoreEmptyState({
         renderNormalEmpty(resourceType, isUnsupported, connectionsCount, mcpConnId, connName, t)
       )}
 
-      {resourceType === 'skills' && connectionsCount === 0 ? (
+      {((resourceType === 'mcp') || (resourceType === 'skills' && connectionsCount === 0)) ? (
         <button
-          onClick={() => { window.location.hash = '#/settings'; }}
-          className="px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent)]/80 text-white text-[13px] font-medium rounded-lg transition-colors"
-        >
-          {t('store.goToSettings')}
-        </button>
-      ) : resourceType === 'mcp' && mcpConnId ? (
-        <button
-          onClick={() => { window.location.hash = '#/settings'; }}
+          onClick={() => navigate('/settings')}
           className="px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent)]/80 text-white text-[13px] font-medium rounded-lg transition-colors"
         >
           {t('store.goToSettings')}
         </button>
       ) : (
         <button
-          onClick={() => { window.location.hash = '#/library'; }}
+          onClick={() => navigate('/library')}
           className="px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent)]/80 text-white text-[13px] font-medium rounded-lg transition-colors"
         >
           {t('store.goToLibrary', 'Go to Library')}

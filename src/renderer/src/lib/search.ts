@@ -91,6 +91,10 @@ export function filterServersByCategory(
 ): ServerListItem[] {
   if (!categoryId || categoryId === 'all') return servers;
   return servers.filter(s => {
+    // 优先用 categories 字段精确匹配，不存在时回退到关键词推断
+    if (s.categories && s.categories.length > 0) {
+      return s.categories.includes(categoryId);
+    }
     const cat = inferSkillCategoryId(s.displayName);
     return cat === categoryId;
   });
@@ -100,7 +104,7 @@ export function filterServersByCategory(
  * 对 MCP 服务器列表排序。
  * - relevance（默认）：保持原序
  * - stars：按星标数降序（无星标数据时保持原序）
- * - updated：按更新时间降序（内置源无此字段，保持原序）
+ * - updated：按更新时间降序（lastCommitAt / updatedAt，缺失者排末尾）
  */
 export function sortServers(
   servers: ServerListItem[],
@@ -110,6 +114,15 @@ export function sortServers(
   const sorted = [...servers];
   if (sortId === 'stars') {
     sorted.sort((a, b) => (Number(b.stars) || 0) - (Number(a.stars) || 0));
+  } else if (sortId === 'updated') {
+    sorted.sort((a, b) => {
+      const timeOf = (s: ServerListItem) => {
+        const raw = s.lastCommitAt ?? s.updatedAt;
+        const t = raw ? new Date(raw).getTime() : NaN;
+        return Number.isNaN(t) ? 0 : t;
+      };
+      return timeOf(b) - timeOf(a);
+    });
   }
   return sorted;
 }

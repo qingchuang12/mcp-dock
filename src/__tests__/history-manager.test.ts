@@ -88,6 +88,96 @@ describe('listBackups', () => {
   });
 });
 
+describe('getDiff (相对上一条备份)', () => {
+  const writeBackup = async (ts: string, clients: Record<string, Record<string, any>>) => {
+    const data = {
+      timestamp: ts,
+      clients: Object.fromEntries(
+        Object.entries(clients).map(([id, mcpServers]) => [
+          id,
+          { config: { mcpServers }, serverCount: Object.keys(mcpServers).length },
+        ])
+      ),
+      skills: {},
+    };
+    await fs.writeFile(
+      path.join(testBackupDir, `backup-${ts.replace(/[:.]/g, '-')}.json`),
+      JSON.stringify(data),
+      'utf-8'
+    );
+  };
+
+  it('应显示相对上一条备份的变更（安装场景）', async () => {
+    // A：cursor 已有 s1；B：cursor 又装了 s2（B 是变更后的状态）
+    await writeBackup('2025-01-01T00:00:00.000Z', { cursor: { 's1': { command: 'node' } } });
+    await writeBackup('2025-01-02T00:00:00.000Z', {
+      cursor: { 's1': { command: 'node' }, 's2': { command: 'node' } },
+    });
+
+    const diff = await historyManager.getDiff('2025-01-02T00:00:00.000Z');
+    expect(diff).not.toBeNull();
+    expect(diff!.added).toEqual(['s2']);       // 本次只新增了 s2
+    expect(diff!.removed).toEqual([]);
+    expect(diff!.modified).toEqual([]);
+  });
+
+  it('应显示相对上一条备份的变更（从某客户端移除场景）', async () => {
+    // A：s1 装在 cursor + vscode；B：从 cursor 移除 s1
+    await writeBackup('2025-03-01T00:00:00.000Z', {
+      cursor: { 's1': { command: 'node' } },
+      vscode: { 's1': { command: 'node' } },
+    });
+    await writeBackup('2025-03-02T00:00:00.000Z', {
+      cursor: {},
+      vscode: { 's1': { command: 'node' } },
+    });
+
+    const diff = await historyManager.getDiff('2025-03-02T00:00:00.000Z');
+    expect(diff).not.toBeNull();
+    expect(diff!.removed).toEqual(['s1']);      // 本次从 cursor 移除了 s1
+    expect(diff!.added).toEqual([]);
+    expect(diff!.modified).toEqual([]);
+  });
+
+  it('无更早备份时以空基线比较（全部视为新增）', async () => {
+    await writeBackup('2025-04-01T00:00:00.000Z', { cursor: { 's1': { command: 'node' } } });
+    const diff = await historyManager.getDiff('2025-04-01T00:00:00.000Z');
+    expect(diff!.added).toEqual(['s1']);
+    expect(diff!.removed).toEqual([]);
+  });
+});
+
+describe('backup 去重（避免空变更历史）', () => {
+  const install = (map: Record<string, Record<string, any>>) => ({
+    getClientTypes: () => ['cursor'],
+    getSkillsPath: () => path.join(testBackupDir, 'no-such-skills'),
+    readConfig: async (client: string) => ({
+      mcpServers: client === 'cursor' ? map[client] || {} : {},
+    }),
+  });
+
+  it('无实际变更（重复创建已存在的 server）时应跳过、不创建空变更备份', async () => {
+    (historyManager as any).configManager = install({ cursor: { 's1': { command: 'node' } } });
+    const f1 = await (historyManager as any).backup();
+    expect(f1).not.toBeNull();
+    const f2 = await (historyManager as any).backup(); // 与上一条完全一致
+    expect(f2).toBeNull();
+    const backups = await historyManager.listBackups();
+    expect(backups).toHaveLength(1);
+  });
+
+  it('状态发生变化时仍应创建新备份', async () => {
+    const state = { cursor: { 's1': { command: 'node' } } };
+    (historyManager as any).configManager = install(state);
+    await (historyManager as any).backup();
+    state.cursor['s2'] = { command: 'node' }; // 新增一个 server
+    const f2 = await (historyManager as any).backup();
+    expect(f2).not.toBeNull();
+    const backups = await historyManager.listBackups();
+    expect(backups).toHaveLength(2);
+  });
+});
+
 describe('clearAll', () => {
   it('应清空所有备份', async () => {
     for (let i = 0; i < 3; i++) {

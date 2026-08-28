@@ -1,6 +1,6 @@
 /**
  * ClawHub 平台适配器。
- * 接口形态：Convex RPC，POST https://api.clawhub.ai/api/mutation/listSkills 等端点。
+ * 接口形态：Convex RPC，POST https://wry-manatee-359.convex.cloud/api/action。
  * 离线回退：若联网失败，尝试读取内置离线索引（data/clawhub.json）。
  */
 import type {
@@ -15,36 +15,49 @@ import {buildHint, extractPageInfo, setDiagnostics} from './shared';
 import * as path from 'path';
 import * as fs from 'fs';
 
+// 文档 14 类分类（integrations/automation/research 等）
 const CLAWHUB_CATEGORIES: CategoryNode[] = [
-    {id: 'devtools', name: '开发工具'},
-    {id: 'coding', name: '代码助手'},
-    {id: 'data', name: '数据处理'},
-    {id: 'search', name: '搜索检索'},
-    {id: 'productivity', name: '效率办公'},
-    {id: 'writing', name: '写作内容'},
-    {id: 'design', name: '设计创意'},
-    {id: 'cloud', name: '云与运维'},
+    {id: 'integrations', name: '集成'},
+    {id: 'automation', name: '自动化'},
+    {id: 'research', name: '研究'},
+    {id: 'development', name: '开发'},
+    {id: 'productivity', name: '效率'},
+    {id: 'communication', name: '沟通'},
+    {id: 'creative', name: '创意'},
+    {id: 'knowledge', name: '知识'},
+    {id: 'agents', name: '智能体'},
+    {id: 'operations', name: '运维'},
+    {id: 'security', name: '安全'},
+    {id: 'finance', name: '金融'},
+    {id: 'lifestyle', name: '生活'},
     {id: 'other', name: '其他'},
 ];
 
+// API 不支持服务端排序，仅保留客户端排序选项（按 score / downloads）
 const CLAWHUB_SORTS: SortOption[] = [
     {id: 'relevance', name: '相关度', field: 'relevance', order: 'desc'},
-    {id: 'stars', name: '星标最多', field: 'stars', order: 'desc'},
     {id: 'downloads', name: '下载最多', field: 'downloads', order: 'desc'},
-    {id: 'newest', name: '最新', field: 'createdAt', order: 'desc'},
+    {id: 'updated', name: '最近更新', field: 'updatedAt', order: 'desc'},
 ];
 
-const CLAWHUB_DEPLOY = 'api.clawhub.ai';
-const CLAWHUB_BASE = 'https://api.clawhub.ai';
+// Convex 部署地址（标准域名，非 api.clawhub.ai）
+const CLAWHUB_BASE = 'https://wry-manatee-359.convex.cloud';
+// 真实可用 RPC 方法名（其余猜测路径一律 500）
+const CLAWHUB_RPC_PATH = 'search:searchSkills';
+const CLAWHUB_PAGE_LIMIT = 100;
 
 interface RawClawhub {
     _id?: string;
-    skillId?: string;
+    id?: string;
+    slug?: string;
     name?: string;
     title?: string;
+    displayName?: string;
     description?: string;
     summary?: string;
+    native?: {skill?: {summary?: string; categories?: string[]}; categories?: string[]};
     tags?: string[];
+    score?: number;
     stars?: number;
     downloads?: number;
     iconUrl?: string;
@@ -56,27 +69,34 @@ interface RawClawhub {
     categories?: string[];
 }
 
-function mapEntry(raw: RawClawhub): PlatformSkillListItem {
-    const id = raw.skillId || raw._id || raw.name || '';
-    const desc = raw.summary || raw.description || '';
+export function mapEntry(raw: RawClawhub): PlatformSkillListItem {
+    const id = raw.slug || raw.id || raw._id || raw.name || '';
+    const desc = raw.summary || raw.native?.skill?.summary || raw.description || '';
+    const cats: string[] = raw.native?.skill?.categories || raw.native?.categories || raw.categories || raw.tags || [];
     const repo = raw.repoUrl || raw.repo || `https://clawhub.ai/skills/${id}`;
     return {
         id,
-        name: raw.name || raw.title || id,
+        name: raw.displayName || raw.name || raw.title || id,
         description: desc,
         source: 'clawhub',
         sourceUrl: repo,
         downloadUrl: repo,
         stars: typeof raw.stars === 'number' ? raw.stars : undefined,
         updatedAt: raw.updatedAt || raw.createdAt,
-        category: Array.isArray(raw.tags) ? raw.tags[0] : Array.isArray(raw.categories) ? raw.categories[0] : undefined,
-        extra: {iconUrl: raw.iconUrl, author: raw.author, downloads: raw.downloads},
+        category: Array.isArray(cats) && cats.length > 0 ? cats[0] : undefined,
+        extra: {
+            iconUrl: raw.iconUrl,
+            author: raw.author,
+            downloads: raw.downloads,
+            score: raw.score,
+            categories: cats,
+        },
     };
 }
 
 async function loadOffline(): Promise<RawClawhub[]> {
     try {
-        const p = path.join(__dirname, '..', 'platforms', 'clawhub', 'data', 'clawhub.json');
+        const p = path.join(__dirname, 'clawhub', 'data', 'clawhub.json');
         if (fs.existsSync(p)) {
             const json = JSON.parse(fs.readFileSync(p, 'utf8'));
             return Array.isArray(json) ? json : json?.skills || [];
@@ -87,23 +107,35 @@ async function loadOffline(): Promise<RawClawhub[]> {
     return [];
 }
 
+/** Convex RPC 调用：POST /api/action，body 含 path/format/args。 */
 async function convexQuery(
-    url: string,
+    base: string,
     body: Record<string, unknown>,
     timeoutMs = 15000
 ): Promise<{ok: boolean; json?: any; reason?: string}> {
     const controller = new AbortController();
     const t = setTimeout(() => (controller as any).abort(), timeoutMs);
     try {
-        const res = await fetch(url, {
+        const res = await fetch(`${base}/api/action`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'},
+            headers: {
+                'Content-Type': 'application/json',
+                'Convex-Client': 'npm-1.43.0',
+                'Origin': 'https://clawhub.ai',
+                'Referer': 'https://clawhub.ai/',
+                'User-Agent': 'Mozilla/5.0',
+            },
             body: JSON.stringify(body),
             signal: (controller as any).signal,
         });
         if (!res.ok) return {ok: false, reason: `HTTP ${res.status}`};
         const json = await res.json();
-        return {ok: true, json};
+        // 响应结构：{ status:"success", value:[...] }，value 可能是 { skills:[...] }
+        const value = json?.status === 'success' ? json.value : json;
+        const arr: unknown[] = Array.isArray(value)
+            ? value
+            : (Array.isArray(value?.skills) ? value.skills : []);
+        return {ok: true, json: arr};
     } catch (e) {
         const err = e as Error;
         return {ok: false, reason: err.name === 'AbortError' ? 'timeout' : err.message};
@@ -117,63 +149,94 @@ export const clawhubAdapter: PlatformAdapter = {
     name: 'ClawHub',
 
     async searchSkills(params: PlatformSearchParams): Promise<PlatformSearchPage> {
-        const {query, page, pageSize, baseUrl} = params;
+        const {query, page, pageSize, baseUrl, category, sort} = params;
         const safePage = Math.max(1, page);
-        const deploy = baseUrl ? baseUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '') : CLAWHUB_DEPLOY;
-        const base = `https://${deploy}`;
+        // 单一真实 RPC 地址（不走 probeEndpoints，不依赖 baseUrl）
+        const base = baseUrl ? baseUrl.replace(/\/+$/, '') : CLAWHUB_BASE;
         const started = Date.now();
 
-        // ClawHub 的 Convex 列表端点（query/mutation 命名依部署而异）
-        const endpoints = [
-            `${base}/api/query/listSkills`,
-            `${base}/api/mutation/listSkills`,
-            `${base}/api/query/searchSkills`,
-            `${base}/api/query/getSkills`,
-        ];
-
-        const attempts: any[] = [];
-        for (const ep of endpoints) {
-            const r = await convexQuery(ep, {
-                query: query || '',
-                page: safePage,
-                limit: pageSize,
-            });
-            attempts.push({
-                url: ep,
-                ok: r.ok,
-                durationMs: Date.now() - started,
-                reason: r.ok ? undefined : r.reason,
-                message: r.ok ? undefined : r.reason,
-            });
-            if (r.ok && Array.isArray(r.json)) {
-                const items = r.json.map(mapEntry);
-                const pageInfo = extractPageInfo({data: {total: null}}, safePage, pageSize, items.length);
-                setDiagnostics('clawhub', {
-                    platform: 'clawhub',
-                    baseUrl,
-                    query,
-                    page: safePage,
-                    authorized: false,
-                    attempts,
-                    matchedUrl: ep,
-                    totalDurationMs: Date.now() - started,
-                });
-                return {items, pageInfo, pagingMode: 'client', complete: false};
-            }
+        // query 永远非空（空串静默返回空数组）；分类浏览传默认 a
+        const q = query && query.trim() ? query.trim() : 'a';
+        // 全分类时省略 categorySlug（传空串恒返回 0 条）
+        const args: Record<string, unknown> = {
+            query: q,
+            limit: Math.min(pageSize, CLAWHUB_PAGE_LIMIT),
+            highlightedOnly: false,
+        };
+        if (category && category !== 'all') {
+            args.categorySlug = category;
         }
 
-        // 联网全部失败：回退离线索引
+        const attempts: any[] = [];
+        const r = await convexQuery(base, {
+            path: CLAWHUB_RPC_PATH,
+            format: 'convex_encoded_json',
+            args: [args],
+        });
+        attempts.push({
+            url: `${base}/api/action`,
+            ok: r.ok,
+            durationMs: Date.now() - started,
+            reason: r.ok ? undefined : r.reason,
+            message: r.ok ? undefined : r.reason,
+        });
+
+        if (r.ok && Array.isArray(r.json)) {
+            let items = r.json.map(mapEntry);
+            // 客户端分类过滤（categorySlug 已带，兜底再筛一遍）
+            if (category && category !== 'all') {
+                items = items.filter(i => {
+                    const cats = (i.extra as any)?.categories || [];
+                    return cats.includes(category);
+                });
+            }
+            // 客户端排序
+            if (sort && sort !== 'relevance') {
+                if (sort === 'downloads') {
+                    items.sort((a, b) => ((b.extra as any)?.downloads || 0) - ((a.extra as any)?.downloads || 0));
+                } else if (sort === 'updated') {
+                    items.sort((a, b) => {
+                        const da = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+                        const db = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+                        return db - da;
+                    });
+                } else if (sort === 'relevance') {
+                    items.sort((a, b) => ((b.extra as any)?.score || 0) - ((a.extra as any)?.score || 0));
+                }
+            }
+            // 在线 RPC 暂无游标分页：当本页装满（返回条数达到 limit）时推断还有下一页，
+            // 允许翻第二页（否则比离线分支能力更弱，P1-18）。total 未知仍置 null。
+            const limit = Math.min(pageSize, CLAWHUB_PAGE_LIMIT);
+            const rawLen = r.json.length;
+            const pageInfo = extractPageInfo({data: {}}, safePage, pageSize, items.length);
+            pageInfo.total = null;
+            pageInfo.totalPages = null;
+            pageInfo.hasMore = rawLen >= limit;
+            setDiagnostics('clawhub', {
+                platform: 'clawhub',
+                baseUrl,
+                query,
+                page: safePage,
+                authorized: false,
+                attempts,
+                matchedUrl: `${base}/api/action`,
+                totalDurationMs: Date.now() - started,
+            });
+            return {items, pageInfo, pagingMode: 'client', complete: false};
+        }
+
+        // 联网失败：回退离线索引
         const offline = await loadOffline();
         if (offline.length > 0) {
-            const q = query.trim().toLowerCase();
-            const filtered = q
-                ? offline.filter(
+            const ql = q.toLowerCase();
+            const filtered = ql === 'a'
+                ? offline
+                : offline.filter(
                       s =>
-                          (s.name || '').toLowerCase().includes(q) ||
-                          (s.title || '').toLowerCase().includes(q) ||
-                          (s.description || '').toLowerCase().includes(q)
-                  )
-                : offline;
+                          (s.name || '').toLowerCase().includes(ql) ||
+                          (s.title || '').toLowerCase().includes(ql) ||
+                          (s.description || '').toLowerCase().includes(ql)
+                  );
             const start = (safePage - 1) * pageSize;
             const slice = filtered.slice(start, start + pageSize);
             setDiagnostics('clawhub', {
@@ -187,8 +250,26 @@ export const clawhubAdapter: PlatformAdapter = {
                 totalDurationMs: Date.now() - started,
                 hint: '在线接口不可达，已回退内置离线索引。',
             });
-            return {
-                items: slice.map(mapEntry),
+            let offlineItems = slice.map(mapEntry);
+                if (category && category !== 'all') {
+                    offlineItems = offlineItems.filter(i => {
+                        const cats = (i.extra as any)?.categories || [];
+                        return cats.includes(category);
+                    });
+                }
+                if (sort && sort !== 'relevance') {
+                    if (sort === 'downloads') {
+                        offlineItems.sort((a, b) => ((b.extra as any)?.downloads || 0) - ((a.extra as any)?.downloads || 0));
+                    } else if (sort === 'updated') {
+                        offlineItems.sort((a, b) => {
+                            const da = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+                            const db = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+                            return db - da;
+                        });
+                    }
+                }
+                return {
+                items: offlineItems,
                 pageInfo: {
                     page: safePage,
                     pageSize,
@@ -210,15 +291,15 @@ export const clawhubAdapter: PlatformAdapter = {
             attempts,
             matchedUrl: null,
             totalDurationMs: Date.now() - started,
-            hint: buildHint('clawhub', 'ClawHub', attempts, safePage),
+            hint: buildHint('clawhub', attempts, safePage),
         });
         return {items: [], pageInfo: {page: safePage, pageSize, total: null, totalPages: null, hasMore: false}};
     },
 
     getFacets() {
-        // 若离线索引存在，聚合其 tags 作为分类；否则用默认分类
+        // 以文档 14 类为准；若离线索引存在，将其 tags 作为补充合并（避免分类过滤与列表结果不一致）
         try {
-            const p = path.join(__dirname, '..', 'platforms', 'clawhub', 'data', 'clawhub.json');
+            const p = path.join(__dirname, 'clawhub', 'data', 'clawhub.json');
             if (fs.existsSync(p)) {
                 const json = JSON.parse(fs.readFileSync(p, 'utf8'));
                 const raw: RawClawhub[] = Array.isArray(json) ? json : json?.skills || [];
@@ -227,12 +308,13 @@ export const clawhubAdapter: PlatformAdapter = {
                     for (const t of r.tags || []) tagCount.set(t, (tagCount.get(t) || 0) + 1);
                 }
                 if (tagCount.size > 0) {
-                    const cats: CategoryNode[] = [...tagCount.entries()].map(([id, count]) => ({
-                        id,
-                        name: id,
-                        count,
-                    }));
-                    return {categories: cats, sortOptions: CLAWHUB_SORTS, supportsSubcategories: false};
+                    const baseMap = new Map(CLAWHUB_CATEGORIES.map(c => [c.id, c]));
+                    for (const [id, count] of tagCount) {
+                        if (baseMap.has(id)) {
+                            baseMap.get(id)!.count = (baseMap.get(id)!.count || 0) + count;
+                        }
+                    }
+                    return {categories: [...baseMap.values()], sortOptions: CLAWHUB_SORTS, supportsSubcategories: false};
                 }
             }
         } catch {
@@ -241,3 +323,4 @@ export const clawhubAdapter: PlatformAdapter = {
         return {categories: CLAWHUB_CATEGORIES, sortOptions: CLAWHUB_SORTS, supportsSubcategories: false};
     },
 };
+

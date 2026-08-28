@@ -44,10 +44,10 @@ export function platformName(platform: SupportedPlatform): string {
 }
 
 /** 获取平台分类/排序/来源等面元数据（无 adapter 或 adapter 未实现时返回空 facets）。 */
-export async function getFacets(platform: SupportedPlatform): Promise<PlatformFacets> {
+export async function getFacets(platform: SupportedPlatform, resourceType?: 'mcp' | 'skills'): Promise<PlatformFacets> {
     const adapter = getAdapter(platform);
     if (!adapter || !adapter.getFacets) {
         return {categories: [], sortOptions: [], supportsSubcategories: false};
     }
-    return adapter.getFacets();
+    return adapter.getFacets(resourceType);
 }

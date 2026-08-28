@@ -13,20 +13,23 @@ import {
     type InstalledSkill,
     type McpServerConfig,
     type SkillClientType,
-    type SkillCloudConflict,
     useElectronAPI
 } from '../lib/electron';
 import {useIsMac} from '../lib/useIsMac';
 import {useStore} from '../store/useStore';
 import Modal from '../components/Modal';
-import ClientIcon from '../components/ClientIcon';
 import AddServerModal from '../components/AddServerModal';
 import {CreateSkillModal} from '../components/CreateSkillModal';
 import {toast} from '../components/Toast';
 import WindowControls from '../components/WindowControls';
 import {type DataSource, fetchServerList, type ServerListItem} from '../api/registry';
+import LibraryMcpList from '../components/LibraryMcpList';
+import LibrarySkillList from '../components/LibrarySkillList';
+import ClientPickerModal from '../components/ClientPickerModal';
+import UninstallModal from '../components/UninstallModal';
+import {useCloudUpload} from '../hooks/useCloudUpload';
 
-interface InstalledServer {
+export interface InstalledServer {
     id: string;
     config: McpServerConfig;
     clients: AnyClientId[];
@@ -77,105 +80,8 @@ function isMcpDockInstalled(config: McpServerConfig, serverId: string, serverLis
     return {isMcpDock: false, source: 'official'};
 }
 
-// 从仓库 URL 提取 GitHub 用户名
-function extractGitHubUsername(repoUrl: string | null | undefined): string | null {
-    if (!repoUrl) return null;
-    const match = repoUrl.match(/github\.com\/([^\/]+)/);
-    return match ? match[1] : null;
-}
-
-// 服务器图标组件
-function ServerIcon({server, serverInfo}: { server: InstalledServer; serverInfo?: ServerListItem }) {
-    const [imgError, setImgError] = useState(false);
-    const [avatarError, setAvatarError] = useState(false);
-
-    const displayName = serverInfo?.displayName || server.id.split('/').pop() || server.id;
-    const initial = displayName.charAt(0).toUpperCase();
-
-    // 获取 GitHub 用户名
-    const repoUrl = (serverInfo as any)?.repository?.url;
-    const githubUsername = extractGitHubUsername(repoUrl);
-
-    const colors = [
-        'bg-blue-500',
-        'bg-purple-500',
-        'bg-green-500',
-        'bg-orange-500',
-        'bg-pink-500',
-        'bg-cyan-500',
-    ];
-    const colorIndex = displayName.charCodeAt(0) % colors.length;
-
-    // 优先使用服务器图标
-    if (serverInfo?.iconUrl && !imgError) {
-        return (
-            <img
-                src={serverInfo.iconUrl}
-                alt={displayName}
-                className="w-9 h-9 rounded-lg object-cover"
-                onError={() => setImgError(true)}
-            />
-        );
-    }
-
-    // 其次使用 GitHub 头像
-    if (githubUsername && !avatarError) {
-        return (
-            <img
-                src={`https://avatars.githubusercontent.com/${githubUsername}`}
-                alt={displayName}
-                className="w-9 h-9 rounded-lg object-cover"
-                onError={() => setAvatarError(true)}
-            />
-        );
-    }
-
-    // 最后使用首字母图标
-    return (
-        <div
-            className={`w-9 h-9 rounded-lg ${colors[colorIndex]} flex items-center justify-center text-[var(--color-text)] font-semibold text-sm`}>
-            {initial}
-        </div>
-    );
-}
-
-// Skill 图标组件
-function SkillIcon({skill}: { skill: InstalledSkill }) {
-    const [avatarError, setAvatarError] = useState(false);
-
-    // 从 source 中提取作者
-    const author = skill.source?.id?.split('/')[0] || skill.name.charAt(0);
-    const initial = skill.name.charAt(0).toUpperCase();
-
-    const colors = [
-        'bg-blue-500',
-        'bg-purple-500',
-        'bg-green-500',
-        'bg-orange-500',
-        'bg-pink-500',
-        'bg-cyan-500',
-    ];
-    const colorIndex = skill.name.charCodeAt(0) % colors.length;
-
-    // 使用作者 GitHub 头像
-    if (author && !avatarError) {
-        return (
-            <img
-                src={`https://avatars.githubusercontent.com/${author}`}
-                alt={skill.name}
-                className="w-9 h-9 rounded-lg object-cover"
-                onError={() => setAvatarError(true)}
-            />
-        );
-    }
-
-    return (
-        <div
-            className={`w-9 h-9 rounded-lg ${colors[colorIndex]} flex items-center justify-center text-[var(--color-text)] font-semibold text-sm`}>
-            {initial}
-        </div>
-    );
-}
+// 服务器 / Skill 图标组件已抽到 components/ServerIcon.tsx 与 components/SkillIcon.tsx
+// （P2-2），此处不再内联定义。
 
 export default function Library() {
     const {t} = useTranslation();
@@ -223,6 +129,7 @@ export default function Library() {
     const [hasLoaded, setHasLoaded] = useState(false);
     const [editingServer, setEditingServer] = useState<InstalledServer | null>(null);
     const [editedConfig, setEditedConfig] = useState('');
+    const [editingServerId, setEditingServerId] = useState('');
     const [syncingServer, setSyncingServer] = useState<InstalledServer | null>(null);
     const [selectedSyncClients, setSelectedSyncClients] = useState<AnyClientId[]>([]);
     // MCP Server 多选 + 批量同步（多客户端复用）
@@ -263,12 +170,8 @@ export default function Library() {
     const [selectedUninstallClients, setSelectedUninstallClients] = useState<string[]>([]);
 
     // 云同步：仅在设置里配置好 Git / SFTP 后，'cloud' 才会作为已安装客户端出现
-    const [cloudBusy, setCloudBusy] = useState<'push' | 'pull' | null>(null);
-    const [cloudUploadConfirmOpen, setCloudUploadConfirmOpen] = useState(false);
-    // 云端冲突检测与确认
-    const [cloudConflictOpen, setCloudConflictOpen] = useState(false);
-    const [cloudConflicts, setCloudConflicts] = useState<SkillCloudConflict[]>([]);
-    const [conflictResolutions, setConflictResolutions] = useState<Record<string, 'overwrite' | 'skip'>>({});
+    // cloudBusy / cloudUploadConfirmOpen / cloudConflictOpen / cloudConflicts /
+    // conflictResolutions 等状态已收拢到 useCloudUpload hook（P2-2）。
     const cloudAvailable = clients.some(c => c.id === 'cloud' && c.installed);
 
     const openUninstall = (type: 'mcp' | 'skill', id: string, displayName: string, clients: string[]) => {
@@ -288,7 +191,7 @@ export default function Library() {
             // 卸载目标含云端存储：本地暂存区已删除，云端推送在后台异步进行，这里仅给出进行中反馈
             if (clients.includes('cloud')) {
                 toast.success(t('library.cloudUninstallStarted') || '云端删除中…');
-                pushCloudAsync();
+                pushCloudAsync(uninstallTarget.type === 'mcp' ? 'mcp' : 'skills');
             }
         } finally {
             setUninstallTarget(null);
@@ -319,9 +222,12 @@ export default function Library() {
     }, [serverLists.official.length, serverLists.smithery.length, setServerList]);
 
     // 加载数据
+    // 关键修复（P0-10）：serverLists 由另一个 effect 异步拉取，且首屏为空，
+    // 必须把它纳入依赖——否则 loadData 闭包里 isMcpDockInstalled 永远拿到空列表，
+    // 导致所有 server 的 isMcpDock 恒为 false、点击进不了详情页、徽章判错。
     useEffect(() => {
         loadData();
-    }, [api]);
+    }, [api, serverLists]);
 
     // 应用启动时主进程已在后台以云端为准拉取，拉取完成通知渲染层刷新本地暂存区展示
     useEffect(() => {
@@ -378,10 +284,30 @@ export default function Library() {
             setSkillClients(skillClientsMap);
         } catch (error) {
             console.error('Failed to load data:', error);
+            toast.error('加载数据失败，请刷新重试');
         } finally {
             setHasLoaded(true);
         }
     };
+
+    // 云上传 / 云同步逻辑（P2-2）：委托 useCloudUpload，返回所需状态与回调
+    const cloud = useCloudUpload({activeTab, servers, skills, skillClients, loadData});
+    const {
+        cloudBusy,
+        cloudUploadConfirmOpen,
+        cloudConflictOpen,
+        cloudConflicts,
+        conflictResolutions,
+        setCloudUploadConfirmOpen,
+        setCloudConflictOpen,
+        setConflictResolutions,
+        handleCloudUpload,
+        confirmCloudUpload,
+        toggleConflictResolution,
+        doCloudUploadResolved,
+        pushCloudAsync,
+        autoPushIfCloud,
+    } = cloud;
 
     // 刷新数据（带动效）
     const handleRefresh = async () => {
@@ -404,23 +330,38 @@ export default function Library() {
     // 编辑服务器
     const handleEdit = (server: InstalledServer) => {
         setEditingServer(server);
+        setEditingServerId(server.id);
         setEditedConfig(JSON.stringify(server.config, null, 2));
     };
 
     // 保存编辑
     const handleSaveEdit = async () => {
         if (!editingServer) return;
+        const newId = editingServerId.trim();
+        if (!newId) {
+            alert('Server name cannot be empty');
+            return;
+        }
         try {
             const newConfig = JSON.parse(editedConfig);
-            // 简单判断：编辑前后配置无变化则不标记为「手动安装」，保留商店来源
             const configChanged =
                 JSON.stringify(newConfig) !== JSON.stringify(editingServer.config);
-            for (const client of editingServer.clients) {
-                await api.config.updateServer(editingServer.id, newConfig, client);
+            const nameChanged = newId !== editingServer.id;
+
+            if (nameChanged) {
+                // 重命名：先安装新名称，再卸载旧名称
+                for (const client of editingServer.clients) {
+                    await api.config.installServer(newId, newConfig, [client]);
+                }
+                await api.config.uninstallServer(editingServer.id, editingServer.clients);
+            } else {
+                for (const client of editingServer.clients) {
+                    await api.config.updateServer(editingServer.id, newConfig, client);
+                }
             }
             // 仅当配置有修改时才标记为手动安装，避免线上更新覆盖本地调整
-            if (configChanged) {
-                await api.config.markServerManual(editingServer.id);
+            if (configChanged || nameChanged) {
+                await api.config.markServerManual(newId);
             }
             setEditingServer(null);
             loadData();
@@ -444,6 +385,7 @@ export default function Library() {
             loadData();
         } catch (error) {
             console.error('Failed to remove server:', error);
+            toast.error('移除服务器失败，请重试');
         }
     };
 
@@ -456,6 +398,7 @@ export default function Library() {
             loadData();
         } catch (error) {
             console.error('Failed to remove skill:', error);
+            toast.error('移除技能失败，请重试');
         }
     };
 
@@ -574,11 +517,27 @@ export default function Library() {
         if (!api) {
             return {success: false, error: 'Electron API 不可用'};
         }
-        const result = originalName
-            ? await api.skills.updateCustom(originalName, input, selected)
-            : await api.skills.createCustom(input, selected);
+        const result = await api.skills.saveWithCloudSync(
+            !!originalName,
+            originalName,
+            input,
+            selected
+        );
         if (result.success) {
             await loadData();
+            // 云端同步提示（不影响本地保存成功）：
+            // 现在保存后云端同步进入后台队列，状态在左侧「同步任务」面板跟踪。
+            if (result.cloud) {
+                if (result.cloud.enqueued) {
+                    toast.info(t('library.cloudEnqueued') || '已加入后台同步队列，可在左侧「同步任务」查看');
+                } else if (result.cloud.skipped) {
+                    toast.info(result.cloud.message || (t('library.cloudSkipped') || '云端未配置，已跳过'));
+                } else if (result.cloud.message) {
+                    toast.warning(
+                        `${t('library.cloudSyncFailed') || '云端同步失败'}：${result.cloud.message}`
+                    );
+                }
+            }
         }
         return result;
     };
@@ -614,7 +573,7 @@ export default function Library() {
             setSyncModalOpen(false);
             setSelectMode(false);
             setSelectedSkills([]);
-            await autoPushIfCloud(selectedSyncClients);
+            await autoPushIfCloud(selectedSyncClients, 'skills');
             loadData();
 
             if (result.synced > 0) {
@@ -650,7 +609,7 @@ export default function Library() {
             const sourceClient = syncingServer.clients[0];
             const result = await api.config.syncServer(syncingServer.id, sourceClient, selectedSyncClients);
             setSyncingServer(null);
-            await autoPushIfCloud(selectedSyncClients);
+            await autoPushIfCloud(selectedSyncClients, 'mcp');
             setSelectedSyncClients([]);
             loadData();
             if (result.success.length > 0) {
@@ -663,6 +622,40 @@ export default function Library() {
             console.error('Failed to sync server:', error);
             toast.error(t('installed.syncError') || '同步失败');
         }
+    };
+
+    // 导出 MCP 服务器
+    const handleExportMcp = () => {
+        const list = (serverSelectMode && selectedServers.length > 0)
+            ? servers.filter(s => selectedServers.includes(s.id))
+            : servers;
+        if (list.length === 0) return;
+        const exported: Record<string, McpServerConfig> = {};
+        list.forEach(s => { exported[s.id] = s.config; });
+        downloadJSON({ mcpServers: exported }, 'mcp-servers.json');
+    };
+
+    // 导出 Skills
+    const handleExportSkills = () => {
+        const list = (selectMode && selectedSkills.length > 0)
+            ? skills.filter(s => selectedSkills.includes(s.name))
+            : skills;
+        if (list.length === 0) return;
+        const exported = list.map(s => ({ name: s.name, path: s.path, source: s.source }));
+        downloadJSON(exported, 'skills.json');
+    };
+
+    // 触发 JSON 文件下载
+    const downloadJSON = (data: unknown, filename: string) => {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     };
 
     // 切换服务器批量选择模式
@@ -705,7 +698,7 @@ export default function Library() {
             setServerSelectMode(false);
             setSelectedServers([]);
             setServerSyncList([]);
-            await autoPushIfCloud(selectedSyncClients);
+            await autoPushIfCloud(selectedSyncClients, 'mcp');
             loadData();
 
             if (result.synced > 0) {
@@ -723,126 +716,10 @@ export default function Library() {
     };
 
     /**
-     * 后台异步把暂存区推到云端（不阻塞当前操作界面）。
-     * 本地写盘已完成即可返回，远端传输在后台进行，完成后才提示结果。
+     * 云同步相关的 pushCloudAsync / autoPushIfCloud / doCloudUpload / doCloudUploadResolved /
+     * toggleConflictResolution / handleCloudUpload / confirmCloudUpload 均已收拢到
+     * useCloudUpload hook（P2-2），此处不再重复定义，统一通过上方解构的常量使用。
      */
-    const pushCloudAsync = () => {
-        void api.cloudSync.push().then((res) => {
-            if (res.ok) toast.success(res.message || '已上传到云端');
-            else toast.error(res.message || '上传云端失败');
-        }).catch((err) => {
-            toast.error(err?.message || '上传云端失败');
-        });
-    };
-
-    /**
-     * 同步目标包含云端时，把暂存区推到远端（异步，不卡界面）。
-     * 「同步到云端客户端」只写了本地 ~/.ai-tools/cloud 暂存区，还需要一次传输才真正上云。
-     */
-    const autoPushIfCloud = async (targets: string[]) => {
-        if (!targets.includes('cloud')) return;
-        pushCloudAsync();
-    };
-
-    // 云上传：按当前 Tab 只把对应类型（MCP 或 Skill）写入云端暂存区，远端传输异步进行。
-    // 点击顶部「云上传」按钮时先弹确认框，确认后才执行真正上传。
-    // Skill 上传时会先检测同名冲突，若有冲突则弹窗让用户逐个确认。
-    const doCloudUpload = async () => {
-        setCloudBusy('push');
-        try {
-            if (activeTab === 'mcp') {
-                if (servers.length > 0) {
-                    await api.config.syncServersBatch(
-                        servers.map(s => ({serverId: s.id, config: s.config})),
-                        ['cloud']
-                    );
-                }
-                // 本地暂存区已就绪，立即刷新界面，远端推送在后台异步完成
-                await loadData();
-                toast.success(t('library.cloudUploadStarted') || '云端上传中…');
-                pushCloudAsync();
-            } else {
-                const skillItems = skills
-                    .map(s => ({
-                        name: s.name,
-                        sourceClient: (skillClients[s.name] || []).find(c => c !== 'cloud') as SkillClientType
-                    }))
-                    .filter(i => i.sourceClient);
-                if (skillItems.length === 0) {
-                    setCloudBusy(null);
-                    return;
-                }
-                // 检测云端同名冲突
-                const conflicts = await api.skills.checkCloudConflicts(skillItems);
-                if (conflicts.length > 0) {
-                    // 有冲突：弹窗让用户确认
-                    setCloudConflicts(conflicts);
-                    // 默认全部覆盖
-                    const defaultResolutions: Record<string, 'overwrite' | 'skip'> = {};
-                    for (const c of conflicts) {
-                        defaultResolutions[c.name] = 'overwrite';
-                    }
-                    setConflictResolutions(defaultResolutions);
-                    setCloudConflictOpen(true);
-                    setCloudBusy(null);
-                    return;
-                }
-                // 无冲突：直接同步
-                await api.skills.syncBatch(skillItems, ['cloud']);
-                await loadData();
-                toast.success(t('library.cloudUploadStarted') || '云端上传中…');
-                pushCloudAsync();
-            }
-        } catch (error: any) {
-            console.error('Cloud upload failed:', error);
-            toast.error(error?.message || '上传失败');
-        } finally {
-            setCloudBusy(null);
-        }
-    };
-
-    // 按用户确认结果同步 Skill 到云端
-    const doCloudUploadResolved = async () => {
-        setCloudConflictOpen(false);
-        setCloudBusy('push');
-        try {
-            const skillItems = skills
-                .map(s => ({
-                    name: s.name,
-                    sourceClient: (skillClients[s.name] || []).find(c => c !== 'cloud') as SkillClientType
-                }))
-                .filter(i => i.sourceClient);
-            if (skillItems.length > 0) {
-                await api.skills.syncToCloudResolved(skillItems, conflictResolutions);
-            }
-            await loadData();
-            toast.success(t('library.cloudUploadStarted') || '云端上传中…');
-            pushCloudAsync();
-        } catch (error: any) {
-            console.error('Cloud upload failed:', error);
-            toast.error(error?.message || '上传失败');
-        } finally {
-            setCloudBusy(null);
-        }
-    };
-
-    // 切换冲突项的覆盖/跳过
-    const toggleConflictResolution = (skillName: string) => {
-        setConflictResolutions(prev => ({
-            ...prev,
-            [skillName]: prev[skillName] === 'overwrite' ? 'skip' : 'overwrite',
-        }));
-    };
-
-    // 顶部「云上传」入口：先确认是否覆盖云端，再全量上传
-    const handleCloudUpload = () => {
-        setCloudUploadConfirmOpen(true);
-    };
-
-    const confirmCloudUpload = () => {
-        setCloudUploadConfirmOpen(false);
-        void doCloudUpload();
-    };
 
     // 切换同步客户端选择
     const toggleSyncClient = (clientId: AnyClientId) => {
@@ -892,33 +769,12 @@ export default function Library() {
         navigate(`/skill/${encodeURIComponent(skillId)}${from}`);
     };
 
-    // 初始加载占位（避免「暂无安装」空状态在数据返回前闪现）
-    const LoadingSkeleton = () => (
-        <div className="p-4">
-            <div className="card overflow-hidden divide-y divide-[#3a3a3c]">
-                {[0, 1, 2].map(i => (
-                    <div key={i} className="flex items-center gap-3 px-4 py-3">
-                        <div className="w-8 h-8 rounded bg-[var(--color-surface-hover)] animate-pulse"/>
-                        <div className="flex-1 space-y-2">
-                            <div className="h-3 w-32 bg-[var(--color-surface-hover)] rounded animate-pulse"/>
-                            <div className="h-2.5 w-20 bg-[var(--color-surface-hover)] rounded animate-pulse"/>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-
     return (
         <div className="flex flex-col h-full bg-[var(--color-bg)]">
             {/* 头部工具栏（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
             <div
-                className={`flex items-center justify-between gap-3 px-4 h-[38px] drag-region border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-xl sticky top-0 z-10 ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
+                className={`flex items-center justify-between gap-3 px-4 h-[38px] drag-region border-b border-[var(--color-border)] bg-[var(--color-bg)] sticky top-0 z-10 ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
                 <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden no-drag">
-                    <h1 className="text-[14px] font-semibold text-[var(--color-text)] whitespace-nowrap tracking-tight">
-                        {t('nav.library') || 'Library'}
-                    </h1>
-
                     {/* Tab 切换 */}
                     <div className="flex items-center bg-[var(--color-surface-hover)] rounded-lg p-0.5 shrink-0">
                         <button
@@ -1019,6 +875,18 @@ export default function Library() {
                                 </svg>
                                 {t('library.create') || '创建'}
                             </button>
+                            {servers.length > 0 && (
+                                <button
+                                    onClick={handleExportMcp}
+                                    className="flex items-center gap-1.5 px-3 py-1 bg-[var(--color-surface-hover)] text-[var(--color-text)] rounded-md text-[12px] font-medium hover:bg-[var(--color-surface-active)] transition-colors"
+                                    title={serverSelectMode && selectedServers.length > 0 ? '导出选中' : '导出全部'}
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                                    </svg>
+                                    {t('installed.export') || '导出'}
+                                </button>
+                            )}
                         </>
                     )}
                     {activeTab === 'skills' && (
@@ -1079,6 +947,18 @@ export default function Library() {
                                     {t('library.updateAll') || 'Update All'}
                                 </button>
                             )}
+                            {skills.length > 0 && (
+                                <button
+                                    onClick={handleExportSkills}
+                                    className="flex items-center gap-1.5 px-3 py-1 bg-[var(--color-surface-hover)] text-[var(--color-text)] rounded-md text-[12px] font-medium hover:bg-[var(--color-surface-active)] transition-colors"
+                                    title={selectMode && selectedSkills.length > 0 ? '导出选中' : '导出全部'}
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                                    </svg>
+                                    {t('installed.export') || '导出'}
+                                </button>
+                            )}
                         </>
                     )}
                 </div>
@@ -1088,307 +968,36 @@ export default function Library() {
             {/* 内容区域 */}
             <div className="flex-1 overflow-y-auto">
                 {activeTab === 'mcp' ? (
-                    // MCP Servers 列表
-                    !hasLoaded ? (
-                        <LoadingSkeleton/>
-                    ) : servers.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full">
-                            <div className="w-12 h-12 rounded-full bg-[var(--color-surface-hover)] flex items-center justify-center mb-3">
-                                <svg className="w-6 h-6 text-[var(--color-muted)]" fill="none" viewBox="0 0 24 24"
-                                     stroke="currentColor" strokeWidth={1.5}>
-                                    <path strokeLinecap="round" strokeLinejoin="round"
-                                          d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>
-                                </svg>
-                            </div>
-                            <p className="text-[13px] text-[var(--color-text)] mb-1">{t('installed.empty')}</p>
-                            <p className="text-[12px] text-[var(--color-muted)] mb-4">{t('installed.emptyHint')}</p>
-                            <button onClick={() => navigate('/store')} className="btn btn-primary text-[13px]">
-                                {t('installed.goToStore')}
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="p-4">
-                            <div className="card overflow-hidden">
-                                {servers.map((server, index) => {
-                                    const serverInfo = serverInfoMap.get(server.id);
-                                    const isServerSelected = selectedServers.includes(server.id);
-                                    return (
-                                        <div
-                                            key={server.id}
-                                            className={`
-                        flex items-center gap-3 px-4 py-3
-                        ${serverSelectMode ? 'cursor-pointer' : server.isMcpDock ? 'cursor-pointer hover:bg-[var(--color-surface-hover)]/50' : ''}
-                        transition-colors
-                        ${index !== servers.length - 1 ? 'border-b border-[var(--color-border)]' : ''}
-                        ${serverSelectMode && isServerSelected ? 'bg-[var(--color-accent)]/10' : ''}
-                      `}
-                                            onClick={() => serverSelectMode ? toggleServerSelect(server.id) : handleServerClick(server)}
-                                        >
-                                            {/* 选择模式：复选框 */}
-                                            {serverSelectMode ? (
-                                                <div className="flex-shrink-0">
-                          <span
-                              className={`w-4 h-4 rounded border flex items-center justify-center ${isServerSelected ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'border-[var(--color-border)]'}`}>
-                            {isServerSelected && (
-                                <svg className="w-3 h-3 text-[var(--color-text)]" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd"
-                                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                          clipRule="evenodd"/>
-                                </svg>
-                            )}
-                          </span>
-                                                </div>
-                                            ) : (
-                                                <div className="flex-shrink-0">
-                                                    <ServerIcon server={server} serverInfo={serverInfo}/>
-                                                </div>
-                                            )}
-
-                                            {/* 内容 */}
-                                            <div className="flex-1 min-w-0">
-                                                <h3 className="text-[13px] font-medium text-[var(--color-text)] truncate">
-                                                    {getDisplayName(server.id)}
-                                                </h3>
-                                                {/* 已安装的客户端 */}
-                                                <div className="flex items-center gap-2 mt-1">
-                                                    {server.clients.map(clientId => (
-                                                        <span key={clientId}
-                                                              className="text-[12px] text-[var(--color-muted2)] flex items-center gap-1">
-                              <ClientIcon clientId={clientId} size={14}/>
-                                                            {clients.find(c => c.id === clientId)?.name}
-                            </span>
-                                                    ))}
-                                                </div>
-                                            </div>
-
-                                            {/* 操作按钮区域 - AI-Tools 标志在最左边 */}
-                                            {!serverSelectMode && (
-                                                <div className="flex items-center gap-2 flex-shrink-0"
-                                                     onClick={e => e.stopPropagation()}>
-                                                    {/* 来源标记 - 最左边：手动安装 > AI-Tools（从商店安装统一显示） */}
-                                                    {server.manual ? (
-                                                        <span
-                                                            className="tag tag-default">{t('library.manual') || 'Manual'}</span>
-                                                    ) : (
-                                                        <span className="tag tag-info">AI-Tools</span>
-                                                    )}
-
-                                                    {/* 操作按钮 */}
-                                                    <button
-                                                        onClick={() => {
-                                                            const config = server.config;
-                                                            const configStr = encodeURIComponent(JSON.stringify(config));
-                                                            navigate(`/inspector?config=${configStr}`);
-                                                        }}
-                                                        className="p-1.5 rounded text-[var(--color-muted2)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 transition-colors"
-                                                        title={t('installed.inspect') || 'Inspect'}
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
-                                                             stroke="currentColor" strokeWidth={1.5}>
-                                                            <path strokeLinecap="round" strokeLinejoin="round"
-                                                                  d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z"/>
-                                                        </svg>
-                                                    </button>
-
-                                                    <button
-                                                        onClick={() => handleEdit(server)}
-                                                        className="p-1.5 rounded text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors"
-                                                        title={t('installed.edit')}
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
-                                                             stroke="currentColor" strokeWidth={2}>
-                                                            <path strokeLinecap="round" strokeLinejoin="round"
-                                                                  d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
-                                                        </svg>
-                                                    </button>
-
-                                                    {/* 同步到其他客户端（多客户端复用） */}
-                                                    <button
-                                                        onClick={() => handleOpenSync(server)}
-                                                        className="p-1.5 rounded text-[var(--color-muted2)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 transition-colors"
-                                                        title={t('installed.sync') || 'Sync'}
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
-                                                             stroke="currentColor" strokeWidth={2}>
-                                                            <path strokeLinecap="round" strokeLinejoin="round"
-                                                                  d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/>
-                                                        </svg>
-                                                    </button>
-
-                                                    <button
-                                                        onClick={() => openUninstall('mcp', server.id, getDisplayName(server.id), server.clients as string[])}
-                                                        className="p-1.5 rounded text-[#ff3b30] hover:bg-[#ff3b30]/10 transition-colors"
-                                                        title={t('installed.remove')}
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
-                                                             stroke="currentColor" strokeWidth={2}>
-                                                            <path strokeLinecap="round" strokeLinejoin="round"
-                                                                  d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
-                                                        </svg>
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )
+                    <LibraryMcpList
+                        servers={servers}
+                        serverInfoMap={serverInfoMap}
+                        hasLoaded={hasLoaded}
+                        serverSelectMode={serverSelectMode}
+                        selectedServers={selectedServers}
+                        clients={clients}
+                        onServerClick={handleServerClick}
+                        onOpenSync={handleOpenSync}
+                        onEdit={handleEdit}
+                        onUninstall={openUninstall}
+                        onToggleSelect={toggleServerSelect}
+                        getDisplayName={getDisplayName}
+                    />
                 ) : (
-                    // Skills 列表
-                    !hasLoaded ? (
-                        <LoadingSkeleton/>
-                    ) : skills.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full">
-                            <div className="w-12 h-12 rounded-full bg-[var(--color-surface-hover)] flex items-center justify-center mb-3">
-                                <svg className="w-6 h-6 text-[var(--color-muted)]" fill="none" viewBox="0 0 24 24"
-                                     stroke="currentColor" strokeWidth={1.5}>
-                                    <path strokeLinecap="round" strokeLinejoin="round"
-                                          d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
-                                </svg>
-                            </div>
-                            <p className="text-[13px] text-[var(--color-text)] mb-1">{t('library.noSkills') || 'No skills installed'}</p>
-                            <p className="text-[12px] text-[var(--color-muted)] mb-4">{t('library.noSkillsHint') || 'Visit the store to discover and install skills'}</p>
-                            <button onClick={() => navigate('/store')} className="btn btn-primary text-[13px]">
-                                {t('installed.goToStore')}
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="p-4">
-                            <div className="card overflow-hidden">
-                                {skills.map((skill, index) => {
-                                    const isSelected = selectedSkills.includes(skill.name);
-                                    const installedClients = skillClients[skill.name] || [];
-                                    return (
-                                        <div
-                                            key={skill.name}
-                                            className={`
-                      flex items-center gap-3 px-4 py-3
-                      ${selectMode ? 'cursor-pointer' : 'cursor-pointer hover:bg-[var(--color-surface-hover)]/50'}
-                      transition-colors
-                      ${index !== skills.length - 1 ? 'border-b border-[var(--color-border)]' : ''}
-                      ${selectMode && isSelected ? 'bg-[var(--color-accent)]/10' : ''}
-                    `}
-                                            onClick={() => selectMode ? toggleSkillSelect(skill.name) : handleSkillClick(skill)}
-                                        >
-                                            {/* 选择模式：复选框 */}
-                                            {selectMode ? (
-                                                <div className="flex-shrink-0">
-                        <span
-                            className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'border-[var(--color-border)]'}`}>
-                          {isSelected && (
-                              <svg className="w-3 h-3 text-[var(--color-text)]" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd"
-                                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                        clipRule="evenodd"/>
-                              </svg>
-                          )}
-                        </span>
-                                                </div>
-                                            ) : (
-                                                <div className="flex-shrink-0">
-                                                    <SkillIcon skill={skill}/>
-                                                </div>
-                                            )}
-
-                                            {/* 内容 */}
-                                            <div className="flex-1 min-w-0">
-                                                <h3 className="text-[13px] font-medium text-[var(--color-text)] truncate">
-                                                    {skill.name}
-                                                </h3>
-                                                {/* 已安装的客户端 */}
-                                                <div className="flex items-center gap-2 mt-1">
-                                                    {installedClients.map(clientId => (
-                                                        <span key={clientId}
-                                                              className="text-[12px] text-[var(--color-muted2)] flex items-center gap-1">
-                            <ClientIcon clientId={clientId} size={14}/>
-                                                            {clients.find(c => c.id === clientId)?.name}
-                          </span>
-                                                    ))}
-                                                </div>
-                                            </div>
-
-                                            {/* 操作按钮区域（选择模式隐藏） */}
-                                            {!selectMode && (
-                                                <div className="flex items-center gap-2 flex-shrink-0"
-                                                     onClick={e => e.stopPropagation()}>
-                                                    {/* 来源标记 - 最左边 */}
-                                                    {skill.source ? (
-                                                        <span className="tag tag-info">AI-Tools</span>
-                                                    ) : (
-                                                        <span
-                                                            className="tag tag-default">{t('library.manual') || 'Manual'}</span>
-                                                    )}
-
-                                                    {/* 更新按钮 */}
-                                                    {skill.source && (
-                                                        <button
-                                                            onClick={() => handleUpdateSkill(skill.name)}
-                                                            disabled={refreshingSkill === skill.name}
-                                                            className="p-1.5 rounded text-[var(--color-muted2)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 transition-colors disabled:opacity-50"
-                                                            title={t('library.update') || 'Update'}
-                                                        >
-                                                            <svg
-                                                                className={`w-4 h-4 ${refreshingSkill === skill.name ? 'animate-spin' : ''}`}
-                                                                fill="none"
-                                                                viewBox="0 0 24 24"
-                                                                stroke="currentColor"
-                                                                strokeWidth={2}
-                                                            >
-                                                                <path strokeLinecap="round" strokeLinejoin="round"
-                                                                      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
-                                                            </svg>
-                                                        </button>
-                                                    )}
-
-                                                    {/* 编辑按钮（商店来源的 Skill 也可编辑；保存后转为手动安装） */}
-                                                    <button
-                                                        onClick={() => handleEditSkill(skill.name)}
-                                                        className="p-1.5 rounded text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors"
-                                                        title={t('installed.edit')}
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
-                                                             stroke="currentColor" strokeWidth={2}>
-                                                            <path strokeLinecap="round" strokeLinejoin="round"
-                                                                  d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
-                                                        </svg>
-                                                    </button>
-
-                                                    {/* 同步到其他客户端 */}
-                                                    {installedClients.length > 0 && (
-                                                        <button
-                                                            onClick={() => handleOpenSkillSync(skill.name)}
-                                                            className="p-1.5 rounded text-[var(--color-muted2)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 transition-colors"
-                                                            title={t('library.sync') || 'Sync to clients'}
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
-                                                                 stroke="currentColor" strokeWidth={2}>
-                                                                <path strokeLinecap="round" strokeLinejoin="round"
-                                                                      d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/>
-                                                            </svg>
-                                                        </button>
-                                                    )}
-
-                                                    {/* 删除按钮 */}
-                                                    <button
-                                                        onClick={() => openUninstall('skill', skill.name, skill.name, installedClients as string[])}
-                                                        className="p-1.5 rounded text-[#ff3b30] hover:bg-[#ff3b30]/10 transition-colors"
-                                                        title={t('installed.remove')}
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
-                                                             stroke="currentColor" strokeWidth={2}>
-                                                            <path strokeLinecap="round" strokeLinejoin="round"
-                                                                  d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
-                                                        </svg>
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )
+                    <LibrarySkillList
+                        skills={skills}
+                        skillClients={skillClients}
+                        hasLoaded={hasLoaded}
+                        selectMode={selectMode}
+                        selectedSkills={selectedSkills}
+                        clients={clients}
+                        refreshingSkill={refreshingSkill}
+                        onSkillClick={handleSkillClick}
+                        onEditSkill={handleEditSkill}
+                        onUpdateSkill={handleUpdateSkill}
+                        onOpenSkillSync={handleOpenSkillSync}
+                        onUninstall={openUninstall}
+                        onToggleSelect={toggleSkillSelect}
+                    />
                 )}
             </div>
 
@@ -1399,6 +1008,17 @@ export default function Library() {
                 title={`${t('installed.edit')}: ${editingServer ? getDisplayName(editingServer.id) : ''}`}
             >
                 <div className="space-y-4">
+                    <div>
+                        <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">
+                            {t('installed.serverName') || 'Server Name'}
+                        </label>
+                        <input
+                            type="text"
+                            value={editingServerId}
+                            onChange={(e) => setEditingServerId(e.target.value)}
+                            className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
+                        />
+                    </div>
                     <p className="text-[12px] text-[var(--color-muted2)]">
                         {t('installed.editHint')}
                     </p>
@@ -1419,192 +1039,63 @@ export default function Library() {
                 </div>
             </Modal>
 
-            {/* 同步模态框 */}
-            <Modal
-                isOpen={!!syncingServer}
-                onClose={() => setSyncingServer(null)}
+            {/* 同步模态框（单服务器同步到其他客户端） */}
+            <ClientPickerModal
+                open={!!syncingServer}
                 title={t('installed.syncTitle') || 'Sync to Other Clients'}
-            >
-                <div className="space-y-4">
-                    <p className="text-[12px] text-[var(--color-muted2)]">{t('installed.syncHint')}</p>
-
-                    <div className="space-y-2">
-                        {clients
-                            .filter(c => c.installed && !syncingServer?.clients.includes(c.id))
-                            .map(client => {
-                                const isSelected = selectedSyncClients.includes(client.id);
-                                return (
-                                    <button
-                                        key={client.id}
-                                        onClick={() => toggleSyncClient(client.id)}
-                                        className={`
-                      w-full flex items-center gap-3 p-3 rounded-md border transition-all text-left
-                      ${isSelected
-                                            ? 'bg-[var(--color-accent)]/10 border-[var(--color-accent)]/30 text-[var(--color-accent)]'
-                                            : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-muted)]'
-                                        }
-                    `}
-                                    >
-                                        <ClientIcon clientId={client.id} size={24}/>
-                                        <span className="flex-1 text-[13px] font-medium">{client.name}</span>
-                                        {isSelected && (
-                                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                                <path fillRule="evenodd"
-                                                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                                      clipRule="evenodd"/>
-                                            </svg>
-                                        )}
-                                    </button>
-                                );
-                            })}
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-2">
-                        <button onClick={() => setSyncingServer(null)} className="btn btn-secondary">
-                            {t('common.cancel')}
-                        </button>
-                        <button
-                            onClick={handleSync}
-                            disabled={selectedSyncClients.length === 0}
-                            className="btn btn-primary disabled:opacity-50"
-                        >
-                            {t('installed.sync') || 'Sync'}
-                        </button>
-                    </div>
-                </div>
-            </Modal>
+                subtitle={t('installed.syncHint')}
+                clients={clients.filter(c => c.installed && !syncingServer?.clients.includes(c.id))}
+                selected={selectedSyncClients}
+                onToggle={toggleSyncClient}
+                onConfirm={handleSync}
+                onClose={() => setSyncingServer(null)}
+                confirmLabel={t('installed.sync') || 'Sync'}
+                confirmDisabled={selectedSyncClients.length === 0}
+            />
 
             {/* 服务器批量同步模态框（多客户端复用） */}
-            <Modal
-                isOpen={serverSyncOpen}
-                onClose={() => setServerSyncOpen(false)}
+            <ClientPickerModal
+                open={serverSyncOpen}
                 title={t('installed.batchSyncTitle') || 'Sync Servers to Other Clients'}
-            >
-                <div className="space-y-4">
-                    <p className="text-[12px] text-[var(--color-muted2)]">
-                        {t('installed.batchSyncHint', {count: serverSyncList.length}) ||
-                            `选择要将 ${serverSyncList.length} 个服务器同步到的客户端：`}
-                    </p>
-
-                    <div className="space-y-2">
-                        {clients
-                            .filter(c => {
-                                if (!c.installed) return false;
-                                // 已包含所有待同步服务器的客户端不再列出
-                                const alreadyAll = serverSyncList.every(s => s.clients.includes(c.id));
-                                return !alreadyAll;
-                            })
-                            .map(client => {
-                                const isSelected = selectedSyncClients.includes(client.id);
-                                return (
-                                    <button
-                                        key={client.id}
-                                        onClick={() => toggleSyncClient(client.id)}
-                                        className={`
-                      w-full flex items-center gap-3 p-3 rounded-md border transition-all text-left
-                      ${isSelected
-                                            ? 'bg-[var(--color-accent)]/10 border-[var(--color-accent)]/30 text-[var(--color-accent)]'
-                                            : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-muted)]'
-                                        }
-                    `}
-                                    >
-                                        <ClientIcon clientId={client.id} size={24}/>
-                                        <span className="flex-1 text-[13px] font-medium">{client.name}</span>
-                                        {isSelected && (
-                                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                                <path fillRule="evenodd"
-                                                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                                      clipRule="evenodd"/>
-                                            </svg>
-                                        )}
-                                    </button>
-                                );
-                            })}
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-2">
-                        <button onClick={() => setServerSyncOpen(false)} className="btn btn-secondary">
-                            {t('common.cancel')}
-                        </button>
-                        <button
-                            onClick={handleConfirmServerSync}
-                            disabled={selectedSyncClients.length === 0 || isSyncingServers}
-                            className="btn btn-primary disabled:opacity-50"
-                        >
-                            {isSyncingServers
-                                ? (t('installed.syncing') || 'Syncing...')
-                                : (t('installed.sync') || 'Sync')}
-                        </button>
-                    </div>
-                </div>
-            </Modal>
+                subtitle={t('installed.batchSyncHint', {count: serverSyncList.length}) ||
+                    `选择要将 ${serverSyncList.length} 个服务器同步到的客户端：`}
+                clients={clients.filter(c => {
+                    if (!c.installed) return false;
+                    const alreadyAll = serverSyncList.every(s => s.clients.includes(c.id));
+                    return !alreadyAll;
+                })}
+                selected={selectedSyncClients}
+                onToggle={toggleSyncClient}
+                onConfirm={handleConfirmServerSync}
+                onClose={() => setServerSyncOpen(false)}
+                confirmLabel={isSyncingServers
+                    ? (t('installed.syncing') || 'Syncing...')
+                    : (t('installed.sync') || 'Sync')}
+                confirmDisabled={selectedSyncClients.length === 0 || isSyncingServers}
+            />
 
             {/* Skill 同步模态框（单条 + 批量共用） */}
-            <Modal
-                isOpen={syncModalOpen}
-                onClose={() => setSyncModalOpen(false)}
+            <ClientPickerModal
+                open={syncModalOpen}
                 title={t('library.syncTitle') || 'Sync Skill to Other Clients'}
-            >
-                <div className="space-y-4">
-                    <p className="text-[12px] text-[var(--color-muted2)]">
-                        {t('library.syncHint', {count: syncModalSkills.length}) ||
-                            `选择要将 ${syncModalSkills.length} 个 Skill 同步到的客户端：`}
-                    </p>
-
-                    <div className="space-y-2">
-                        {clients
-                            .filter(c => {
-                                if (!c.installed || !c.supportsSkills) return false;
-                                // 已包含所有待同步 Skill 的客户端不再列出
-                                const alreadyAll = syncModalSkills.every(
-                                    name => (skillClients[name] || []).includes(c.id as SkillClientType)
-                                );
-                                return !alreadyAll;
-                            })
-                            .map(client => {
-                                const isSelected = selectedSyncClients.includes(client.id);
-                                return (
-                                    <button
-                                        key={client.id}
-                                        onClick={() => toggleSyncClient(client.id)}
-                                        className={`
-                      w-full flex items-center gap-3 p-3 rounded-md border transition-all text-left
-                      ${isSelected
-                                            ? 'bg-[var(--color-accent)]/10 border-[var(--color-accent)]/30 text-[var(--color-accent)]'
-                                            : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-muted)]'
-                                        }
-                    `}
-                                    >
-                                        <ClientIcon clientId={client.id} size={24}/>
-                                        <span className="flex-1 text-[13px] font-medium">{client.name}</span>
-                                        {isSelected && (
-                                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                                <path fillRule="evenodd"
-                                                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                                      clipRule="evenodd"/>
-                                            </svg>
-                                        )}
-                                    </button>
-                                );
-                            })}
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-2">
-                        <button onClick={() => setSyncModalOpen(false)} className="btn btn-secondary">
-                            {t('common.cancel')}
-                        </button>
-                        <button
-                            onClick={handleConfirmSync}
-                            disabled={selectedSyncClients.length === 0 || isSyncing}
-                            className="btn btn-primary disabled:opacity-50"
-                        >
-                            {isSyncing
-                                ? (t('library.syncing') || 'Syncing...')
-                                : (t('library.sync') || 'Sync')}
-                        </button>
-                    </div>
-                </div>
-            </Modal>
+                subtitle={t('library.syncHint', {count: syncModalSkills.length}) ||
+                    `选择要将 ${syncModalSkills.length} 个 Skill 同步到的客户端：`}
+                clients={clients.filter(c => {
+                    if (!c.installed || !c.supportsSkills) return false;
+                    const alreadyAll = syncModalSkills.every(
+                        name => (skillClients[name] || []).includes(c.id as SkillClientType)
+                    );
+                    return !alreadyAll;
+                })}
+                selected={selectedSyncClients}
+                onToggle={toggleSyncClient}
+                onConfirm={handleConfirmSync}
+                onClose={() => setSyncModalOpen(false)}
+                confirmLabel={isSyncing
+                    ? (t('library.syncing') || 'Syncing...')
+                    : (t('library.sync') || 'Sync')}
+                confirmDisabled={selectedSyncClients.length === 0 || isSyncing}
+            />
 
             {/* 云上传确认：确认是否覆盖云端 */}
             <Modal
@@ -1798,77 +1289,24 @@ export default function Library() {
             )}
 
             {/* 卸载客户端选择模态框（指定客户端卸载 / 全客户端卸载） */}
-            <Modal
-                isOpen={!!uninstallTarget}
-                onClose={() => setUninstallTarget(null)}
+            <UninstallModal
+                open={!!uninstallTarget}
                 title={uninstallTarget?.type === 'skill' ? (t('library.uninstallTitle') || '卸载 Skill') : (t('installed.uninstallTitle') || '卸载服务器')}
-            >
-                <div className="space-y-4">
-                    <p className="text-[12px] text-[var(--color-muted2)]">
-                        {uninstallTarget?.type === 'skill'
-                            ? (t('library.uninstallHint') || '选择要从哪些客户端卸载此 Skill：')
-                            : (t('installed.uninstallHint') || '选择要从哪些客户端卸载此服务器：')}
-                    </p>
-
-                    <div className="flex items-center justify-between">
-                        <span
-                            className="text-[13px] text-[var(--color-text)] font-medium truncate">{uninstallTarget?.displayName}</span>
-                        <button
-                            onClick={() => uninstallTarget && setSelectedUninstallClients([...uninstallTarget.clients])}
-                            className="text-[12px] text-[var(--color-accent)] hover:underline flex-shrink-0 ml-2"
-                        >
-                            {t('installed.selectAll') || '全选'}
-                        </button>
-                    </div>
-
-                    <div className="space-y-2">
-                        {(uninstallTarget?.clients || []).map(clientId => {
-                            const client = clients.find(c => c.id === clientId);
-                            const isSelected = selectedUninstallClients.includes(clientId);
-                            return (
-                                <button
-                                    key={clientId}
-                                    onClick={() => {
-                                        setSelectedUninstallClients(prev =>
-                                            isSelected ? prev.filter(c => c !== clientId) : [...prev, clientId]
-                                        );
-                                    }}
-                                    className={`
-                    w-full flex items-center gap-3 p-3 rounded-md border transition-all text-left
-                    ${isSelected
-                                        ? 'bg-[#ff3b30]/10 border-[#ff3b30]/30 text-[#ff3b30]'
-                                        : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-muted)]'
-                                    }
-                  `}
-                                >
-                                    <ClientIcon clientId={clientId} size={24}/>
-                                    <span className="flex-1 text-[13px] font-medium">{client?.name || clientId}</span>
-                                    {isSelected && (
-                                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd"
-                                                  d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                                  clipRule="evenodd"/>
-                                        </svg>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-2">
-                        <button onClick={() => setUninstallTarget(null)} className="btn btn-secondary">
-                            {t('common.cancel')}
-                        </button>
-                        <button
-                            onClick={confirmUninstall}
-                            disabled={selectedUninstallClients.length === 0}
-                            className="btn btn-danger disabled:opacity-50"
-                        >
-                            {t('installed.confirmUninstall') || '确认卸载'}
-                        </button>
-                    </div>
-                </div>
-            </Modal>
+                subtitle={uninstallTarget?.type === 'skill'
+                    ? (t('library.uninstallHint') || '选择要从哪些客户端卸载此 Skill：')
+                    : (t('installed.uninstallHint') || '选择要从哪些客户端卸载此服务器：')}
+                displayName={uninstallTarget?.displayName || ''}
+                clients={(uninstallTarget?.clients || [])
+                    .map(clientId => clients.find(c => c.id === clientId))
+                    .filter((c): c is ClientInfo => !!c)}
+                selected={selectedUninstallClients}
+                onToggle={(id) => setSelectedUninstallClients(prev =>
+                    prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
+                )}
+                onSelectAll={() => uninstallTarget && setSelectedUninstallClients([...uninstallTarget.clients])}
+                onClose={() => setUninstallTarget(null)}
+                onConfirm={confirmUninstall}
+            />
         </div>
     );
 }

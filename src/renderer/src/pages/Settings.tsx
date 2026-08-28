@@ -214,7 +214,7 @@ export default function Settings() {
         <div className="flex flex-col h-full bg-[var(--color-bg)]">
             {/* 头部（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
             <div
-                className={`flex items-center px-4 h-[38px] drag-region relative border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-xl ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
+                className={`flex items-center px-4 h-[38px] drag-region relative border-b border-[var(--color-border)] bg-[var(--color-bg)] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
                 <h1 className="text-[14px] font-semibold text-[var(--color-text)] tracking-tight no-drag">
                     {t('settings.title')}
                 </h1>
@@ -612,13 +612,25 @@ export default function Settings() {
                         <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">
                             {t('settings.mcpConfigPath')}
                         </label>
-                        <input
-                            type="text"
-                            value={addConfigPath}
-                            onChange={(e) => setAddConfigPath(e.target.value)}
-                            className="w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] font-mono text-[12px] focus:border-[var(--color-accent)] transition-colors"
-                            placeholder="/path/to/mcp.json"
-                        />
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={addConfigPath}
+                                onChange={(e) => setAddConfigPath(e.target.value)}
+                                className="flex-1 px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] font-mono text-[12px] focus:border-[var(--color-accent)] transition-colors"
+                                placeholder="/path/to/mcp.json"
+                            />
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    const r = await api.dialog.selectDirectory();
+                                    if (!r.canceled && r.path) setAddConfigPath(r.path);
+                                }}
+                                className="btn btn-secondary whitespace-nowrap"
+                            >
+                                {t('settings.browse') || 'Browse'}
+                            </button>
+                        </div>
                     </div>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -638,13 +650,25 @@ export default function Settings() {
                             <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">
                                 {t('settings.skillsDirectory')}
                             </label>
-                            <input
-                                type="text"
-                                value={addSkillsPath}
-                                onChange={(e) => setAddSkillsPath(e.target.value)}
-                                className="w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] font-mono text-[12px] focus:border-[var(--color-accent)] transition-colors"
-                                placeholder="/path/to/skills"
-                            />
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={addSkillsPath}
+                                    onChange={(e) => setAddSkillsPath(e.target.value)}
+                                    className="flex-1 px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] font-mono text-[12px] focus:border-[var(--color-accent)] transition-colors"
+                                    placeholder="/path/to/skills"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        const r = await api.dialog.selectDirectory();
+                                        if (!r.canceled && r.path) setAddSkillsPath(r.path);
+                                    }}
+                                    className="btn btn-secondary whitespace-nowrap"
+                                >
+                                    {t('settings.browse') || 'Browse'}
+                                </button>
+                            </div>
                         </div>
                     )}
 

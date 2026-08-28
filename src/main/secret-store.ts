@@ -11,7 +11,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import {app} from 'electron';
+import {app, safeStorage} from 'electron';
 import {type TokenScope} from '../shared/platform-constants';
 
 export type {TokenScope} from '../shared/platform-constants';
@@ -99,7 +99,38 @@ export class SecretStore {
         return crypto.scryptSync(machineId, 'mcp-dock-secret-v1', KEY_LENGTH);
     }
 
+    /**
+     * 优先使用 Electron safeStorage（OS 级钥匙串，密钥由系统保管，P1-4），
+     * 仅在不可用时回退到基于机器特征的 AES-256-GCM（兼容旧密文）。
+     * 新格式以魔法前缀 `SS1\n` 标记，旧 AES 格式走 legacy 分支。
+     */
+    private static safeStorageAvailable(): boolean {
+        try {
+            return !!safeStorage && safeStorage.isEncryptionAvailable();
+        } catch {
+            return false;
+        }
+    }
+
     private encrypt(plaintext: string): Buffer {
+        if (SecretStore.safeStorageAvailable()) {
+            const enc = safeStorage.encryptString(plaintext);
+            return Buffer.concat([Buffer.from('SS1\n', 'latin1'), enc]);
+        }
+        return this.encryptLegacy(plaintext);
+    }
+
+    private decrypt(buf: Buffer): string {
+        if (buf.length > 4 && buf.subarray(0, 4).toString('latin1') === 'SS1\n') {
+            if (!SecretStore.safeStorageAvailable()) {
+                throw new Error('safeStorage 不可用，无法解密该凭据（请在支持系统钥匙串的环境下运行）');
+            }
+            return safeStorage.decryptString(buf.subarray(4));
+        }
+        return this.decryptLegacy(buf);
+    }
+
+    private encryptLegacy(plaintext: string): Buffer {
         const iv = crypto.randomBytes(IV_LENGTH);
         const cipher = crypto.createCipheriv(ALGORITHM, this.key, iv);
         const enc = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
@@ -107,7 +138,7 @@ export class SecretStore {
         return Buffer.concat([iv, tag, enc]);
     }
 
-    private decrypt(buf: Buffer): string {
+    private decryptLegacy(buf: Buffer): string {
         if (buf.length < IV_LENGTH + AUTH_TAG_LENGTH) throw new Error('invalid ciphertext');
         const iv = buf.subarray(0, IV_LENGTH);
         const tag = buf.subarray(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);

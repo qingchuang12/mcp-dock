@@ -10,8 +10,9 @@ release/
 .vscode/
 *.swp
 *.swo
+*.iml
 .codebuddy
-.github
+.workbuddy
 .tmp
 %TEMP%
 # OS
@@ -38,3 +39,11 @@ install-*.ps1
 # Cache
 .cache/
 .parcel-cache/
+
+# Lockfiles: project uses pnpm only
+package-lock.json
+
+# Debug / agent scaffolding residue
+_verify/
+*.bak
+application.pid

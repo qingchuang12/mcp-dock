@@ -93,6 +93,8 @@ export interface ServerListItem {
   source?: string;
   repository?: { url: string; source?: string; subfolder?: string };
   categories?: string[];
+  /** 分类友好展示名（与 categories 一一对应，slug → 中文名）；卡片优先展示它 */
+  categoryNames?: string[];
   tags?: string[];
   lastCommitAt?: string;
   updatedAt?: string;
@@ -100,6 +102,8 @@ export interface ServerListItem {
   author?: string;
   stars?: number;
   downloads?: number;
+  /** ModelScope 等平台源的浏览量（view_count），详情/列表展示用 */
+  viewCount?: number | null;
   verified?: boolean;
   extra?: Record<string, unknown>;
   isHosted?: boolean;
@@ -196,6 +200,10 @@ export interface SkillListItem {
   categoryId: string;
   stars: number;
   forks: number;
+  /** ModelScope 等平台源的浏览量（view_count） */
+  viewCount?: number | null;
+  /** ModelScope 等平台源的下载量（downloads） */
+  downloads?: number | null;
   updatedAt: string;
   repository: {
     url: string;
@@ -347,6 +355,7 @@ interface SmitheryServer {
   homepage?: string;
   useCount?: number;
   verified?: boolean;
+  categories?: string[];
 }
 
 interface SmitheryResponse {
@@ -407,6 +416,7 @@ export async function fetchSmitheryServersPaged(
     description: s.description || '',
     iconUrl: s.iconUrl,
     source: 'smithery',
+    categories: s.categories || [],
     repository: s.homepage ? { url: s.homepage } : undefined,
     homepage: s.homepage,
     downloads: s.useCount ?? 0,

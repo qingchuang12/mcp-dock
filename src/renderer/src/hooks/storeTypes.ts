@@ -15,11 +15,11 @@ export const STORE_QUERY_STALE_MS = 10 * 60 * 1000;
 export interface StoreData<T> {
     /** 当前页要渲染的条目 */
     items: T[];
-    /** 真实总数（平台源取自 pageInfo.total / serverTotal；内置源取过滤后条数） */
-    total: number;
-    /** 同 total，便于分页组件直接使用 */
+    /** 真实总数；为 null 时表示服务端无总数（如 ClawHub 单页上限、无法翻页），前端应禁用跳页 */
+    total: number | null;
+    /** 同 total，便于分页组件直接使用；total 为 null 时退化为当前页条目数 */
     totalItems: number;
-    /** 总页数，一律 Math.ceil(total / pageSize) */
+    /** 总页数，一律 Math.ceil(total / pageSize)；total 为 null 时由 hasMore 推演 */
     totalPages: number;
     /** 当前页起始序号（从 1 开始，无数据时 0） */
     startIndex: number;
@@ -27,6 +27,8 @@ export interface StoreData<T> {
     endIndex: number;
     /** 分页模式：server=服务端按页查询；client=前端切片 */
     pagingMode: 'server' | 'client';
+    /** 是否还有下一页（total 为 null 时唯一可靠的翻页依据） */
+    hasMore: boolean;
     /** 平台是否未开放公开接口（SPA 壳页），用于给友好空态提示 */
     isUnsupported: boolean;
     isLoading: boolean;
@@ -38,6 +40,6 @@ export interface StoreData<T> {
     refetch: () => void;
 }
 
-export type StoreResourceType = 'mcp' | 'skills';
+export type { ResourceType as StoreResourceType } from '../api/registry';
 
 export type {SkillListItem, ServerListItem};

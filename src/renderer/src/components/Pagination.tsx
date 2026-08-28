@@ -5,6 +5,8 @@
  * - 多页时提供页码跳转（首页 / 上一页 / 当前页附近 / 下一页 / 尾页），并用省略号收敛中间页码。
  */
 
+import {useTranslation} from 'react-i18next';
+
 interface PaginationProps {
   currentPage: number;
   totalPages: number;
@@ -12,6 +14,8 @@ interface PaginationProps {
   startIndex: number;
   endIndex: number;
   onPageChange: (page: number) => void;
+  /** 是否允许页码跳转；total 为 null（服务端无总数）时 false，仅保留上/下一页 */
+  canJump?: boolean;
 }
 
 /** 生成需要展示的页码序列（含省略号占位 -1） */
@@ -42,13 +46,17 @@ export default function Pagination({
   startIndex,
   endIndex,
   onPageChange,
+  canJump = true,
 }: PaginationProps) {
+  const { t } = useTranslation();
+
   const go = (p: number) => {
     if (p < 1 || p > totalPages || p === currentPage) return;
     onPageChange(p);
   };
 
-  const showPager = totalPages > 1;
+  // 显示页码跳转需满足：允许跳页 且 已知总页数（>1）；否则仅保留上/下一页
+  const showPager = canJump && totalPages > 1;
 
   return (
     <div className="flex items-center gap-3">
@@ -61,7 +69,7 @@ export default function Pagination({
           <button
             onClick={() => go(currentPage - 1)}
             disabled={currentPage === 1}
-            aria-label="上一页"
+            aria-label={t('store.prevPage', {defaultValue: 'Previous'})}
             className="p-1 rounded text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[var(--color-muted2)] transition-colors"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -93,7 +101,7 @@ export default function Pagination({
           <button
             onClick={() => go(currentPage + 1)}
             disabled={currentPage === totalPages}
-            aria-label="下一页"
+            aria-label={t('store.nextPage', {defaultValue: 'Next'})}
             className="p-1 rounded text-[var(--color-muted2)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[var(--color-muted2)] transition-colors"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

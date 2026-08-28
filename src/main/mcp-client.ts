@@ -8,6 +8,9 @@ import {EventEmitter} from 'events';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import http from 'http';
+import https from 'https';
+import {Readable} from 'stream';
 
 // 缓存 shell 环境变量，避免重复执行
 let cachedShellEnv: Record<string, string> | null = null;
@@ -41,9 +44,13 @@ interface McpTool {
 }
 
 interface McpServerConfig {
-    command: string;
+    command?: string;
     args?: string[];
     env?: Record<string, string>;
+    cwd?: string;
+    url?: string;
+    type?: 'stdio' | 'http' | 'streamable-http' | 'sse';
+    headers?: Record<string, string>;
 }
 
 export class McpClient extends EventEmitter {
@@ -56,6 +63,19 @@ export class McpClient extends EventEmitter {
     private buffer = '';
     private connected = false;
     private serverInfo: { name?: string; version?: string } | null = null;
+    private transportMode: 'stdio' | 'http' = 'stdio';
+    private url?: string;
+    private httpHeaders?: Record<string, string>;
+    private sessionId?: string;
+    private abortController?: AbortController;
+    // Node 原生 http 请求句柄（用于断开时强制销毁连接）
+    private httpReq?: http.ClientRequest;
+    // —— SSE 传输（旧版 /sse 模式）相关 ——
+    // 服务器经 GET SSE 流下发消息；首次下发的 `endpoint` 事件告知客户端应向哪个地址 POST JSON-RPC。
+    private ssePostUrl?: string;
+    private sseReader?: ReadableStreamDefaultReader<Uint8Array>;
+    private sseBuffer = '';
+    private sseEndpointResolve?: () => void;
 
     constructor() {
         super();
@@ -191,6 +211,39 @@ export class McpClient extends EventEmitter {
     }
 
     /**
+     * 清理透传给 MCP Server 子进程的环境变量。
+     *
+     * mcp-dock 自身常在某些宿主环境下被注入 NODE_OPTIONS，例如：
+     *  - IDE/调试器启动 mcp-dock 时附带的 `--inspect` / `--inspect-brk`；
+     *  - 沙箱环境为安全删除注入的 `--require=.../genie-safe-delete.cjs`。
+     * 这些标志若原样透传给用户启动的 MCP Server，会导致子进程 node 停在
+     * 断点等待（永不回 initialize）或被沙箱拦截文件操作，最终连接超时。
+     * 这里只剔除调试与安全 shim 相关标记，保留用户自定义的环境变量。
+     */
+    private sanitizeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+        const cleaned: NodeJS.ProcessEnv = {...env};
+        const raw = cleaned.NODE_OPTIONS;
+        if (raw) {
+            const kept = raw
+                .split(/\s+/)
+                .filter((flag) => {
+                    const f = flag.trim();
+                    if (!f) return false;
+                    // 去掉 Node inspector 调试标记
+                    if (/^--inspect(-brk)?(=\S*)?$/.test(f)) return false;
+                    if (/^--inspect-port(=\S*)?$/.test(f)) return false;
+                    // 去掉沙箱安全删除 shim 的 --require
+                    if (f.includes('genie-safe-delete')) return false;
+                    return true;
+                });
+            const joined = kept.join(' ').trim();
+            if (joined) cleaned.NODE_OPTIONS = joined;
+            else delete cleaned.NODE_OPTIONS;
+        }
+        return cleaned;
+    }
+
+    /**
      * 连接到 MCP Server
      */
     async connect(config: McpServerConfig): Promise<{ name?: string; version?: string }> {
@@ -198,10 +251,209 @@ export class McpClient extends EventEmitter {
             throw new Error('Already connected');
         }
 
+        const mode: 'stdio' | 'http' | 'sse' =
+            config.type === 'sse' ? 'sse'
+                : (config.type && config.type !== 'stdio' ? 'http' : 'stdio');
+        this.transportMode = mode === 'sse' ? 'http' : mode;
+
+        if (mode === 'sse') {
+            return this.connectSse(config);
+        }
+        if (mode === 'http') {
+            return this.connectHttp(config);
+        }
+        return this.connectStdio(config);
+    }
+
+    private     async connectHttp(config: McpServerConfig): Promise<{ name?: string; version?: string }> {
+        if (!config.url) {
+            throw new Error('HTTP transport requires a "url"');
+        }
+        this.url = config.url;
+        this.httpHeaders = config.headers;
+        this.sessionId = undefined;
+        this.abortController = new AbortController();
+
+        // StreamableHTTP：除 POST 请求/响应外，客户端还须打开一条 GET SSE 流，
+        // 用于接收 server→client 的消息（含服务器以 202 异步下发的 JSON-RPC 响应）。
+        // 若不打开该流，服务器返回 202 时 initialize 永远收不到响应 → 表现为 30s 超时。
+        // 对不支持 GET 流的纯请求/响应服务器，下面 fetch 会失败/返回非 SSE，错误被忽略，
+        // 不影响 POST 自带响应（200+JSON）的正常工作，向后兼容。
+        void this.startHttpGetStream();
+
+        try {
+            const initResult = await this.sendRequest('initialize', {
+                protocolVersion: '2024-11-05',
+                capabilities: {},
+                clientInfo: { name: 'AI-Tools Inspector', version: '1.0.0' },
+            }) as { serverInfo?: { name?: string; version?: string } };
+
+            this.serverInfo = initResult.serverInfo || null;
+            this.connected = true;
+            this.sendNotification('notifications/initialized', {});
+            this.emit('connected', this.serverInfo);
+            return this.serverInfo || {};
+        } catch (error) {
+            this.connected = false;
+            throw error;
+        }
+    }
+
+    /**
+     * 连接到「旧版 SSE」传输的 MCP Server。
+     *
+     * 与 streamable-http（POST 即响应）不同，SSE 模式：
+     *  - 客户端先发 GET 到 url 建立 server→client 的 SSE 消息通道；
+     *  - 服务端首条 `event: endpoint` 会携带实际 POST 地址（含 session_id）；
+     *  - 之后所有 JSON-RPC 请求都 POST 到该地址，响应经上面的 GET 流回传。
+     * 不打开 GET 流直接 POST 会导致 initialize 永远等不到响应（表现为 30s 超时）。
+     */
+    private async connectSse(config: McpServerConfig): Promise<{ name?: string; version?: string }> {
+        if (!config.url) {
+            throw new Error('SSE transport requires a "url"');
+        }
+        this.url = config.url;
+        this.httpHeaders = config.headers;
+        this.sessionId = undefined;
+        this.ssePostUrl = undefined;
+        this.sseBuffer = '';
+        this.abortController = new AbortController();
+        // 复用 httpPost 发送请求，但 POST 目标为握手得到的 ssePostUrl
+        this.transportMode = 'http';
+
+        try {
+            const sseRes = await this.performRequest('GET', this.url, {
+                'Accept': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                ...(this.httpHeaders || {}),
+            });
+
+            this.startSseRead(Readable.toWeb(sseRes) as unknown as ReadableStream<Uint8Array>);
+
+            // 等待服务端下发 endpoint（含 session_id 的 POST 地址）
+            const endpointReceived = new Promise<void>((resolve) => {
+                this.sseEndpointResolve = resolve;
+            });
+            const handshakeTimeout = new Promise<void>((_, reject) => {
+                setTimeout(() => reject(new Error('SSE endpoint handshake timeout')), 10000);
+            });
+            await Promise.race([endpointReceived, handshakeTimeout]);
+
+            const initResult = await this.sendRequest('initialize', {
+                protocolVersion: '2024-11-05',
+                capabilities: {},
+                clientInfo: { name: 'AI-Tools Inspector', version: '1.0.0' },
+            }) as { serverInfo?: { name?: string; version?: string } };
+
+            this.serverInfo = initResult.serverInfo || null;
+            this.connected = true;
+            this.sendNotification('notifications/initialized', {});
+            this.emit('connected', this.serverInfo);
+            return this.serverInfo || {};
+        } catch (error) {
+            this.connected = false;
+            this.disconnect();
+            throw error;
+        }
+    }
+
+    /**
+     * 持续读取 SSE GET 流：把 `endpoint` 事件解析为 POST 地址，把 `message` 事件当作 JSON-RPC 响应。
+     */
+    private startSseRead(body: ReadableStream<Uint8Array> | null): void {
+        if (!body) return;
+        const reader = body.getReader();
+        this.sseReader = reader;
+        const decoder = new TextDecoder();
+
+        const pump = async () => {
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    // 归一化 CRLF→LF：部分服务端（Python MCP SDK / uvicorn）严格按 SSE 规范
+                    // 用 \r\n 分隔块，而下方按 '\n\n' 切分块，不归一化会导致块永不切出、
+                    // 消息永不解析，表现为 initialize 30s 超时。
+                    this.sseBuffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+                    let idx;
+                    while ((idx = this.sseBuffer.indexOf('\n\n')) !== -1) {
+                        const block = this.sseBuffer.slice(0, idx);
+                        this.sseBuffer = this.sseBuffer.slice(idx + 2);
+                        this.handleSseEvent(block);
+                    }
+                }
+            } catch {
+                // 流被关闭/中止，忽略
+            }
+        };
+        void pump();
+    }
+
+    /**
+     * 打开 StreamableHTTP 的 server→client GET SSE 流。
+     * 用途：接收服务器主动下发的消息（通知、日志），以及以 202 异步回传的 JSON-RPC 响应。
+     * 复用 startSseRead 的解析逻辑（只处理 `message` 事件；StreamableHTTP 无 `endpoint` 事件）。
+     * 若服务器不支持 GET 流（纯请求/响应模式），fetch 会失败或返回非 SSE，错误被忽略，
+     * 不影响 POST 自带响应（200+JSON）的正常工作。
+     */
+    private async startHttpGetStream(): Promise<void> {
+        if (!this.url || !this.abortController) return;
+        try {
+            const res = await this.performRequest('GET', this.url, {
+                'Accept': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                ...(this.sessionId ? { 'mcp-session-id': this.sessionId } : {}),
+                ...(this.httpHeaders || {}),
+            });
+            this.startSseRead(Readable.toWeb(res) as unknown as ReadableStream<Uint8Array>);
+        } catch (error) {
+            if ((error as Error)?.name === 'AbortError') return;
+            console.error('[MCP] HTTP GET stream failed (non-fatal):', error);
+        }
+    }
+
+    private handleSseEvent(block: string): void {
+        let event = 'message';
+        const dataLines: string[] = [];
+        for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) {
+                event = line.slice(6).trim();
+            } else if (line.startsWith('data:')) {
+                dataLines.push(line.slice(5).trim());
+            }
+        }
+        const data = dataLines.join('\n');
+        if (!data) return;
+
+        if (event === 'endpoint') {
+            try {
+                this.ssePostUrl = new URL(data, this.url).href;
+            } catch {
+                this.ssePostUrl = data;
+            }
+            this.sseEndpointResolve?.();
+            this.sseEndpointResolve = undefined;
+            return;
+        }
+
+        // message / 其它事件：当作 JSON-RPC 响应处理
+        try {
+            this.handleResponse(JSON.parse(data));
+        } catch (e) {
+            console.error('[MCP] Failed to parse SSE message:', data, e);
+        }
+    }
+
+    private async connectStdio(config: McpServerConfig): Promise<{ name?: string; version?: string }> {
         return new Promise((resolve, reject) => {
             try {
-                // 获取完整的 shell 环境变量，解决 GUI 启动时环境变量不完整的问题
-                const shellEnv = this.getShellEnv();
+                // 获取完整的 shell 环境变量，解决 GUI 启动时环境变量不完整的问题。
+                // 只清理「从宿主继承」的环境（避免 IDE/调试器/沙箱注入的 --inspect、
+                // 安全删除 shim 透传给子进程导致 server 卡在断点/被拦截）；
+                // 用户在该 server 配置里「显式设置」的 env 原样保留，不被误删。
+                // [诊断] 打印宿主透传给 mcp-dock 的 NODE_OPTIONS，便于确认 --inspect 来源。
+                console.error('[MCP env debug] inherited NODE_OPTIONS =', JSON.stringify(process.env.NODE_OPTIONS));
+                const shellEnv = this.sanitizeEnv(this.getShellEnv());
                 const env = {
                     ...shellEnv,
                     ...config.env,
@@ -210,9 +462,10 @@ export class McpClient extends EventEmitter {
                 // 启动进程
                 // Windows: shell:true 会经 cmd.exe 派生，需 windowsHide 避免弹黑窗，退出时用 taskkill /T 杀整棵进程树；
                 // macOS/Linux: detached 建立独立进程组，退出时 kill(-pid) 可一并终止全部子进程。
-                this.process = spawn(config.command, config.args || [], {
+                this.process = spawn(config.command!, config.args || [], {
                     stdio: ['pipe', 'pipe', 'pipe'],
                     env,
+                    cwd: config.cwd || undefined,
                     shell: true,
                     ...(process.platform === 'win32' ? {windowsHide: true} : {detached: true}),
                 });
@@ -232,7 +485,7 @@ export class McpClient extends EventEmitter {
                 // 处理进程退出
                 this.process.on('exit', (code) => {
                     this.connected = false;
-                    this.emit('disconnected', code);
+                    this.emit('disconnected', code ?? 0);
                     this.rejectAllPending(new Error(`Process exited with code ${code}`));
                 });
 
@@ -273,9 +526,188 @@ export class McpClient extends EventEmitter {
     }
 
     /**
+     * 统一发送一行 JSON-RPC 消息：stdio 写子进程 stdin，http 走 fetch POST。
+     */
+    private sendRawMessage(message: string): void {
+        if (this.transportMode === 'http') {
+            void this.httpPost(message);
+        } else {
+            this.process?.stdin?.write(message);
+        }
+    }
+
+    /**
+     * 通过 HTTP(S) 发送 JSON-RPC（支持 streamable-http 与 sse）。
+     * POST 到 config.url，响应可能是 JSON 或 SSE 流；
+     * 服务端可能在响应头返回 mcp-session-id，后续请求需携带。
+     */
+    private async httpPost(message: string): Promise<void> {
+        if (!this.url || !this.abortController) return;
+        // SSE 模式下 POST 目标为握手得到的 endpoint 地址；其余情况直接用 url
+        const postUrl = this.ssePostUrl || this.url;
+        try {
+            const res = await this.performRequest('POST', postUrl, {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json, text/event-stream',
+                ...(this.sessionId ? { 'mcp-session-id': this.sessionId } : {}),
+                ...(this.httpHeaders || {}),
+            }, message);
+
+            const sid = res.headers['mcp-session-id'] || res.headers['mcp-session-id'];
+            if (sid) this.sessionId = sid as string;
+
+            const ct = (res.headers['content-type'] as string) || '';
+            if (ct.includes('text/event-stream')) {
+                await this.readSseStream(Readable.toWeb(res) as unknown as ReadableStream<Uint8Array>, (msg) => this.handleResponse(msg));
+            } else {
+                const text = await this.collectText(res);
+                if (text) {
+                    try {
+                        this.handleResponse(JSON.parse(text));
+                    } catch (e) {
+                        console.error('[MCP] Failed to parse http response:', text, e);
+                    }
+                }
+            }
+        } catch (error: unknown) {
+            if ((error as Error)?.name === 'AbortError') return;
+            const err = error instanceof Error ? error : new Error(String(error));
+            this.emit('error', err);
+            // 网络层错误：reject 对应 pending 请求，避免调用方永久挂起
+            try {
+                const id = (JSON.parse(message) as { id?: number }).id;
+                const pending = id != null ? this.pendingRequests.get(id) : undefined;
+                if (pending) {
+                    this.pendingRequests.delete(id!);
+                    pending.reject(err);
+                }
+            } catch {
+                // 忽略解析失败
+            }
+        }
+    }
+
+    /**
+     * 使用 Node 原生 http/https 发起请求。
+     *
+     * 重要：刻意不走 Electron 主进程的全局 `fetch`（Chromium 网络栈）。后者在 Windows 上会
+     * 遵守系统/会话代理设置，导致 localhost / 127.0.0.1 被发往代理而连接失败（表现为
+     * "fetch failed"）。改用 Node 的 http 模块后，行为与普通 curl 一致——直连 OS 网络栈，
+     * 不受代理拦截，且默认启用 Happy Eyeballs（autoSelectFamily）可正确处理 IPv4/IPv6。
+     *
+     * 对 SSE（GET 长连接）在收到响应头后立即 resolve(res)，由调用方继续以流的方式消费。
+     */
+    private performRequest(
+        method: 'GET' | 'POST',
+        url: string,
+        headers: Record<string, string>,
+        body?: string,
+    ): Promise<http.IncomingMessage> {
+        return new Promise((resolve, reject) => {
+            let u: URL;
+            try {
+                u = new URL(url);
+            } catch (e) {
+                reject(e);
+                return;
+            }
+            const lib = u.protocol === 'https:' ? https : http;
+            const req = lib.request(u, { method, headers }, (res) => resolve(res));
+            this.httpReq = req;
+            req.on('error', (err) => reject(err));
+            // 支持中断：断开时 abortController.abort() 会触发 destroy，关闭底层连接
+            if (this.abortController) {
+                if (this.abortController.signal.aborted) {
+                    req.destroy();
+                } else {
+                    this.abortController.signal.addEventListener(
+                        'abort',
+                        () => req.destroy(),
+                        { once: true },
+                    );
+                }
+            }
+            if (body) req.write(body);
+            req.end();
+        });
+    }
+
+    /** 将 Node 响应体读为完整文本（非 SSE 的 JSON 响应）。 */
+    private collectText(res: http.IncomingMessage): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const chunks: Buffer[] = [];
+            res.on('data', (c: Buffer) => chunks.push(c));
+            res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+            res.on('error', reject);
+        });
+    }
+
+    /**
+     * 解析 SSE 流（text/event-stream），将每条 data: 行作为 JSON-RPC 消息回调。
+     */
+    private async readSseStream(body: ReadableStream<Uint8Array> | null, onMessage: (msg: JsonRpcResponse) => void): Promise<void> {
+        if (!body) return;
+        const reader = body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                // 归一化 CRLF→LF：兼容按 SSE 规范使用 \r\n 分隔块的服务端（如 uvicorn）。
+                // 否则只读 '\n\n' 永远切不出块，initialize 响应无法解析 → 30s 超时。
+                buf += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+                let idx;
+                while ((idx = buf.indexOf('\n\n')) !== -1) {
+                    const chunk = buf.slice(0, idx);
+                    buf = buf.slice(idx + 2);
+                    const dataLines = chunk.split('\n')
+                        .filter((l) => l.startsWith('data:'))
+                        .map((l) => l.slice(5).trim());
+                    const data = dataLines.join('\n');
+                    if (data) {
+                        try {
+                            onMessage(JSON.parse(data));
+                        } catch (e) {
+                            console.error('[MCP] Failed to parse SSE data:', data, e);
+                        }
+                    }
+                }
+            }
+        } finally {
+            reader.releaseLock();
+        }
+    }
+
+    /**
      * 断开连接
      */
     disconnect(): void {
+        if (this.transportMode === 'http') {
+            this.abortController?.abort();
+            // 强制销毁底层 TCP 连接（SSE GET 长连接可能在 abort 事件前已脱离 req 句柄）
+            try {
+                this.httpReq?.destroy();
+            } catch {
+                // 忽略
+            }
+            this.httpReq = undefined;
+            this.abortController = undefined;
+            // 关闭 SSE GET 流（若存在）
+            try {
+                this.sseReader?.cancel();
+            } catch {
+                // 忽略
+            }
+            this.sseReader = undefined;
+            this.sseEndpointResolve = undefined;
+            this.ssePostUrl = undefined;
+            this.connected = false;
+            this.buffer = '';
+            this.rejectAllPending(new Error('Disconnected'));
+            this.emit('disconnected', 0);
+            return;
+        }
         if (this.process) {
             this.killProcessTree(this.process);
             this.process = null;
@@ -392,7 +824,7 @@ export class McpClient extends EventEmitter {
      */
     private sendRequest(method: string, params?: Record<string, unknown>): Promise<unknown> {
         return new Promise((resolve, reject) => {
-            if (!this.process?.stdin) {
+            if (this.transportMode === 'stdio' && !this.process?.stdin) {
                 reject(new Error('No stdin available'));
                 return;
             }
@@ -408,7 +840,7 @@ export class McpClient extends EventEmitter {
             this.pendingRequests.set(id, {resolve, reject});
 
             const message = JSON.stringify(request) + '\n';
-            this.process.stdin.write(message);
+            this.sendRawMessage(message);
 
             // 设置超时
             setTimeout(() => {
@@ -424,7 +856,7 @@ export class McpClient extends EventEmitter {
      * 发送通知（无需响应）
      */
     private sendNotification(method: string, params?: Record<string, unknown>): void {
-        if (!this.process?.stdin) {
+        if (this.transportMode === 'stdio' && !this.process?.stdin) {
             return;
         }
 
@@ -435,7 +867,7 @@ export class McpClient extends EventEmitter {
         };
 
         const message = JSON.stringify(notification) + '\n';
-        this.process.stdin.write(message);
+        this.sendRawMessage(message);
     }
 
     /**

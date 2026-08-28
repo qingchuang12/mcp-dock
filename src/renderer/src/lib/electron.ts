@@ -16,6 +16,7 @@ import type {
 import type {AnyClientId, ClientInfo, ClientType, CustomClientDef, SkillClientType} from '../../../main/config-manager';
 import type {CloudSyncConfig, CloudSyncConfigInput, CloudSyncResult} from '../../../shared/cloud-sync-constants';
 import {defaultCloudSyncConfig} from '../../../shared/cloud-sync-constants';
+import type {SyncTask, SyncTaskKind, SyncTaskScope} from '../../../shared/sync-task-types';
 
 export {defaultCloudSyncConfig};
 
@@ -85,6 +86,10 @@ export interface DiffResult {
     backup: any;
     skillsAdded: string[];
     skillsRemoved: string[];
+    /** 客户端级变更（按客户端分别比对，识别「从多客户端之一移除」等单客户端变更） */
+    clientChanges?: { client: string; added: string[]; removed: string[]; modified: string[] }[];
+    /** Skills 客户端级变更 */
+    skillClientChanges?: { client: string; added: string[]; removed: string[] }[];
 }
 
 export type {ClientType, SkillClientType, ClientInfo, AnyClientId, CustomClientDef};
@@ -214,11 +219,7 @@ export interface McpTool {
 }
 
 export interface McpApi {
-    connect: (sessionId: string, config: {
-        command: string;
-        args?: string[];
-        env?: Record<string, string>
-    }) => Promise<{ success: boolean; serverInfo?: { name?: string; version?: string }; error?: string }>;
+    connect: (sessionId: string, config: McpServerConfig) => Promise<{ success: boolean; serverInfo?: { name?: string; version?: string }; error?: string }>;
     disconnect: (sessionId: string) => Promise<{ success: boolean }>;
     isConnected: (sessionId: string) => Promise<boolean>;
     listTools: (sessionId: string) => Promise<{ success: boolean; tools?: McpTool[]; error?: string }>;
@@ -286,6 +287,10 @@ interface ElectronAPI {
         openConfigDirectory: (client: AnyClientId) => Promise<string>;
         openSkillsDirectory: (client: SkillClientType) => Promise<string>;
     };
+    dialog: {
+        /** 打开系统目录选择对话框；defaultPath 缺省时使用用户主目录 */
+        selectDirectory: (defaultPath?: string) => Promise<{ canceled: boolean; path?: string }>;
+    };
     skills: {
         getInstalled: (client: SkillClientType) => Promise<InstalledSkill[]>;
         getAllInstalled: () => Promise<AllSkillsResult>;
@@ -302,6 +307,21 @@ interface ElectronAPI {
         createCustom: (input: CustomSkillInput, clients: SkillClientType[]) => Promise<CreateCustomSkillResult>;
         /** 更新本地自定义 Skill（改写 SKILL.md，可重命名） */
         updateCustom: (originalName: string, input: CustomSkillInput, clients: SkillClientType[]) => Promise<CreateCustomSkillResult>;
+        /**
+         * 保存自定义 Skill 并自动同步到云端（暂存区 + 自动 push）。
+         * 返回本地保存结果与云端同步状态；云端未配置时 cloud.skipped=true。
+         */
+        saveWithCloudSync: (
+            isEdit: boolean,
+            originalName: string | undefined,
+            input: CustomSkillInput,
+            clients: SkillClientType[]
+        ) => Promise<{
+            success: boolean;
+            error?: string;
+            skillName?: string;
+            cloud?: { pushed: boolean; skipped: boolean; enqueued: boolean; message: string };
+        }>;
         /** 读取本地 Skill 的 SKILL.md（解析 frontmatter 与正文，用于编辑回填） */
         readSkillMd: (skillName: string, client: SkillClientType) => Promise<{
             name: string;
@@ -375,10 +395,10 @@ interface ElectronAPI {
     // 统一平台适配器通道（新架构）
     platforms: {
         list: () => Promise<{id: string; name: string}[]>;
-        searchSkills: (platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string) => Promise<PlatformSearchPage>;
-        searchServers: (platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string, source?: string) => Promise<PlatformServerSearchPage>;
-        getServerDetail: (platformType: string, serverId: string) => Promise<PlatformServerDetail>;
-        facets: (platformType: string) => Promise<PlatformFacets>;
+        searchSkills: (platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string, connectionId?: string) => Promise<PlatformSearchPage>;
+        searchServers: (platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string, source?: string, connectionId?: string) => Promise<PlatformServerSearchPage>;
+        getServerDetail: (platformType: string, serverId: string, connectionId?: string) => Promise<PlatformServerDetail>;
+        facets: (platformType: string, resourceType?: 'mcp' | 'skills') => Promise<PlatformFacets>;
         diagnostics: (platformType: string) => Promise<any>;
     };
     // 云同步（Git / SFTP）：把云端存储当作一个客户端
@@ -428,6 +448,21 @@ interface ElectronAPI {
     // 系统主题跟随：主进程 nativeTheme 变化时回调（auto 模式用于实时刷新）
     theme: {
         onSystemThemeChange: (callback: (shouldUseDarkColors: boolean) => void) => () => void;
+    };
+    // 同步任务：后台异步云同步队列，侧边栏「同步任务」面板使用
+    syncTasks: {
+        /** 拉取当前任务列表 */
+        list: () => Promise<SyncTask[]>;
+        /** 入队一个同步任务（kind: 'cloud-push' | 'cloud-pull'，scope: 'mcp' | 'skills' | 'all'） */
+        enqueue: (kind: SyncTaskKind, title?: string, scope?: SyncTaskScope) => Promise<SyncTask>;
+        /** 重试一个失败的任务 */
+        retry: (id: string) => Promise<boolean>;
+        /** 移除单条任务 */
+        remove: (id: string) => Promise<void>;
+        /** 清空全部任务 */
+        clear: () => Promise<void>;
+        /** 订阅任务列表变化（主进程每次状态更新都会回调最新列表），返回取消订阅函数 */
+        onUpdated: (callback: (tasks: SyncTask[]) => void) => () => void;
     };
 }
 
@@ -649,6 +684,9 @@ const mockAPI: ElectronAPI = {
         openConfigDirectory: async () => '',
         openSkillsDirectory: async () => '',
     },
+    dialog: {
+        selectDirectory: async () => ({canceled: true}),
+    },
     skills: {
         getInstalled: async () => [],
         getAllInstalled: async () => ({
@@ -678,6 +716,7 @@ const mockAPI: ElectronAPI = {
         installFromDiscovered: async () => ({success: true}),
         createCustom: async (input) => ({success: true, skillName: input.name}),
         updateCustom: async (originalName) => ({success: true, skillName: originalName}),
+        saveWithCloudSync: async () => ({success: false, error: 'Not available in browser'}),
         readSkillMd: async (skillName) => ({name: skillName, description: '', body: ''}),
         importFromFile: async () => ({success: false, error: 'Not available in browser'}),
         pickFolder: async () => ({canceled: true}),
@@ -811,9 +850,35 @@ const mockAPI: ElectronAPI = {
         onSystemThemeChange: () => () => {
         },
     },
+    syncTasks: {
+        list: async () => [],
+        enqueue: async (_kind: SyncTaskKind, _title?: string) => ({
+            id: `mock_${Date.now()}`,
+            kind: _kind,
+            title: _title || (_kind === 'cloud-push' ? '上传到云端' : '从云端下载'),
+            status: 'success',
+            createdAt: Date.now(),
+            finishedAt: Date.now(),
+        }),
+        retry: async () => false,
+        remove: async () => {
+        },
+        clear: async () => {
+        },
+        onUpdated: () => () => {
+        },
+    },
 };
 
-// 获取 API (自动回退到 Mock)
+// 获取 API。生产环境必须由 preload 注入真实 API；若缺失则直接抛错，
+// 避免回落到 mock 让用户看到完全虚假的可用界面（见 P1-8）。
+// 仅开发环境（无 Electron 宿主，如纯浏览器预览）才允许使用 mock。
 export function useElectronAPI(): ElectronAPI {
-    return getElectronAPI() || mockAPI;
+    const api = getElectronAPI();
+    if (api) return api;
+    if (process.env.NODE_ENV !== 'production') {
+        console.warn('[electron] 未检测到 preload API，开发环境使用 mock API');
+        return mockAPI;
+    }
+    throw new Error('Electron API 未注入，应用无法运行（preload 加载失败）');
 }

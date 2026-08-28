@@ -20,6 +20,22 @@ interface BackupInfo {
   clients: AnyClientId[];
 }
 
+/** 差异行：新增(+)/移除(-)/修改(~) 统一配色 */
+function DiffChangeRow({id, kind, label}: { id: string; kind: 'added' | 'removed' | 'modified'; label?: string }) {
+    const style = {
+        added: {sign: '+', cls: 'bg-[#34c759]/10 border-[#34c759]/20 text-[#34c759]'},
+        removed: {sign: '-', cls: 'bg-[#ff3b30]/10 border-[#ff3b30]/20 text-[#ff3b30]'},
+        modified: {sign: '~', cls: 'bg-[#ff9f0a]/10 border-[#ff9f0a]/20 text-[#ff9f0a]'},
+    }[kind];
+    return (
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-md border ${style.cls}`}>
+            <span className="text-[12px]">{style.sign}</span>
+            <span className="text-[var(--color-text)] font-mono text-[12px]">{id}</span>
+            {label && <span className="text-[12px] text-[var(--color-muted)]">{label}</span>}
+        </div>
+    );
+}
+
 export default function History() {
   const { t } = useTranslation();
   const api = useElectronAPI();
@@ -326,51 +342,76 @@ export default function History() {
               </div>
             )}
 
-            {/* MCP Servers 变更详情 */}
+            {/* MCP Servers 变更详情（按客户端展示，识别「从多客户端之一移除」等单客户端变更） */}
             {(selectedDiff.added.length > 0 || selectedDiff.removed.length > 0 || selectedDiff.modified.length > 0) && (
-              <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                {selectedDiff.added.map((id) => (
-                  <div key={id} className="flex items-center gap-2 px-3 py-2 rounded-md bg-[#34c759]/10 border border-[#34c759]/20">
-                    <span className="text-[#34c759] text-[12px]">+</span>
-                    <span className="text-[var(--color-text)] font-mono text-[12px]">{id}</span>
-                    <span className="text-[12px] text-[var(--color-muted)]">Server</span>
-                  </div>
-                ))}
-                {selectedDiff.removed.map((id) => (
-                  <div key={id} className="flex items-center gap-2 px-3 py-2 rounded-md bg-[#ff3b30]/10 border border-[#ff3b30]/20">
-                    <span className="text-[#ff3b30] text-[12px]">-</span>
-                    <span className="text-[var(--color-text)] font-mono text-[12px]">{id}</span>
-                    <span className="text-[12px] text-[var(--color-muted)]">Server</span>
-                  </div>
-                ))}
-                {selectedDiff.modified.map((id) => (
-                  <div key={id} className="flex items-center gap-2 px-3 py-2 rounded-md bg-[#ff9f0a]/10 border border-[#ff9f0a]/20">
-                    <span className="text-[#ff9f0a] text-[12px]">~</span>
-                    <span className="text-[var(--color-text)] font-mono text-[12px]">{id}</span>
-                    <span className="text-[12px] text-[var(--color-muted)]">Server</span>
-                  </div>
-                ))}
-              </div>
+              selectedDiff.clientChanges && selectedDiff.clientChanges.length > 0 ? (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {selectedDiff.clientChanges.map((cc) => (
+                    <div key={cc.client} className="rounded-md border border-[var(--color-border)] p-2">
+                      <div className="flex items-center gap-1.5 mb-1.5 text-[12px] text-[var(--color-muted2)]">
+                        <ClientIcon clientId={cc.client} size={14} />
+                        <span className="font-medium">{cc.client}</span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        {cc.added.map((id) => (
+                          <DiffChangeRow key={`a-${id}`} id={id} kind="added" label="Server" />
+                        ))}
+                        {cc.removed.map((id) => (
+                          <DiffChangeRow key={`r-${id}`} id={id} kind="removed" label="Server" />
+                        ))}
+                        {cc.modified.map((id) => (
+                          <DiffChangeRow key={`m-${id}`} id={id} kind="modified" label="Server" />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {selectedDiff.added.map((id) => (
+                    <DiffChangeRow key={id} id={id} kind="added" label="Server" />
+                  ))}
+                  {selectedDiff.removed.map((id) => (
+                    <DiffChangeRow key={id} id={id} kind="removed" label="Server" />
+                  ))}
+                  {selectedDiff.modified.map((id) => (
+                    <DiffChangeRow key={id} id={id} kind="modified" label="Server" />
+                  ))}
+                </div>
+              )
             )}
 
-            {/* Skills 变更详情 */}
+            {/* Skills 变更详情（按客户端展示） */}
             {((selectedDiff.skillsAdded?.length || 0) > 0 || (selectedDiff.skillsRemoved?.length || 0) > 0) && (
-              <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                {selectedDiff.skillsAdded?.map((name) => (
-                  <div key={name} className="flex items-center gap-2 px-3 py-2 rounded-md bg-[#34c759]/10 border border-[#34c759]/20">
-                    <span className="text-[#34c759] text-[12px]">+</span>
-                    <span className="text-[var(--color-text)] font-mono text-[12px]">{name}</span>
-                    <span className="text-[12px] text-[var(--color-muted)]">Skill</span>
-                  </div>
-                ))}
-                {selectedDiff.skillsRemoved?.map((name) => (
-                  <div key={name} className="flex items-center gap-2 px-3 py-2 rounded-md bg-[#ff3b30]/10 border border-[#ff3b30]/20">
-                    <span className="text-[#ff3b30] text-[12px]">-</span>
-                    <span className="text-[var(--color-text)] font-mono text-[12px]">{name}</span>
-                    <span className="text-[12px] text-[var(--color-muted)]">Skill</span>
-                  </div>
-                ))}
-              </div>
+              selectedDiff.skillClientChanges && selectedDiff.skillClientChanges.length > 0 ? (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {selectedDiff.skillClientChanges.map((cc) => (
+                    <div key={cc.client} className="rounded-md border border-[var(--color-border)] p-2">
+                      <div className="flex items-center gap-1.5 mb-1.5 text-[12px] text-[var(--color-muted2)]">
+                        <ClientIcon clientId={cc.client} size={14} />
+                        <span className="font-medium">{cc.client}</span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        {cc.added.map((name) => (
+                          <DiffChangeRow key={`a-${name}`} id={name} kind="added" label="Skill" />
+                        ))}
+                        {cc.removed.map((name) => (
+                          <DiffChangeRow key={`r-${name}`} id={name} kind="removed" label="Skill" />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {selectedDiff.skillsAdded?.map((name) => (
+                    <DiffChangeRow key={name} id={name} kind="added" label="Skill" />
+                  ))}
+                  {selectedDiff.skillsRemoved?.map((name) => (
+                    <DiffChangeRow key={name} id={name} kind="removed" label="Skill" />
+                  ))}
+                </div>
+              )
             )}
           </div>
         )}

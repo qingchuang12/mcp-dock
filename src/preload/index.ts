@@ -16,6 +16,7 @@ import type {
 // 客户端类型统一从主进程 config-manager 引入，避免多端重复定义导致类型不兼容
 import type {AnyClientId, ClientInfo, ClientType, CustomClientDef, SkillClientType} from '../main/config-manager';
 import type {CloudSyncConfig, CloudSyncConfigInput, CloudSyncResult} from '../shared/cloud-sync-constants';
+import type {SyncTask, SyncTaskKind, SyncTaskScope} from '../shared/sync-task-types';
 
 // 类型定义
 export interface McpServerConfig {
@@ -292,6 +293,13 @@ const api = {
             ipcRenderer.invoke('system:open-skills-directory', client),
     },
 
+    // 对话框（渲染进程复用系统原生选择框）
+    dialog: {
+        /** 打开系统目录选择对话框；defaultPath 缺省时使用用户主目录 */
+        selectDirectory: (defaultPath?: string): Promise<{ canceled: boolean; path?: string }> =>
+            ipcRenderer.invoke('dialog:select-directory', defaultPath),
+    },
+
     // Skills 管理
     skills: {
         getInstalled: (client: SkillClientType): Promise<InstalledSkill[]> =>
@@ -318,6 +326,17 @@ const api = {
             ipcRenderer.invoke('skills:create-custom', input, clients),
         updateCustom: (originalName: string, input: CustomSkillInput, clients: SkillClientType[]): Promise<CreateCustomSkillResult> =>
             ipcRenderer.invoke('skills:update-custom', originalName, input, clients),
+        saveWithCloudSync: (
+            isEdit: boolean,
+            originalName: string | undefined,
+            input: CustomSkillInput,
+            clients: SkillClientType[]
+        ): Promise<{
+            success: boolean;
+            error?: string;
+            skillName?: string;
+            cloud?: { pushed: boolean; skipped: boolean; enqueued: boolean; message: string };
+        }> => ipcRenderer.invoke('skills:save-with-cloud-sync', isEdit, originalName, input, clients),
         readSkillMd: (skillName: string, client: SkillClientType): Promise<{
             name: string;
             description: string;
@@ -414,14 +433,14 @@ const api = {
     platforms: {
         list: (): Promise<{id: string; name: string}[]> =>
             ipcRenderer.invoke('platforms:list'),
-        searchSkills: (platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string): Promise<PlatformSearchPage> =>
-            ipcRenderer.invoke('platforms:search-skills', platformType, query, page, pageSize, category, sort),
-        searchServers: (platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string, source?: string): Promise<PlatformServerSearchPage> =>
-            ipcRenderer.invoke('platforms:search-servers', platformType, query, page, pageSize, category, sort, source),
-        getServerDetail: (platformType: string, serverId: string): Promise<PlatformServerDetail> =>
-            ipcRenderer.invoke('platforms:server-detail', platformType, serverId),
-        facets: (platformType: string): Promise<PlatformFacets> =>
-            ipcRenderer.invoke('platforms:facets', platformType),
+        searchSkills: (platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string, connectionId?: string): Promise<PlatformSearchPage> =>
+            ipcRenderer.invoke('platforms:search-skills', platformType, query, page, pageSize, category, sort, connectionId),
+        searchServers: (platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string, source?: string, connectionId?: string): Promise<PlatformServerSearchPage> =>
+            ipcRenderer.invoke('platforms:search-servers', platformType, query, page, pageSize, category, sort, source, connectionId),
+        getServerDetail: (platformType: string, serverId: string, connectionId?: string): Promise<PlatformServerDetail> =>
+            ipcRenderer.invoke('platforms:server-detail', platformType, serverId, connectionId),
+        facets: (platformType: string, resourceType?: 'mcp' | 'skills'): Promise<PlatformFacets> =>
+            ipcRenderer.invoke('platforms:facets', platformType, resourceType),
         diagnostics: (platformType: string): Promise<any> =>
             ipcRenderer.invoke('platforms:diagnostics', platformType),
     },
@@ -446,12 +465,33 @@ const api = {
         },
     },
 
+    // 同步任务：后台异步云同步队列，侧边栏「同步任务」面板使用
+    syncTasks: {
+        list: (): Promise<SyncTask[]> =>
+            ipcRenderer.invoke('sync-tasks:list'),
+        enqueue: (kind: SyncTaskKind, title?: string, scope?: SyncTaskScope): Promise<SyncTask> =>
+            ipcRenderer.invoke('sync-tasks:enqueue', kind, title, scope),
+        retry: (id: string): Promise<boolean> =>
+            ipcRenderer.invoke('sync-tasks:retry', id),
+        remove: (id: string): Promise<void> =>
+            ipcRenderer.invoke('sync-tasks:remove', id),
+        clear: (): Promise<void> =>
+            ipcRenderer.invoke('sync-tasks:clear'),
+        // 主进程每次任务状态变化都推送最新列表
+        onUpdated: (callback: (tasks: SyncTask[]) => void): (() => void) => {
+            const listener = (_e: unknown, tasks: SyncTask[]) => callback(tasks);
+            ipcRenderer.on('sync-tasks:updated', listener);
+            return () => ipcRenderer.removeListener('sync-tasks:updated', listener);
+        },
+    },
+
     // MCP Inspector
     mcp: {
         connect: (sessionId: string, config: {
             command: string;
             args?: string[];
-            env?: Record<string, string>
+            env?: Record<string, string>;
+            cwd?: string;
         }): Promise<{ success: boolean; serverInfo?: { name?: string; version?: string }; error?: string }> =>
             ipcRenderer.invoke('mcp:connect', sessionId, config),
         disconnect: (sessionId: string): Promise<{ success: boolean }> =>

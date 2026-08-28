@@ -27,6 +27,10 @@ export interface DiffResult {
     // Skills 变更
     skillsAdded: string[];
     skillsRemoved: string[];
+    /** 客户端级变更（修复：按全局 server 集合比较会漏掉「从多客户端之一移除」等单客户端变更） */
+    clientChanges?: { client: string; added: string[]; removed: string[]; modified: string[] }[];
+    /** Skills 客户端级变更 */
+    skillClientChanges?: { client: string; added: string[]; removed: string[] }[];
 }
 
 interface BackupData {
@@ -39,6 +43,10 @@ interface BackupData {
     };
     skills?: {
         [key in SkillClientType]?: string[];
+    };
+    /** Skill 内容快照（SKILL.md 文本），用于回滚恢复（P1-3）。旧备份无此字段时跳过。 */
+    skillContents?: {
+        [key in SkillClientType]?: Record<string, string>;
     };
 }
 
@@ -72,22 +80,7 @@ export class HistoryManager {
      * 获取指定客户端的已安装 Skills 列表
      */
     private async getInstalledSkillNames(client: SkillClientType): Promise<string[]> {
-        const home = os.homedir();
-        const skillsPaths: Record<SkillClientType, string> = {
-            cursor: path.join(home, '.cursor', 'skills'),
-            'claude-code': path.join(home, '.claude', 'skills'),
-            'gemini-cli': path.join(home, '.gemini', 'skills'),
-            'codex-cli': path.join(home, '.codex', 'skills'),
-            opencode: path.join(home, '.config', 'opencode', 'skills'),
-            'agent-skills': path.join(home, '.agents', 'skills'),
-            codebuddy: path.join(home, '.codebuddy', 'skills'),
-            workbuddy: path.join(home, '.workbuddy', 'skills'),
-            qoder: path.join(home, '.qoder', 'skills'),
-            marscode: path.join(home, '.marscode', 'skills'),
-            cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'skills'),
-        };
-
-        const skillsPath = skillsPaths[client];
+        const skillsPath = this.configManager.getSkillsPath(client);
         const skillNames: string[] = [];
 
         try {
@@ -112,17 +105,57 @@ export class HistoryManager {
     }
 
     /**
+     * 读取指定客户端各已安装 Skill 的 SKILL.md 内容（用于回滚快照，P1-3）
+     */
+    private async getInstalledSkillContents(client: SkillClientType): Promise<Record<string, string>> {
+        const home = os.homedir();
+        const skillsPaths: Record<SkillClientType, string> = {
+            cursor: path.join(home, '.cursor', 'skills'),
+            'claude-code': path.join(home, '.claude', 'skills'),
+            'gemini-cli': path.join(home, '.gemini', 'skills'),
+            'codex-cli': path.join(home, '.codex', 'skills'),
+            opencode: path.join(home, '.config', 'opencode', 'skills'),
+            'agent-skills': path.join(home, '.agents', 'skills'),
+            codebuddy: path.join(home, '.codebuddy', 'skills'),
+            workbuddy: path.join(home, '.workbuddy', 'skills'),
+            qoder: path.join(home, '.qoder', 'skills'),
+            marscode: path.join(home, '.marscode', 'skills'),
+            cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'skills'),
+        };
+
+        const skillsPath = skillsPaths[client];
+        const result: Record<string, string> = {};
+        try {
+            const entries = await fs.readdir(skillsPath, {withFileTypes: true});
+            for (const entry of entries) {
+                if (!entry.isDirectory()) continue;
+                const skillMdPath = path.join(skillsPath, entry.name, 'SKILL.md');
+                try {
+                    result[entry.name] = await fs.readFile(skillMdPath, 'utf-8');
+                } catch {
+                    // 无 SKILL.md 或读取失败，跳过该 Skill
+                }
+            }
+        } catch {
+            // 目录不存在或无法读取
+        }
+        return result;
+    }
+
+    /**
      * 创建备份（备份所有客户端的配置，包括 Skills）
      */
     async backup(): Promise<string | null> {
         try {
             await this.ensureBackupDir();
 
-            const clients: ClientType[] = ['cursor', 'claude-code', 'gemini-cli', 'codex-cli', 'windsurf', 'zed', 'trae', 'opencode', 'codebuddy', 'workbuddy', 'qoder'];
+            // 客户端清单统一走 config-manager（含全部内置 + 自定义，P1-3）
+            const clients: ClientType[] = this.configManager.getClientTypes();
             const backupData: BackupData = {
                 timestamp: new Date().toISOString(),
                 clients: {},
                 skills: {},
+                skillContents: {},
             };
 
             let totalServerCount = 0;
@@ -149,12 +182,25 @@ export class HistoryManager {
                 const skillNames = await this.getInstalledSkillNames(client);
                 if (skillNames.length > 0) {
                     backupData.skills![client] = skillNames;
+                    const contents = await this.getInstalledSkillContents(client);
+                    if (Object.keys(contents).length > 0) {
+                        backupData.skillContents![client] = contents;
+                    }
                     totalSkillCount += skillNames.length;
                 }
             }
 
             // 只有在有配置时才创建备份
             if (totalServerCount === 0 && totalSkillCount === 0 && Object.keys(backupData.clients).length === 0) {
+                return null;
+            }
+
+            // 去重：若新快照与「最近一条」备份完全一致，说明本次操作未发生实际变更
+            // （例如重复创建已存在的 MCP、或该 MCP 在上一条备份里就已存在）。
+            // 若仍创建备份，会与上一条内容相同，getDiff 比较两者会得到空变更，
+            // 表现为「创建/操作后历史记录为空」。此处跳过，避免产生空变更历史条目。
+            const latest = await this.getLatestBackupData();
+            if (latest && this.backupSignature(latest) === this.backupSignature(backupData)) {
                 return null;
             }
 
@@ -304,6 +350,9 @@ export class HistoryManager {
                 }
             }
 
+            // 恢复 Skill 快照（P1-3）：写回备份时存在的 Skill 内容，并删除备份后新增的 Skill
+            await this.restoreSkillSnapshots(data);
+
             return true;
         } catch (error) {
             console.error('Restore failed:', error);
@@ -314,71 +363,209 @@ export class HistoryManager {
     /**
      * 获取备份与当前配置的差异
      */
-    async getDiff(timestamp: string): Promise<DiffResult | null> {
-        try {
-            const backups = await this.listBackups();
-            const backupInfo = backups.find(b => b.timestamp === timestamp);
+    /** 客户端对应的本机 Skills 目录（与 getInstalledSkillNames 保持一致） */
+    private skillPathFor(client: SkillClientType): string {
+        const home = os.homedir();
+        const skillsPaths: Record<SkillClientType, string> = {
+            cursor: path.join(home, '.cursor', 'skills'),
+            'claude-code': path.join(home, '.claude', 'skills'),
+            'gemini-cli': path.join(home, '.gemini', 'skills'),
+            'codex-cli': path.join(home, '.codex', 'skills'),
+            opencode: path.join(home, '.config', 'opencode', 'skills'),
+            'agent-skills': path.join(home, '.agents', 'skills'),
+            codebuddy: path.join(home, '.codebuddy', 'skills'),
+            workbuddy: path.join(home, '.workbuddy', 'skills'),
+            qoder: path.join(home, '.qoder', 'skills'),
+            marscode: path.join(home, '.marscode', 'skills'),
+            cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'skills'),
+        };
+        return skillsPaths[client];
+    }
 
-            if (!backupInfo) {
-                return null;
+    /**
+     * 回滚 Skill：写回备份快照中的 SKILL.md 内容；删除备份时不存在、当前却已安装的 Skill（P1-3）。
+     * 旧备份无 skillContents 时仅做「删除新增」的尽力回滚。
+     */
+    private async restoreSkillSnapshots(data: BackupData): Promise<void> {
+        const contents = data.skillContents || {};
+        const names = data.skills || {};
+        for (const client of SKILL_SUPPORTED_CLIENTS) {
+            if (client === 'cloud') continue;
+            const skillsPath = this.skillPathFor(client);
+            const backupNames = new Set(names[client] || []);
+            const backupContents = contents[client] || {};
+
+            // 1) 写回备份快照中的 Skill 内容
+            for (const [name, content] of Object.entries(backupContents)) {
+                try {
+                    const dir = path.join(skillsPath, name);
+                    await fs.mkdir(dir, {recursive: true});
+                    await fs.writeFile(path.join(dir, 'SKILL.md'), content, 'utf-8');
+                } catch (error) {
+                    console.error(`Failed to restore skill ${client}/${name}:`, error);
+                }
             }
 
-            const backupPath = path.join(this.backupDir, backupInfo.filename);
-            const content = await fs.readFile(backupPath, 'utf-8');
-            const data: BackupData = JSON.parse(content);
+            // 2) 删除备份后新增的 Skill（当前存在但备份未记录）
+            try {
+                const entries = await fs.readdir(skillsPath, {withFileTypes: true});
+                for (const entry of entries) {
+                    if (entry.isDirectory() && !backupNames.has(entry.name)) {
+                        await fs.rm(path.join(skillsPath, entry.name), {recursive: true, force: true});
+                    }
+                }
+            } catch {
+                // 目录不存在或无法读取
+            }
+        }
+    }
 
-            // 获取当前所有服务器
-            const {servers: currentServers} = await this.configManager.getAllInstalledServers();
+    /**
+     * 读取单个备份文件内容（容错：解析失败返回 null）
+     */
+    private async readBackupFile(filename: string): Promise<BackupData | null> {
+        try {
+            const filePath = path.join(this.backupDir, filename);
+            const content = await fs.readFile(filePath, 'utf-8');
+            return JSON.parse(content) as BackupData;
+        } catch {
+            return null;
+        }
+    }
 
-            // 获取备份中的所有服务器
-            const backupServers: Record<string, any> = {};
-            for (const clientData of Object.values(data.clients || {})) {
-                if (clientData?.config?.mcpServers) {
-                    for (const [serverId, serverConfig] of Object.entries(clientData.config.mcpServers)) {
-                        if (!backupServers[serverId]) {
-                            backupServers[serverId] = serverConfig;
-                        }
+    /** 读取最近一条备份文件内容（用于去重判断；失败返回 null） */
+    private async getLatestBackupData(): Promise<BackupData | null> {
+        try {
+            const files = (await fs.readdir(this.backupDir))
+                .filter(f => f.startsWith('backup-') && f.endsWith('.json'))
+                .sort()
+                .reverse();
+            if (files.length === 0) return null;
+            return this.readBackupFile(files[0]);
+        } catch {
+            return null;
+        }
+    }
+
+    /** 计算备份的「内容签名」（忽略 timestamp，仅比较客户端配置 / Skills 名 / Skill 内容） */
+    private backupSignature(data: BackupData): string {
+        const clients: Record<string, unknown> = {};
+        for (const [cid, cd] of Object.entries(data.clients || {})) {
+            clients[cid] = cd?.config ?? null;
+        }
+        return JSON.stringify({
+            clients,
+            skills: data.skills || {},
+            skillContents: data.skillContents || {},
+        });
+    }
+
+    /** 从备份数据中提取全部 server（跨客户端去重，先到先得） */
+    private serversFromBackup(data: BackupData): Record<string, any> {
+        const servers: Record<string, any> = {};
+        for (const clientData of Object.values(data.clients || {})) {
+            if (clientData?.config?.mcpServers) {
+                for (const [serverId, serverConfig] of Object.entries(clientData.config.mcpServers)) {
+                    if (!servers[serverId]) {
+                        servers[serverId] = serverConfig;
                     }
                 }
             }
+        }
+        return servers;
+    }
 
-            const currentServerIds = Object.keys(currentServers);
-            const backupServerIds = Object.keys(backupServers);
+    /** 计算某条备份相对「上一条（更早）备份」的变更。
+     * 每条备份记录的是变更【之后】的状态，因此与更早一条备份比较才能得到
+     * 本次操作实际变更了什么。
+     * 比较按【客户端级】进行：装/卸到「多个客户端之一」时，该 server 仍存在于
+     * 其它客户端，若按全局 server 集合比较则差异恒为空（表现为「从某客户端移除后
+     * 历史记录为空」）。按客户端分别比对可正确识别「serverX 从 cursor 移除」。
+     */
+    async getDiff(timestamp: string): Promise<DiffResult | null> {
+        try {
+            const backups = await this.listBackups(); // 按时间倒序：最新在前
+            const idx = backups.findIndex(b => b.timestamp === timestamp);
 
-            const added = currentServerIds.filter(s => !backupServerIds.includes(s));
-            const removed = backupServerIds.filter(s => !currentServerIds.includes(s));
-            const modified = currentServerIds.filter(s => {
-                if (!backupServerIds.includes(s)) return false;
-                return JSON.stringify(currentServers[s]?.config) !== JSON.stringify(backupServers[s]);
-            });
-
-            // 获取当前所有 Skills（去重）
-            const currentSkillNames = new Set<string>();
-            for (const client of SKILL_SUPPORTED_CLIENTS) {
-                if (client === 'cloud') continue;
-                const skillNames = await this.getInstalledSkillNames(client);
-                skillNames.forEach(name => currentSkillNames.add(name));
+            if (idx === -1) {
+                return null;
             }
 
-            // 获取备份中的所有 Skills（去重）
-            const backupSkillNames = new Set<string>();
-            for (const skillNames of Object.values(data.skills || {})) {
-                if (skillNames) {
-                    skillNames.forEach(name => backupSkillNames.add(name));
+            const targetData = await this.readBackupFile(backups[idx].filename);
+            if (!targetData) {
+                return null;
+            }
+
+            // 上一条（更早的）备份；不存在则视为空基线
+            let prevData: BackupData | null = null;
+            if (idx + 1 < backups.length) {
+                prevData = await this.readBackupFile(backups[idx + 1].filename);
+            }
+
+            const targetServers = this.serversFromBackup(targetData);
+            const prevServers = prevData ? this.serversFromBackup(prevData) : {};
+
+            // —— 客户端级比较（MCP Servers）——
+            const targetClients = (targetData.clients || {}) as Record<string, any>;
+            const prevClients = (prevData?.clients || {}) as Record<string, any>;
+            const allClientIds = new Set<string>([
+                ...Object.keys(targetClients),
+                ...Object.keys(prevClients),
+            ]);
+            const clientChanges: { client: string; added: string[]; removed: string[]; modified: string[] }[] = [];
+            const aggAdded = new Set<string>();
+            const aggRemoved = new Set<string>();
+            const aggModified = new Set<string>();
+            for (const cid of allClientIds) {
+                const prevMap = (prevClients[cid]?.config?.mcpServers) || {};
+                const targetMap = (targetClients[cid]?.config?.mcpServers) || {};
+                const prevIds = Object.keys(prevMap);
+                const targetIds = Object.keys(targetMap);
+                const added = targetIds.filter(id => !prevIds.includes(id));
+                const removed = prevIds.filter(id => !targetIds.includes(id));
+                const modified = targetIds.filter(
+                    id => prevIds.includes(id) && JSON.stringify(targetMap[id]) !== JSON.stringify(prevMap[id])
+                );
+                if (added.length || removed.length || modified.length) {
+                    clientChanges.push({client: cid, added, removed, modified});
                 }
+                added.forEach(id => aggAdded.add(id));
+                removed.forEach(id => aggRemoved.add(id));
+                modified.forEach(id => aggModified.add(id));
             }
 
-            const skillsAdded = [...currentSkillNames].filter(s => !backupSkillNames.has(s));
-            const skillsRemoved = [...backupSkillNames].filter(s => !currentSkillNames.has(s));
+            // —— 客户端级比较（Skills）——
+            const targetSkillsMap = (targetData.skills || {}) as Record<string, string[]>;
+            const prevSkillsMap = (prevData?.skills || {}) as Record<string, string[]>;
+            const allSkillClients = new Set<string>([
+                ...Object.keys(targetSkillsMap),
+                ...Object.keys(prevSkillsMap),
+            ]);
+            const skillClientChanges: { client: string; added: string[]; removed: string[] }[] = [];
+            const aggSkillAdded = new Set<string>();
+            const aggSkillRemoved = new Set<string>();
+            for (const cid of allSkillClients) {
+                const prevSet = new Set(prevSkillsMap[cid] || []);
+                const targetSet = new Set(targetSkillsMap[cid] || []);
+                const added = [...targetSet].filter(n => !prevSet.has(n));
+                const removed = [...prevSet].filter(n => !targetSet.has(n));
+                if (added.length || removed.length) {
+                    skillClientChanges.push({client: cid, added, removed});
+                }
+                added.forEach(n => aggSkillAdded.add(n));
+                removed.forEach(n => aggSkillRemoved.add(n));
+            }
 
             return {
-                added,
-                removed,
-                modified,
-                current: currentServers,
-                backup: backupServers,
-                skillsAdded,
-                skillsRemoved,
+                added: [...aggAdded],
+                removed: [...aggRemoved],
+                modified: [...aggModified],
+                current: targetServers,
+                backup: prevServers,
+                skillsAdded: [...aggSkillAdded],
+                skillsRemoved: [...aggSkillRemoved],
+                clientChanges,
+                skillClientChanges,
             };
         } catch (error) {
             console.error('Get diff failed:', error);

@@ -16,11 +16,13 @@ import {
     type RuntimeInfo,
     useElectronAPI,
 } from '../lib/electron';
+import type {ServerListItem} from '../api/registry';
 import {useIsMac} from '../lib/useIsMac';
 import {useStore} from '../store/useStore';
 import Modal from '../components/Modal';
 import ClientIcon from '../components/ClientIcon';
-import {BackIcon, CheckIcon, ExternalLinkIcon, GitHubIcon, StarIcon, VerifiedIcon} from '../components/Icons';
+import ClientMultiSelect from '../components/ClientMultiSelect';
+import {BackIcon, ExternalLinkIcon, EyeIcon, GitHubIcon, VerifiedIcon} from '../components/Icons';
 import {toast} from '../components/Toast';
 import WindowControls from '../components/WindowControls';
 
@@ -75,9 +77,11 @@ function PlatformIcon({name, iconUrl}: { name: string; iconUrl?: string }) {
 interface Props {
     connId: string;
     serverId: string;
+    /** 列表项种子数据（来自卡片跳转时通过路由 state 透传），用于在平台详情接口不包含分类/浏览量时补全展示 */
+    seedItem?: ServerListItem | null;
 }
 
-export default function PlatformServerDetail({connId, serverId}: Props) {
+export default function PlatformServerDetail({connId, serverId, seedItem}: Props) {
     const {t} = useTranslation();
     const navigate = useNavigate();
     const api = useElectronAPI();
@@ -230,12 +234,13 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
 
     const openInspector = () => {
         if (!detail?.install) return;
-        const config: { command: string; args?: string[]; env?: Record<string, string> } = {
+        const config: { command: string; args?: string[]; env?: Record<string, string>; cwd?: string } = {
             command: detail.install.command,
             args: detail.install.args,
             ...(detail.install.env
                 ? {env: Object.fromEntries(Object.entries(detail.install.env).map(([k, v]) => [k, String(v)]))}
                 : {}),
+            ...(detail.install.cwd ? {cwd: detail.install.cwd} : {}),
         };
         const configStr = encodeURIComponent(JSON.stringify(config));
         navigate(`/inspector?config=${configStr}`);
@@ -272,11 +277,20 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
     const runtimeAvailable = runtimeInfo?.available ?? false;
     const canInstall = !!detail.install;
 
+    // 分类：优先详情接口的分类友好名，否则用列表项透传的中文名，最后回退原始 slug（slug 仅供过滤）
+    const catNames: string[] = (detail.categoryNames && detail.categoryNames.length > 0)
+        ? detail.categoryNames
+        : (seedItem?.categoryNames && seedItem.categoryNames.length > 0
+            ? seedItem.categoryNames
+            : (detail.categories ?? seedItem?.categories ?? []));
+    // 浏览量（ModelScope 详情接口不返回，需由列表项透传）
+    const viewCount = seedItem?.viewCount ?? detail.stars ?? null;
+
     return (
         <div className="flex flex-col h-full bg-[var(--color-bg)]">
             {/* 头部导航（一体化标题栏：mac 上兼作拖拽区并为交通灯留白） */}
             <div
-                className={`flex items-center gap-2 px-4 h-[32px] drag-region relative border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-xl text-[12px] text-[var(--color-muted)] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
+                className={`flex items-center gap-2 px-4 h-[32px] drag-region relative border-b border-[var(--color-border)] bg-[var(--color-bg)] text-[12px] text-[var(--color-muted)] ${isMac ? 'pl-20' : 'pr-[140px]'}`}>
                 <button onClick={() => navigate(-1)} className="no-drag hover:text-[var(--color-text)] transition-colors">
                     <BackIcon className="w-4 h-4"/>
                 </button>
@@ -327,10 +341,10 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
 
                             {/* 统计信息 */}
                             <div className="flex items-center gap-4 text-[13px] text-[var(--color-muted2)] flex-wrap">
-                                {typeof detail.stars === 'number' && (
+                                {typeof viewCount === 'number' && viewCount > 0 && (
                                     <span className="flex items-center gap-1">
-                    <StarIcon className="w-4 h-4 text-yellow-400"/>
-                                        {formatNumber(detail.stars)} {t('detail.views') || 'views'}
+                    <EyeIcon className="w-4 h-4"/>
+                                        {formatNumber(viewCount)} {t('detail.views') || 'views'}
                   </span>
                                 )}
                                 {detail.author && (
@@ -339,14 +353,14 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                             </div>
 
                             {/* 分类标签 */}
-                            {(detail.categories ?? []).length > 0 && (
+                            {catNames.length > 0 && (
                                 <div className="flex flex-wrap gap-1.5 mt-3">
-                                    {(detail.categories ?? []).map(cat => (
+                                    {catNames.map(cat => (
                                         <span
                                             key={cat}
                                             className="px-2 py-0.5 rounded-full text-[12px] bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20"
                                         >
-                      {t(`mcpCategory.${cat}`) || cat}
+                      {cat}
                     </span>
                                     ))}
                                 </div>
@@ -581,37 +595,20 @@ export default function PlatformServerDetail({connId, serverId}: Props) {
                     <div>
                         <label
                             className="block text-[12px] font-medium text-[var(--color-text)] mb-2">{t('detail.selectClients')}</label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {clients.filter(c => c.installed).map(client => {
-                                const isSelected = selectedClients.includes(client.id);
-                                const isAlreadyInstalled = installedClients.includes(client.id);
-                                return (
-                                    <button
-                                        key={client.id}
-                                        onClick={() => !isAlreadyInstalled && toggleClient(client.id)}
-                                        disabled={isAlreadyInstalled}
-                                        className={`
-                      flex items-center gap-2 p-3 rounded-md border text-left transition-colors
-                      ${isAlreadyInstalled
-                                            ? 'bg-[#34c759]/10 border-[#34c759]/30 text-[#34c759]'
-                                            : isSelected
-                                                ? 'bg-[var(--color-accent)]/10 border-[var(--color-accent)]/30 text-[var(--color-accent)]'
-                                                : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[#636366]'
-                                        }
-                    `}
-                                    >
-                                        <ClientIcon clientId={client.id} size={20}/>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="text-[12px] font-medium">{client.name}</div>
-                                            <div className="text-[12px] opacity-60">
-                                                {isAlreadyInstalled ? t('detail.alreadyInstalled') : t('detail.available')}
-                                            </div>
-                                        </div>
-                                        {(isSelected || isAlreadyInstalled) && <CheckIcon className="w-4 h-4"/>}
-                                    </button>
-                                );
-                            })}
-                        </div>
+                        <ClientMultiSelect
+                            clients={clients.filter(c => c.installed)}
+                            selected={selectedClients}
+                            onToggle={toggleClient}
+                            className="grid grid-cols-2 gap-2"
+                            iconSize={20}
+                            check="check"
+                            checkClassName="w-4 h-4"
+                            variant="install"
+                            stackedSublabel
+                            disabledIds={installedClients}
+                            sublabel={{installed: t('detail.alreadyInstalled'), available: t('detail.available')}}
+                            unselectedClass="bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[#636366]"
+                        />
                         {clients.filter(c => c.installed).length === 0 && (
                             <p className="text-center text-[var(--color-muted)] text-[13px] py-4">
                                 {t('detail.noClientsInstalled') || 'No installed clients support MCP'}

@@ -17,6 +17,8 @@ import {execFile} from 'child_process';
 import {promisify} from 'util';
 import SftpClient from 'ssh2-sftp-client';
 import {CLOUD_ROOT_DIR, type CloudSyncResult} from '../shared/cloud-sync-constants';
+import type {SyncTaskScope} from '../shared/sync-task-types';
+import {resolveScopeDirs} from '../shared/sync-scope';
 import {getCloudSyncStore} from './cloud-sync-store';
 import {EnvManager} from './env-manager';
 
@@ -29,6 +31,8 @@ const SFTP_TIMEOUT = 20_000;
 
 export class CloudSyncService {
     private envManager = new EnvManager();
+    /** 互斥锁：保证任意入口（队列/启动/直接 IPC）的 push/pull 串行，避免两个 git 进程争用 index.lock（P1-1） */
+    private lockChain: Promise<unknown> = Promise.resolve();
 
     // ==================== 公开接口 ====================
 
@@ -44,8 +48,14 @@ export class CloudSyncService {
         }
     }
 
-    /** 上传：把本地暂存区推到云端（失败时自动重试，最多重试 2 次） */
-    async push(): Promise<CloudSyncResult> {
+    /**
+     * 上传：把本地暂存区推到云端（失败时自动重试，最多重试 2 次）。
+     * @param scope 同步内容范围：'mcp' 只传 MCP 配置、'skills' 只传技能、
+     *              'all'/缺省 传整个暂存区（兼容）。sftp 通道按子目录真实分开上传；
+     *              git 通道只提交对应子目录变更（push 仍整仓库）。
+     */
+    async push(scope?: SyncTaskScope): Promise<CloudSyncResult> {
+        return this.withLock(async () => {
         const store = getCloudSyncStore();
         if (!store.isActive()) return {ok: false, message: '云同步未配置或未启用'};
         store.ensureStagingDirs();
@@ -55,7 +65,7 @@ export class CloudSyncService {
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 const cfg = store.getConfig();
-                const res = cfg.provider === 'git' ? await this.gitPush() : await this.sftpPush();
+                const res = cfg.provider === 'git' ? await this.gitPush(scope) : await this.sftpPush(scope);
                 if (res.ok) {
                     store.recordSync(res.message);
                     return res;
@@ -74,6 +84,7 @@ export class CloudSyncService {
             }
         }
         return last;
+        });
     }
 
     /** 判断错误是否值得重试（网络/超时/连接类） */
@@ -81,8 +92,16 @@ export class CloudSyncService {
         return /timed? out|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|getaddrinfo|Could not resolve|connection (reset|closed)|EOF|reset by peer|EPIPE/i.test(msg);
     }
 
+    /** 串行化任意 push/pull 调用，避免并发传输相互干扰 */
+    private withLock<T>(fn: () => Promise<T>): Promise<T> {
+        const run = this.lockChain.then(() => fn());
+        this.lockChain = run.then(() => undefined, () => undefined);
+        return run;
+    }
+
     /** 下载：把云端拉到本地暂存区（失败时自动重试，最多重试 2 次） */
     async pull(): Promise<CloudSyncResult> {
+        return this.withLock(async () => {
         const store = getCloudSyncStore();
         if (!store.isActive()) return {ok: false, message: '云同步未配置或未启用'};
         store.ensureStagingDirs();
@@ -109,6 +128,7 @@ export class CloudSyncService {
             }
         }
         return last;
+        });
     }
 
     // ==================== Git ====================
@@ -213,22 +233,54 @@ export class CloudSyncService {
         }
 
         await this.git(['fetch', url, git.branch]);
-        // 暂存区是应用私有目录，直接以远端为准硬重置
+        // 保护未推送 / 未提交的本地改动：硬重置前先提交到本地备份分支，
+        // 否则上次失败重试的任务里用户的本地修改会被无声丢弃（P0-2）。
+        const statusBefore = await this.git(['status', '--porcelain']).catch(() => '');
+        if (statusBefore.trim()) {
+            const backupBranch = `backup-before-pull-${Date.now()}`;
+            try {
+                await this.git(['checkout', '-b', backupBranch]);
+                await this.git(['add', '-A']);
+                await this.git(['commit', '-m', `auto-backup before pull @ ${new Date().toISOString()}`]);
+                await this.git(['checkout', git.branch]);
+            } catch (e: any) {
+                console.warn('[CloudSync] 创建 pull 前备份分支失败（继续硬重置）:', e?.message);
+            }
+        }
+        // 暂存区是应用私有目录，以远端为准硬重置；未提交改动已备份到本地分支。
         await this.git(['reset', '--hard', 'FETCH_HEAD']);
         store.ensureStagingDirs();
         return {ok: true, message: '已从云端下载最新内容', changed: true};
     }
 
-    private async gitPush(): Promise<CloudSyncResult> {
+    private async gitPush(scope?: SyncTaskScope): Promise<CloudSyncResult> {
         const store = getCloudSyncStore();
         const git = store.getConfig().git;
         await this.ensureRepo();
 
-        // 跟踪整个暂存区根（.git 所在目录），确保子目录 ai-tools 内的增删改都被纳入
-        await this.git(['add', '-A']);
-        const staged = await this.git(['status', '--porcelain']);
+        // 按 scope 只把对应子目录纳入提交：mcp / skills 各自独立，互不牵连。
+        // 整仓库 push 仍会发生，但仅提交本次 scope 涉及的子目录变更。
+        const addArg = scope === 'mcp'
+            ? 'ai-tools/mcp'
+            : scope === 'skills'
+                ? 'ai-tools/skills'
+                : '-A';
+        await this.git(['add', '-A', addArg]);
+        // 判定本 scope 是否有暂存变更（P1-2）：用带 pathspec 的 diff --cached --quiet，
+        // 退出码 0 = 无差异，1 = 有差异（this.git 在非零退出时抛错，故 catch 即视为有变更）。
+        let staged = false;
+        if (scope === 'mcp' || scope === 'skills') {
+            const scopePath = scope === 'mcp' ? 'ai-tools/mcp' : 'ai-tools/skills';
+            try {
+                await this.git(['diff', '--cached', '--quiet', '--', scopePath]);
+            } catch {
+                staged = true;
+            }
+        } else {
+            staged = (await this.git(['status', '--porcelain'])).trim().length > 0;
+        }
         if (staged) {
-            await this.git(['commit', '-m', `sync from ${os.hostname()} @ ${new Date().toISOString()}`]);
+            await this.git(['commit', '-m', `sync ${scope || 'all'} from ${os.hostname()} @ ${new Date().toISOString()}`]);
         }
 
         const hasCommit = await this.git(['rev-parse', '--verify', 'HEAD']).catch(() => '');
@@ -312,21 +364,24 @@ export class CloudSyncService {
         }
     }
 
-    private async sftpPush(): Promise<CloudSyncResult> {
+    private async sftpPush(scope?: SyncTaskScope): Promise<CloudSyncResult> {
         const store = getCloudSyncStore();
         const client = await this.sftpConnect();
-        const local = store.getStagingDataDir();
-        const remote = this.remoteDataDir();
+
+        // 按 scope 决定上传哪个子目录：mcp / skills 各自独立；all/缺省 传整个 ai-tools
+        const {local, remote} = resolveScopeDirs(scope, store.getStagingDataDir(), this.remoteDataDir());
+
+        const scopeLabel = scope === 'mcp' ? 'MCP 配置' : scope === 'skills' ? '技能' : '内容';
         try {
-            // 本地暂存区必须存在且有内容，否则没有可上传的东西
+            // 本地暂存区（子目录）必须存在且有内容，否则没有可上传的东西
             let localEntries: string[] = [];
             try {
                 localEntries = fs.readdirSync(local);
             } catch {
-                return {ok: false, message: '本地暂存区不存在，请先同步到云端再上传'};
+                return {ok: false, message: `本地暂存区不存在，请先同步${scopeLabel}到云端再上传`};
             }
             if (localEntries.length === 0) {
-                return {ok: false, message: '本地暂存区为空，没有可上传的内容'};
+                return {ok: false, message: `本地暂存区没有可上传的${scopeLabel}`};
             }
 
             // 稳妥创建远端目录：exists 抛错也视为不存在，mkdir 父链已存在则忽略
@@ -342,7 +397,8 @@ export class CloudSyncService {
 
             await client.uploadDir(local, remote);
             // 镜像清理：uploadDir 只增量上传，不会删除远端本地已删除的文件/目录。
-            // 这里递归比对远端与本地，删除远端多余项，使 Skill 卸载等操作真正生效。
+            // 这里递归比对远端与本地（限定在 scope 子目录内），删除远端多余项，
+            // 使 Skill 卸载等操作真正生效，且不会误删另一范围的内容。
             await this.mirrorRemote(client, local, remote);
             return {ok: true, message: '已上传到云端', changed: true};
         } catch (e: any) {
@@ -421,8 +477,12 @@ export class CloudSyncService {
     private async mirrorLocal(
         client: SftpClient,
         remoteDir: string,
-        localDir: string
+        localDir: string,
+        trashRoot?: string
     ): Promise<void> {
+        // 回收站放在暂存区「外面」（与 ai-tools 子目录同级），既不在同步范围内，
+        // 又与原文件同文件系统可原子 rename（P0-1）。
+        const trash = trashRoot ?? path.join(path.dirname(localDir), '.cloud-trash', `pull-${Date.now()}`);
         let localEntries: Array<{ name: string; isDirectory: () => boolean }> = [];
         try {
             localEntries = fs.readdirSync(localDir, {withFileTypes: true});
@@ -430,22 +490,31 @@ export class CloudSyncService {
             return;
         }
         for (const entry of localEntries) {
+            // 不处理回收站目录本身，避免自引用
+            if (entry.name === '.cloud-trash') continue;
             const localPath = path.join(localDir, entry.name);
             const remotePath = `${remoteDir}/${entry.name}`;
-            let remoteExists = false;
+            let remoteExists: boolean;
             try {
-                remoteExists = !!await client.exists(remotePath);
-            } catch {
-                remoteExists = false;
+                remoteExists = !!(await client.exists(remotePath));
+            } catch (e: any) {
+                // 远端探测失败：无法确认文件是否仍存在，宁可中止整个清理也不冒险删除本地文件。
+                throw new Error(
+                    `[CloudSync] 拉取清理中止：远端探测 ${remotePath} 失败 (${e?.message || e})，已避免误删本地文件`
+                );
             }
             if (!remoteExists) {
+                // 删除前先移入回收站，出现问题时可从 .cloud-trash 恢复，而非直接 rm 丢失。
+                const rel = path.relative(localDir, localPath);
+                const target = path.join(trash, rel);
                 try {
-                    fs.rmSync(localPath, {recursive: true, force: true});
+                    fs.mkdirSync(path.dirname(target), {recursive: true});
+                    fs.renameSync(localPath, target);
                 } catch (e: any) {
-                    console.warn('[CloudSync] mirrorLocal remove failed:', localPath, e?.message);
+                    console.warn('[CloudSync] mirrorLocal 移至回收站失败（保留原文件）:', localPath, e?.message);
                 }
             } else if (entry.isDirectory()) {
-                await this.mirrorLocal(client, remotePath, localPath);
+                await this.mirrorLocal(client, remotePath, localPath, trash);
             }
         }
     }

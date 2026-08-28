@@ -20,9 +20,6 @@ import type {
 } from './types';
 import {setDiagnostics} from './shared';
 
-const BAILIAN_ONLINE_URL =
-    'https://bailian-cs.console.aliyun.com/data/api.json?action=BroadScopeAspnGateway&product=sfm_bailian&api=zeldaEasy.broadscope-bailian.mcp-server.SquarePageList&_v=undefined';
-
 // 百炼 8 分类枚举（doc 第5节）+ 中文名
 const BAILIAN_CLASSIFICATION: Record<string, string> = {
     CORPORATE_SERVICE: '企业服务',
@@ -66,21 +63,27 @@ interface RawBailian {
     description?: string;
 }
 
-/** 离线索引文件（与 adapter 同目录的 data/）。 */
+/** 离线索引文件（与 adapter 同目录的 bailian/data/，由 build:main 拷贝进 dist）。 */
 function loadIndex(): RawBailian[] {
+    const p = path.join(__dirname, 'bailian', 'data', 'bailian-index.json');
     try {
-        const p = path.join(__dirname, 'data', 'bailian-index.json');
         if (fs.existsSync(p)) {
             const json = JSON.parse(fs.readFileSync(p, 'utf8'));
-            return Array.isArray(json?.items) ? json.items : [];
+            const items = Array.isArray(json?.items) ? json.items : [];
+            if (items.length === 0) {
+                console.warn('[bailian] 离线索引为空：', p);
+            }
+            return items;
         }
-    } catch {
-        /* ignore */
+    } catch (e: any) {
+        console.error('[bailian] 离线索引读取失败：', p, e?.message);
+        return [];
     }
+    console.warn('[bailian] 离线索引文件缺失，百炼列表将为空（请确认 build:main 已拷贝 data 目录）：', p);
     return [];
 }
 
-function mapServer(raw: RawBailian, idx: number): PlatformServerListItem {
+export function mapServer(raw: RawBailian, idx: number): PlatformServerListItem {
     const id = `${raw.source || 'bailian'}-${raw.serverName}-${idx}`;
     return {
         id,

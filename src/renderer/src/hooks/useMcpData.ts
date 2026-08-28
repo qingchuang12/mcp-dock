@@ -1,4 +1,5 @@
-import {useQuery} from '@tanstack/react-query';
+import {useMemo} from 'react';
+import {useQuery, keepPreviousData} from '@tanstack/react-query';
 import {type DataSource, fetchServerList, fetchSmitheryServersPaged, type ServerListItem,} from '../api/registry';
 import type {PlatformServerListItem} from '../lib/electron';
 import {useElectronAPI} from '../lib/electron';
@@ -17,12 +18,14 @@ function mapPlatformServer(item: PlatformServerListItem): ServerListItem {
         author: item.author || item.source,
         stars: item.stars ?? 0,
         categories: item.categories,
+        categoryNames: item.categoryNames,
+        viewCount: item.viewCount ?? null,
         tags: item.tags,
         isHosted: item.isHosted,
         verified: item.isVerified,
-        repository: item.sourceUrl ? {url: item.sourceUrl, branch: '', owner: '', repo: ''} : undefined,
+        repository: item.sourceUrl ? {url: item.sourceUrl} : undefined,
         extra: item.extra,
-    } as ServerListItem;
+    };
 }
 
 interface UseMcpDataParams {
@@ -63,7 +66,6 @@ export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> 
         // 数据缓存 10 分钟：卸载后保留缓存，重新进入直接命中；过期才重新拉取
         staleTime: STORE_QUERY_STALE_MS,
         gcTime: STORE_QUERY_STALE_MS,
-        // 仅在数据过期（>10min）时重新拉取，未过期直接命中缓存即时渲染
         refetchOnMount: true,
         enabled: enabled && !mcpConnId && dataSource === 'official',
     });
@@ -74,6 +76,8 @@ export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> 
         queryFn: async () => {
             return fetchSmitheryServersPaged(page, pageSize, debouncedSearch);
         },
+        // S1-11: 翻页时保留上一页数据作为占位，避免整页 Loading 跳动
+        placeholderData: keepPreviousData,
         staleTime: STORE_QUERY_STALE_MS,
         gcTime: STORE_QUERY_STALE_MS,
         refetchOnMount: true,
@@ -81,21 +85,36 @@ export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> 
     });
 
     const platform = useQuery({
-        queryKey: ['mcpPlatform', mcpConnId, debouncedSearch, page, category, sort, source],
+        // S0-2: 补 pageSize —— 否则改每页条数只命中旧缓存、页码与数据不符
+        queryKey: ['mcpPlatform', mcpConnId, debouncedSearch, page, pageSize, category, sort, source],
         queryFn: async () => {
             if (!mcpConnId) return null;
             // 平台源走统一适配器通道（支持分类/排序/来源筛选）
             const res = await api.platforms.searchServers(
-                platformType || '', debouncedSearch, page, pageSize, category || 'all', sort || 'relevance', source || 'all'
+                platformType || '', debouncedSearch, page, pageSize, category || 'all', sort || 'relevance', source || 'all',
+                // S0-6: 透传连接 ID，主进程按 ID 精确取 token/baseUrl（多连接场景不再猜错）
+                mcpConnId ?? undefined
             );
             return res;
         },
+        // S1-11: 翻页时保留上一页数据作为占位，避免整页 Loading 跳动
+        placeholderData: keepPreviousData,
         staleTime: STORE_QUERY_STALE_MS,
         gcTime: STORE_QUERY_STALE_MS,
-        // 仅在数据过期（>10min）时重新查询在线商店；未过期直接命中缓存即时渲染
         refetchOnMount: true,
         enabled: enabled && !!mcpConnId,
     });
+
+    // S1-10: 内置源全量列表原先每次渲染都同步重算。包一层 useMemo 仅在数据或筛选条件变化时重算。
+    // 必须放在所有条件分支之前，保证每次渲染调用相同数量的 hooks，否则 React 会抛出 "Should have a queue"。
+    const paginated = useMemo(() => {
+        const list = builtin.data ?? [];
+        if (list.length === 0) return { items: [] as ServerListItem[], totalItems: 0, totalPages: 0, startIndex: 0, endIndex: 0 };
+        const filtered = searchServers(list, debouncedSearch);
+        const categorized = filterServersByCategory(filtered, category || '');
+        const sorted = sortServers(categorized, sort || '');
+        return paginateServers(sorted, page, pageSize);
+    }, [builtin.data, debouncedSearch, category, sort, page, pageSize]);
 
     if (mcpConnId) {
         const res = platform.data ?? null;
@@ -112,6 +131,7 @@ export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> 
             startIndex,
             endIndex,
             pagingMode: 'server',
+            hasMore: false,
             isUnsupported: false,
             isLoading: platform.isLoading,
             isFetching: platform.isFetching,
@@ -121,13 +141,14 @@ export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> 
         };
     }
 
-    // smithery：服务端分页，按页展示，total 取自上游真实总数
     if (dataSource === 'smithery') {
         const res = smitheryPaged.data;
-        // 服务端若已按关键词过滤则此处为幂等；若上游不识别 q，则再做一次客户端兜底过滤
-        const items = res ? searchServers(res.items, debouncedSearch) : [];
-        const total = res?.total ?? 0;
-        const totalPages = res?.totalPages ?? 0;
+        if (!res) {
+            return { items: [], total: 0, totalItems: 0, totalPages: 0, startIndex: 0, endIndex: 0, pagingMode: 'server', hasMore: false, isUnsupported: false, isLoading: smitheryPaged.isLoading, isFetching: smitheryPaged.isFetching, error: smitheryPaged.error as Error | null, refetch: smitheryPaged.refetch };
+        }
+        const items = res.items;
+        const total = res.total ?? 0;
+        const totalPages = res.totalPages ?? 0;
         const startIndex = total > 0 ? (page - 1) * pageSize : 0;
         const endIndex = Math.min((page - 1) * pageSize + items.length, total);
         return {
@@ -138,6 +159,7 @@ export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> 
             startIndex,
             endIndex,
             pagingMode: 'server',
+            hasMore: false,
             isUnsupported: false,
             isLoading: smitheryPaged.isLoading,
             isFetching: smitheryPaged.isFetching,
@@ -146,11 +168,6 @@ export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> 
         };
     }
 
-    const list = builtin.data ?? [];
-    const filtered = searchServers(list, debouncedSearch);
-    const categorized = filterServersByCategory(filtered, category || '');
-    const sorted = sortServers(categorized, sort || '');
-    const paginated = paginateServers(sorted, page, pageSize);
     return {
         items: paginated.items,
         total: paginated.totalItems,
@@ -159,6 +176,7 @@ export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> 
         startIndex: paginated.startIndex,
         endIndex: paginated.endIndex,
         pagingMode: 'client',
+        hasMore: false,
         isUnsupported: false,
         isLoading: builtin.isLoading,
         isFetching: builtin.isFetching,

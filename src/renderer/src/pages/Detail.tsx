@@ -5,11 +5,12 @@
  */
 
 import {useEffect, useState} from 'react';
-import {useNavigate, useParams, useSearchParams} from 'react-router-dom';
+import {useNavigate, useParams, useSearchParams, useLocation} from 'react-router-dom';
 import {useQuery} from '@tanstack/react-query';
 import {useTranslation} from 'react-i18next';
 import {
     type DataSource,
+    type ServerListItem,
     fetchReadmeFromGitHub,
     fetchServerDetail,
     isOfficialDetail,
@@ -25,11 +26,11 @@ import Modal from '../components/Modal';
 import ConfigForm from '../components/ConfigForm';
 import OfficialConfigForm from '../components/OfficialConfigForm';
 import ClientIcon from '../components/ClientIcon';
+import ClientMultiSelect from '../components/ClientMultiSelect';
 import PlatformServerDetail from './PlatformServerDetail';
 import WindowControls from '../components/WindowControls';
 import {
     BackIcon,
-    CheckIcon,
     ClockIcon,
     DownloadIcon,
     ExternalLinkIcon,
@@ -93,6 +94,7 @@ function DefaultIcon({name, repoUrl}: { name: string; repoUrl?: string | null })
 export default function Detail() {
     const {source, id} = useParams<{ source: string; id: string }>();
     const [searchParams] = useSearchParams();
+    const location = useLocation();
     const navigate = useNavigate();
     const {t} = useTranslation();
     const api = useElectronAPI();
@@ -136,7 +138,8 @@ export default function Detail() {
                 </div>
             );
         }
-        return <PlatformServerDetail connId={connId} serverId={decodedId}/>;
+        const seedServer = (location.state as { server?: ServerListItem } | null)?.server;
+        return <PlatformServerDetail connId={connId} serverId={decodedId} seedItem={seedServer}/>;
     }
 
     // 获取服务器详情
@@ -1044,42 +1047,20 @@ export default function Detail() {
                         <label className="block text-[12px] font-medium text-[var(--color-text)] mb-2">
                             {t('detail.selectClients')}
                         </label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {clients.filter(client => client.installed).map(client => {
-                                const isSelected = selectedClients.includes(client.id);
-                                const isAlreadyInstalled = installedClients.includes(client.id);
-
-                                return (
-                                    <button
-                                        key={client.id}
-                                        onClick={() => !isAlreadyInstalled && toggleClient(client.id)}
-                                        disabled={isAlreadyInstalled}
-                                        className={`
-                      flex items-center gap-2 p-3 rounded-md border text-left transition-colors
-                      ${isAlreadyInstalled
-                                            ? 'bg-[#34c759]/10 border-[#34c759]/30 text-[#34c759]'
-                                            : isSelected
-                                                ? 'bg-[var(--color-accent)]/10 border-[var(--color-accent)]/30 text-[var(--color-accent)]'
-                                                : 'bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[#636366]'
-                                        }
-                    `}
-                                    >
-                                        <ClientIcon clientId={client.id} size={20}/>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="text-[12px] font-medium">{client.name}</div>
-                                            <div className="text-[12px] opacity-60">
-                                                {isAlreadyInstalled
-                                                    ? t('detail.alreadyInstalled')
-                                                    : t('detail.available')}
-                                            </div>
-                                        </div>
-                                        {(isSelected || isAlreadyInstalled) && (
-                                            <CheckIcon className="w-4 h-4"/>
-                                        )}
-                                    </button>
-                                );
-                            })}
-                        </div>
+                        <ClientMultiSelect
+                            clients={clients.filter(client => client.installed)}
+                            selected={selectedClients}
+                            onToggle={toggleClient}
+                            className="grid grid-cols-2 gap-2"
+                            iconSize={20}
+                            check="check"
+                            checkClassName="w-4 h-4"
+                            variant="install"
+                            stackedSublabel
+                            disabledIds={installedClients}
+                            sublabel={{installed: t('detail.alreadyInstalled'), available: t('detail.available')}}
+                            unselectedClass="bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[#636366]"
+                        />
 
                         {clients.filter(c => c.installed).length === 0 && (
                             <p className="text-center text-[var(--color-muted)] text-[13px] py-4">

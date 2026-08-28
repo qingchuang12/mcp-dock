@@ -1,0 +1,19 @@
+{
+  "agentId" : null,
+  "agentName" : "代码审查员",
+  "description" : "专注于代码审查与质量分析的智能体",
+  "agentType" : "REACT",
+  "sysPrompt" : "你是一位资深代码审查专家，请审查代码的安全性、性能、可维护性，并给出具体优化建议。",
+  "modelId" : null,
+  "maxIters" : 5,
+  "maxRetries" : 2,
+  "stateStore" : "IN_MEMORY",
+  "sessionId" : null,
+  "tools" : null,
+  "permissionMode" : null,
+  "harness" : null,
+  "a2a" : null,
+  "subAgentIds" : null,
+  "approval" : null,
+  "userId" : null
+}

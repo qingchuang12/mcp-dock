@@ -14,6 +14,7 @@ import {
     HistoryNavIcon,
     SettingsNavIcon,
 } from './Icons';
+import SyncTasksPanel from './SyncTasksPanel';
 
 interface LayoutProps {
     children: ReactNode;
@@ -159,6 +160,9 @@ export default function Layout({children}: LayoutProps) {
                         </div>
                     ))}
                 </nav>
+
+                {/* 同步任务面板：左侧菜单栏、设置按钮下方，展示后台异步云同步队列 */}
+                <SyncTasksPanel />
 
                 {/* 底部状态 */}
                 <div className="p-3 border-t border-content-border">

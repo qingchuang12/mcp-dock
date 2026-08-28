@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState} from 'react';
 import {useTranslation} from 'react-i18next';
-import ClientIcon from './ClientIcon';
+import ClientMultiSelect from './ClientMultiSelect';
 import {type ClientInfo, type SkillClientType, useElectronAPI} from '../lib/electron';
 import {parseFrontmatter} from '../../../shared/frontmatter';
 
@@ -348,38 +348,19 @@ export function CreateSkillModal({onClose, clients, editData, defaultClients, on
                     <div>
                         <label
                             className="mb-2 block text-[12px] font-medium text-[var(--color-muted2)]">{t('library.targetClients') || '目标客户端'}</label>
-                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                            {skillClients.map(client => {
-                                const checked = selectedClients.includes(client.id as SkillClientType);
-                                return (
-                                    <button
-                                        key={client.id}
-                                        type="button"
-                                        onClick={() => toggleClient(client.id as SkillClientType)}
-                                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] transition-colors ${
-                                            checked
-                                                ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/15 text-white'
-                                                : 'border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-muted2)] hover:border-[var(--color-muted)]'
-                                        }`}
-                                    >
-                    <span
-                        className={`flex h-3.5 w-3.5 items-center justify-center rounded-[4px] border ${
-                            checked ? 'border-[var(--color-accent)] bg-[var(--color-accent)]' : 'border-[#636366]'
-                        }`}
-                    >
-                      {checked && (
-                          <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-                              <path d="M1 5l3 3 5-6" stroke="white" strokeWidth="2" strokeLinecap="round"
-                                    strokeLinejoin="round"/>
-                          </svg>
-                      )}
-                    </span>
-                                        <ClientIcon clientId={client.id} size={14}/>
-                                        {client.name}
-                                    </button>
-                                );
-                            })}
-                        </div>
+                        <ClientMultiSelect
+                            clients={skillClients}
+                            selected={selectedClients}
+                            onToggle={(id) => toggleClient(id as SkillClientType)}
+                            className="grid grid-cols-2 gap-2 sm:grid-cols-3"
+                            iconSize={14}
+                            check="square"
+                            leadingCheck
+                            variant="sync"
+                            baseClass="flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] transition-colors"
+                            selectedClass="border-[var(--color-accent)] bg-[var(--color-accent)]/15 text-white"
+                            unselectedClass="border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-muted2)] hover:border-[var(--color-muted)]"
+                        />
                     </div>
                 </div>
 

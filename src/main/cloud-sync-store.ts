@@ -61,7 +61,10 @@ export class CloudSyncStore {
     }
 
     private persist(): void {
-        fs.writeFileSync(this.filePath, JSON.stringify(this.config, null, 2), 'utf-8');
+        // 原子写：先写临时文件再 rename，避免崩溃留下截断的 cloud-sync.json（P0-4）
+        const tmp = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
+        fs.writeFileSync(tmp, JSON.stringify(this.config, null, 2), 'utf-8');
+        fs.renameSync(tmp, this.filePath);
     }
 
     /** 暂存区根目录（git 工作副本 / sftp 镜像根） */

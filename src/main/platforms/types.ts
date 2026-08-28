@@ -30,6 +30,12 @@ export interface PlatformSkillListItem {
     stars?: number;
     updatedAt?: string;
     category?: string;
+    /** 分类友好展示名（slug → 中文名映射，适配器内填充；用于卡片展示，避免直接显示英文 slug）。 */
+    categoryName?: string;
+    /** 浏览量（ModelScope 列表字段 view_count）。 */
+    viewCount?: number;
+    /** 下载量（ModelScope 列表字段 downloads）。 */
+    downloads?: number;
     extra?: Record<string, unknown>;
 }
 
@@ -41,6 +47,8 @@ export interface PlatformServerListItem {
     description: string;
     iconUrl?: string;
     categories?: string[];
+    /** 分类友好展示名（与 categories 一一对应，slug → 中文名映射；适配器内填充，用于卡片展示）。 */
+    categoryNames?: string[];
     stars?: number;
     sourceUrl?: string;
     author?: string;
@@ -48,6 +56,8 @@ export interface PlatformServerListItem {
     isHosted?: boolean;
     isVerified?: boolean;
     tags?: string[];
+    /** 浏览量（ModelScope 列表字段 view_count）。 */
+    viewCount?: number;
     source: SupportedPlatform;
     extra?: Record<string, unknown>;
 }
@@ -90,6 +100,8 @@ export interface PlatformServerDetail {
     description: string;
     iconUrl?: string;
     categories?: string[];
+    /** 分类友好展示名（与 categories 一一对应，slug → 中文名映射；适配器内填充，用于卡片展示）。 */
+    categoryNames?: string[];
     stars?: number;
     sourceUrl?: string;
     author?: string;
@@ -98,7 +110,7 @@ export interface PlatformServerDetail {
     isVerified?: boolean;
     tags?: string[];
     readme?: string;
-    install: {command: string; args: string[]; env?: Record<string, unknown>} | null;
+    install: {command: string; args: string[]; env?: Record<string, unknown>; cwd?: string} | null;
     envSchema?: unknown;
     source: SupportedPlatform;
     extra?: Record<string, unknown>;
@@ -229,8 +241,10 @@ export interface PlatformAdapter {
     /**
      * 返回该平台的分类/排序/来源/标签等面元数据（Frontend FilterBar 消费）。
      * 纯离线平台（百炼）可同步返回；需在线探测的平台可返回静态分类枚举。
+     * @param resourceType 当前浏览的资源类型（'mcp' = MCP server 分类，'skills' = Skill 分类）。
+     *        像 ModelScope 这类两接口分类体系不同的平台，需据此返回不同分类枚举。
      */
-    getFacets?(): PlatformFacets | Promise<PlatformFacets>;
+    getFacets?(resourceType?: 'mcp' | 'skills'): PlatformFacets | Promise<PlatformFacets>;
 }
 
 /**

@@ -13,6 +13,30 @@ interface InspectorState {
     command: string;
     args: string;
     envVars: { key: string; value: string }[];
+    cwd: string;
+    url: string;
+    type: 'stdio' | 'http' | 'streamable-http' | 'sse';
+    headers: { key: string; value: string }[];
+}
+
+// Inspector 调试运行时状态
+// 提升到 store 以便左侧菜单切换页面时保持连接与调试上下文，不随组件卸载丢失。
+// 注意：不写入 persist 的 partialize，应用重启后不自动恢复（主进程连接已不存在）。
+export type InspectorConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type InspectorActiveTab = 'tools' | 'resources' | 'prompts';
+
+export interface InspectorRuntime {
+    sessionId: string | null;
+    /** 当前会话对应的预设配置标识（来自 URL config 参数）；为 null 表示手动输入模式 */
+    presetKey: string | null;
+    status: InspectorConnectionStatus;
+    serverInfo: { name?: string; version?: string } | null;
+    tools: { name: string; description?: string; inputSchema?: unknown }[];
+    resources: { uri: string; name: string; description?: string; mimeType?: string }[];
+    prompts: { name: string; description?: string; arguments?: unknown[] }[];
+    selectedToolName: string | null;
+    activeTab: InspectorActiveTab;
+    logs: string[];
 }
 
 interface StoreState {
@@ -66,13 +90,17 @@ interface StoreState {
     inspectorState: InspectorState;
     setInspectorState: (state: Partial<InspectorState>) => void;
 
+    // Inspector 调试运行时状态（导航切换时保持）
+    inspectorRuntime: InspectorRuntime;
+    setInspectorRuntime: (patch: Partial<InspectorRuntime>) => void;
+    appendInspectorLog: (message: string) => void;
+    clearInspectorLog: () => void;
+
     // 主题（浅色 / 暗色 / 跟随系统）
     theme: ThemeMode;
     setTheme: (theme: ThemeMode) => void;
 
-    // 重置分页
-    resetPagination: () => void;
-}
+    }
 
 // 主题模式
 export type ThemeMode = 'light' | 'dark' | 'auto';
@@ -168,6 +196,10 @@ export const useStore = create<StoreState>()(
                 command: 'npx',
                 args: '',
                 envVars: [],
+                cwd: '',
+                url: '',
+                type: 'stdio',
+                headers: [],
             },
             setInspectorState: (newState) => set((state) => ({
                 inspectorState: {
@@ -176,12 +208,41 @@ export const useStore = create<StoreState>()(
                 },
             })),
 
+            // Inspector 调试运行时状态
+            inspectorRuntime: {
+                sessionId: null,
+                presetKey: null,
+                status: 'disconnected',
+                serverInfo: null,
+                tools: [],
+                resources: [],
+                prompts: [],
+                selectedToolName: null,
+                activeTab: 'tools',
+                logs: [],
+            },
+            setInspectorRuntime: (patch) => set((state) => ({
+                inspectorRuntime: {
+                    ...state.inspectorRuntime,
+                    ...patch,
+                },
+            })),
+            appendInspectorLog: (message) => set((state) => ({
+                inspectorRuntime: {
+                    ...state.inspectorRuntime,
+                    logs: [...state.inspectorRuntime.logs.slice(-99), message],
+                },
+            })),
+            clearInspectorLog: () => set((state) => ({
+                inspectorRuntime: {
+                    ...state.inspectorRuntime,
+                    logs: [],
+                },
+            })),
+
             // 主题 - 默认跟随系统（auto）
             theme: 'auto',
             setTheme: (theme) => set({theme}),
-
-            // 重置分页
-            resetPagination: () => set({currentPage: 1, searchQuery: ''}),
         }),
         {
             name: 'mcp-dock-store',

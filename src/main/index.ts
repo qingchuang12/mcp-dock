@@ -32,7 +32,19 @@ import {ApiConnection, getConnectionsStore} from './connections-store';
 import {createMcpClient, disconnectAllClients, getMcpClient, removeMcpClient} from './mcp-client';
 import {getCloudSyncStore} from './cloud-sync-store';
 import {getCloudSyncService} from './cloud-sync-service';
+import {getSyncTaskManager, initSyncTaskManager} from './sync-task-manager';
+import type {SyncTask, SyncTaskKind, SyncTaskScope} from '../shared/sync-task-types';
 import type {CloudSyncConfig, CloudSyncConfigInput, CloudSyncResult} from '../shared/cloud-sync-constants';
+
+/** 仅允许 http/https 外部链接，避免 file:// 等被带出（P1-6） */
+function isSafeExternalUrl(url: string): boolean {
+    try {
+        const u = new URL(url);
+        return u.protocol === 'http:' || u.protocol === 'https:';
+    } catch {
+        return false;
+    }
+}
 
 // 管理器实例
 const configManager = new ConfigManager();
@@ -94,6 +106,12 @@ function createWindow() {
         } : {}),
         backgroundColor: '#1c1c1e',
         webPreferences: {
+            // 显式关闭沙箱：Electron 43 默认开启 sandbox，其自带 sandboxed renderer
+            // 在初始化时会读取内部 startupData.preloadScripts，若该值为 null 会导致
+            // 渲染进程启动时崩溃（Cannot destructure 'preloadScripts' of
+            // 'binding.startupData' as it is null）。关闭后 preload 仍通过 contextBridge
+            // 安全暴露 API，nodeIntegration=false + contextIsolation=true 已保证隔离。
+            sandbox: false,
             nodeIntegration: false,
             contextIsolation: true,
             preload: path.join(__dirname, '../preload', 'index.js'),
@@ -135,9 +153,9 @@ function createWindow() {
     mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximize-changed', false));
     mainWindow.on('restore', () => mainWindow?.webContents.send('window:maximize-changed', false));
 
-    // 外部链接在默认浏览器中打开
+    // 外部链接在默认浏览器中打开（仅允许 http/https，避免 file:// 等带出，P1-6）
     mainWindow.webContents.setWindowOpenHandler(({url}) => {
-        shell.openExternal(url);
+        if (isSafeExternalUrl(url)) shell.openExternal(url);
         return {action: 'deny'};
     });
 }
@@ -182,12 +200,20 @@ app.whenReady().then(() => {
 
     createWindow();
 
+    // 初始化同步任务管理器：后台队列处理云同步，状态变化广播给渲染层侧边栏面板。
+    // emit 回调在窗口就绪后调用（createWindow 已执行），可安全向渲染层推送。
+    initSyncTaskManager(() => {
+        const list = getSyncTaskManager().list();
+        BrowserWindow.getAllWindows().forEach(w => w.webContents.send('sync-tasks:updated', list));
+    });
+
     // 启动后后台异步以云端为准拉取一次（覆盖本地暂存区），不阻塞启动。
-    // 拉取完成（无论成败）通知渲染层刷新；仅在已配置云同步时执行。
+    // 经由同步队列执行（P1-1），与手动 push 串行；拉取完成（无论成败）通知渲染层刷新；
+    // 仅在已配置云同步时执行。
     void (async () => {
         try {
             if (!getCloudSyncStore().isActive()) return;
-            const res = await cloudSyncService.pull();
+            const res = await enqueueCloudAndWait('cloud-pull', '从云端下载');
             mainWindow?.webContents.send('cloud-sync:pulled', res);
         } catch (e: any) {
             console.error('[CloudSync] startup pull error:', e?.message || e);
@@ -238,8 +264,10 @@ ipcMain.handle('config:read', async (_, client?: ClientType) => {
 });
 
 ipcMain.handle('config:write', async (_, config: any, client?: ClientType) => {
+    const result = await configManager.writeConfig(config, client);
+    // 在变更【之后】快照，确保历史记录反映本次操作后的真实状态
     await historyManager.backup();
-    return configManager.writeConfig(config, client);
+    return result;
 });
 
 ipcMain.handle('config:get-servers', async (_, client?: ClientType) => {
@@ -251,18 +279,21 @@ ipcMain.handle('config:get-all-servers', async () => {
 });
 
 ipcMain.handle('config:install-server', async (_, serverId: string, serverConfig: any, clients: ClientType[]) => {
+    const result = await configManager.installServer(serverId, serverConfig, clients);
     await historyManager.backup();
-    return configManager.installServer(serverId, serverConfig, clients);
+    return result;
 });
 
 ipcMain.handle('config:uninstall-server', async (_, serverId: string, clients: ClientType[]) => {
+    const result = await configManager.uninstallServer(serverId, clients);
     await historyManager.backup();
-    return configManager.uninstallServer(serverId, clients);
+    return result;
 });
 
 ipcMain.handle('config:update-server', async (_, serverId: string, serverConfig: any, client?: ClientType) => {
+    const result = await configManager.updateServer(serverId, serverConfig, client);
     await historyManager.backup();
-    return configManager.updateServer(serverId, serverConfig, client);
+    return result;
 });
 
 // 标记 MCP server 为「手动安装」（编辑保存后调用，避免线上商店更新覆盖本地调整）
@@ -276,16 +307,19 @@ ipcMain.handle('config:get-manual-servers', async (): Promise<string[]> => {
 });
 
 ipcMain.handle('config:sync-server', async (_, serverId: string, sourceClient: ClientType, targetClients: ClientType[]) => {
+    const result = await configManager.syncServerToClients(serverId, sourceClient, targetClients);
+    // 在同步【之后】快照，确保「同步到客户端」这一操作被正确记录到历史
     await historyManager.backup();
-    return configManager.syncServerToClients(serverId, sourceClient, targetClients);
+    return result;
 });
 
 ipcMain.handle('config:sync-servers-batch', async (_, items: {
     serverId: string;
     config: any
 }[], targetClients: ClientType[]) => {
+    const result = await configManager.syncServersToClients(items, targetClients);
     await historyManager.backup();
-    return configManager.syncServersToClients(items, targetClients);
+    return result;
 });
 
 // 环境检测
@@ -332,6 +366,9 @@ ipcMain.handle('system:get-version', () => {
 });
 
 ipcMain.handle('system:open-external', async (_, url: string) => {
+    if (!isSafeExternalUrl(url)) {
+        throw new Error('仅允许打开 http/https 链接');
+    }
     return shell.openExternal(url);
 });
 
@@ -386,9 +423,13 @@ ipcMain.handle('system:open-config-directory', async (_, client: ClientType) => 
 
 // 连接到 MCP Server
 ipcMain.handle('mcp:connect', async (_, sessionId: string, config: {
-    command: string;
+    command?: string;
     args?: string[];
-    env?: Record<string, string>
+    env?: Record<string, string>;
+    cwd?: string;
+    url?: string;
+    type?: 'stdio' | 'http' | 'streamable-http' | 'sse';
+    headers?: Record<string, string>;
 }) => {
     try {
         const client = createMcpClient(sessionId);
@@ -495,14 +536,16 @@ ipcMain.handle('skills:get-all-installed', async () => {
 
 // 安装 Skill
 ipcMain.handle('skills:install', async (_, skillId: string, sourceInfo: SkillSourceMeta, clients: SkillClientType[]) => {
+    const result = await skillsManager.installSkill(skillId, sourceInfo, clients);
     await historyManager.backup();
-    return skillsManager.installSkill(skillId, sourceInfo, clients);
+    return result;
 });
 
 // 卸载 Skill
 ipcMain.handle('skills:uninstall', async (_, skillName: string, clients: SkillClientType[]) => {
+    const result = await skillsManager.uninstallSkill(skillName, clients);
     await historyManager.backup();
-    return skillsManager.uninstallSkill(skillName, clients);
+    return result;
 });
 
 // 更新单个 Skill
@@ -532,8 +575,9 @@ ipcMain.handle('skills:resolve-platform-url', async (_, url: string) => {
 
 // 从发现的 Skill 安装
 ipcMain.handle('skills:install-from-discovered', async (_, skill: DiscoveredSkill, clients: SkillClientType[]) => {
+    const result = await skillsManager.installFromDiscovered(skill, clients);
     await historyManager.backup();
-    return skillsManager.installFromDiscovered(skill, clients);
+    return result;
 });
 
 // 创建自定义 Skill（本地，无网络）
@@ -542,8 +586,9 @@ ipcMain.handle('skills:create-custom', async (_, input: {
     description: string;
     body: string
 }, clients: SkillClientType[]) => {
+    const result = await skillsManager.createCustomSkill(input, clients);
     await historyManager.backup();
-    return skillsManager.createCustomSkill(input, clients);
+    return result;
 });
 
 // 更新自定义 Skill（改写 SKILL.md，可重命名）
@@ -552,8 +597,93 @@ ipcMain.handle('skills:update-custom', async (_, originalName: string, input: {
     description: string;
     body: string
 }, clients: SkillClientType[]) => {
+    const result = await skillsManager.updateCustomSkill(originalName, input, clients);
     await historyManager.backup();
-    return skillsManager.updateCustomSkill(originalName, input, clients);
+    return result;
+});
+
+/**
+ * 保存自定义 Skill 并自动同步到云端（暂存区 + 自动 push）。
+ * 对应需求：在「我的库」编辑/创建 skill 后，自动同步更新到「当前来源客户端 + 云端」。
+ *   - 先按原逻辑写入 selectedClients（update-custom / create-custom）；
+ *   - 若来源客户端不含 cloud，则把 skill 复制到 cloud 暂存区（以我的库为准，覆盖同名）；
+ *   - 若云端已配置，自动 push 到远端（git/sftp）；未配置则跳过（不影响本地保存）。
+ * 返回本地保存结果与云端同步状态，供 UI 提示。
+ */
+ipcMain.handle('skills:save-with-cloud-sync', async (_,
+    isEdit: boolean,
+    originalName: string | undefined,
+    input: { name: string; description: string; body: string },
+    clients: SkillClientType[]
+): Promise<{
+    success: boolean;
+    error?: string;
+    skillName?: string;
+    cloud?: { pushed: boolean; skipped: boolean; message: string };
+}> => {
+    const saveRes = isEdit
+        ? await skillsManager.updateCustomSkill(originalName!, input, clients)
+        : await skillsManager.createCustomSkill(input, clients);
+
+    if (!saveRes.success) {
+        return {success: false, error: saveRes.error};
+    }
+    // 本地 skill 已写入成功后在【之后】快照，确保历史记录反映本次保存后的状态
+    await historyManager.backup();
+    const finalName = saveRes.skillName || input.name;
+
+    const cloud: { pushed: boolean; skipped: boolean; enqueued: boolean; message: string } = {
+        pushed: false,
+        skipped: false,
+        enqueued: false,
+        message: '',
+    };
+
+    try {
+        if (!cloudSyncStore.isActive()) {
+            cloud.skipped = true;
+            cloud.message = '云端未配置，已跳过';
+        } else {
+            // 来源客户端不含 cloud 时，从首个来源客户端复制到云端暂存区（本地操作，快）
+            const sourceClient = clients.find(c => c !== 'cloud')
+                || (clients.includes('cloud') ? 'cloud' : clients[0]);
+            if (sourceClient && sourceClient !== 'cloud') {
+                await skillsManager.syncSkillToClients(finalName, sourceClient, ['cloud']);
+            }
+            // 后台异步 push，不阻塞保存 UI；任务进入侧边栏「同步任务」面板跟踪状态
+            getSyncTaskManager().enqueue('cloud-push', `上传到云端 · ${finalName}`, 'skills');
+            cloud.enqueued = true;
+            cloud.message = '已加入后台同步队列';
+        }
+    } catch (e: any) {
+        cloud.message = (e as Error)?.message || '云端同步失败';
+    }
+
+    return {success: true, skillName: finalName, cloud};
+});
+
+// ==================== 同步任务（后台异步队列） ====================
+// 「我的库」自动同步云端、手动「立即同步」等动作入队后，由 SyncTaskManager 后台串行处理；
+// 侧边栏「同步任务」面板通过 sync-tasks:updated 事件实时刷新，失败任务可 retry 重同步。
+
+ipcMain.handle('sync-tasks:list', (): SyncTask[] => {
+    return getSyncTaskManager().list();
+});
+
+ipcMain.handle('sync-tasks:enqueue', (_, kind: SyncTaskKind, title: string, scope?: SyncTaskScope): SyncTask => {
+    return getSyncTaskManager().enqueue(kind, title, scope);
+});
+
+ipcMain.handle('sync-tasks:retry', (_, id: string): boolean => {
+    return getSyncTaskManager().retry(id);
+});
+
+ipcMain.handle('sync-tasks:remove', (_, id: string): void => {
+    getSyncTaskManager().remove(id);
+});
+
+ipcMain.handle('sync-tasks:clear', (): void => {
+    getSyncTaskManager().clear();
 });
 
 // 读取本地 Skill 的 SKILL.md（解析 frontmatter 与正文，用于编辑回填）
@@ -571,6 +701,18 @@ ipcMain.handle('skills:pick-folder', async () => {
     const result = await dialog.showOpenDialog({
         title: '选择 Skill 文件夹',
         properties: ['openDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return {canceled: true};
+    return {canceled: false, path: result.filePaths[0]};
+});
+
+// 打开系统目录选择对话框（设置-添加自定义客户端等场景复用）。
+// defaultPath 缺省回退到用户主目录，满足「选取默认当前用户目录」诉求。
+ipcMain.handle('dialog:select-directory', async (_, defaultPath?: string) => {
+    const result = await dialog.showOpenDialog({
+        title: '选择目录',
+        properties: ['openDirectory'],
+        defaultPath: defaultPath || app.getPath('home'),
     });
     if (result.canceled || result.filePaths.length === 0) return {canceled: true};
     return {canceled: false, path: result.filePaths[0]};
@@ -754,41 +896,44 @@ ipcMain.handle('api-connections:get-server-detail', async (_, connectionId: stri
 
 // ============ 统一平台适配器通道（新架构） ============
 // 以上旧通道保留向后兼容；以下通道委托 platforms/registry 统一调度，新增平台无需改动此处。
-ipcMain.handle('platforms:search-skills', async (_, platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string): Promise<PlatformSearchPage> => {
+ipcMain.handle('platforms:search-skills', async (_, platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string, connectionId?: string): Promise<PlatformSearchPage> => {
     const sp = platformTypeToSupported(platformType);
     const adapter = sp ? getAdapter(sp) : null;
     if (!adapter || !adapter.searchSkills) throw new Error(`该平台不支持 skill 搜索：${platformType}`);
-    const conn = connectionsStore.list().find(c => c.platformType === platformType);
+    // S0-6: 优先按连接 ID 精确取 token/baseUrl；未传则回退「按 platformType 取第一个」以兼容旧调用
+    const conn = (connectionId && connectionsStore.get(connectionId)) || connectionsStore.list().find(c => c.platformType === platformType);
     const baseUrl = conn?.baseUrl || '';
     const secret = conn?.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
     return adapter.searchSkills({query, page, pageSize: pageSize || 20, category, sort, baseUrl, secret});
 });
 
-ipcMain.handle('platforms:search-servers', async (_, platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string, source?: string): Promise<PlatformServerSearchPage> => {
+ipcMain.handle('platforms:search-servers', async (_, platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string, source?: string, connectionId?: string): Promise<PlatformServerSearchPage> => {
     const sp = platformTypeToSupported(platformType);
     const adapter = sp ? getAdapter(sp) : null;
     if (!adapter) throw new Error(`不支持的平台直连类型：${platformType}`);
-    const conn = connectionsStore.list().find(c => c.platformType === platformType);
+    // S0-6: 优先按连接 ID 精确取 token/baseUrl；未传则回退「按 platformType 取第一个」以兼容旧调用
+    const conn = (connectionId && connectionsStore.get(connectionId)) || connectionsStore.list().find(c => c.platformType === platformType);
     const baseUrl = conn?.baseUrl || '';
     const secret = conn?.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
     if (!adapter.searchServers) return {items: [], pageInfo: {page, pageSize: pageSize || 20, total: 0, totalPages: 0, hasMore: false}};
     return adapter.searchServers({query, page, pageSize: pageSize || 20, category, sort, source, baseUrl, secret});
 });
 
-ipcMain.handle('platforms:server-detail', async (_, platformType: string, serverId: string): Promise<PlatformServerDetail> => {
+ipcMain.handle('platforms:server-detail', async (_, platformType: string, serverId: string, connectionId?: string): Promise<PlatformServerDetail> => {
     const sp = platformTypeToSupported(platformType);
     const adapter = sp ? getAdapter(sp) : null;
     if (!adapter || !adapter.fetchServerDetail) throw new Error(`该平台不支持 server 详情：${platformType}`);
-    const conn = connectionsStore.list().find(c => c.platformType === platformType);
+    // S0-6: 优先按连接 ID 精确取 token/baseUrl；未传则回退「按 platformType 取第一个」以兼容旧调用
+    const conn = (connectionId && connectionsStore.get(connectionId)) || connectionsStore.list().find(c => c.platformType === platformType);
     const baseUrl = conn?.baseUrl || '';
     const secret = conn?.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
     return adapter.fetchServerDetail({query: '', page: 1, pageSize: 20, baseUrl, secret}, serverId);
 });
 
-ipcMain.handle('platforms:facets', async (_, platformType: string): Promise<PlatformFacets> => {
+ipcMain.handle('platforms:facets', async (_, platformType: string, resourceType?: 'mcp' | 'skills'): Promise<PlatformFacets> => {
     const sp = platformTypeToSupported(platformType);
     if (!sp) return {categories: [], sortOptions: [], supportsSubcategories: false};
-    return getFacets(sp);
+    return getFacets(sp, resourceType);
 });
 
 ipcMain.handle('platforms:diagnostics', async (_, platformType: string) => {
@@ -838,12 +983,35 @@ ipcMain.handle('cloud-sync:test', async (): Promise<CloudSyncResult> => {
 });
 
 ipcMain.handle('cloud-sync:push', async (): Promise<CloudSyncResult> => {
-    return cloudSyncService.push();
+    // 经由同步队列执行（P1-1），与启动 pull / 其他 push 串行，状态可见且避免并发冲突
+    return enqueueCloudAndWait('cloud-push', '上传到云端');
 });
 
 ipcMain.handle('cloud-sync:pull', async (): Promise<CloudSyncResult> => {
-    return cloudSyncService.pull();
+    return enqueueCloudAndWait('cloud-pull', '从云端下载');
 });
+
+/**
+ * 入队一个云同步任务并等待其完成，返回与 cloudSyncService 一致的 CloudSyncResult。
+ * 轮询任务状态（队列本身已串行化），保证 IPC 调用方拿到的仍是结果对象，
+ * 同时让任务出现在「同步任务」面板（P1-1）。
+ */
+async function enqueueCloudAndWait(kind: SyncTaskKind, title: string): Promise<CloudSyncResult> {
+    const mgr = getSyncTaskManager();
+    const task = mgr.enqueue(kind, title);
+    return new Promise<CloudSyncResult>((resolve) => {
+        const timer = setInterval(() => {
+            const t = mgr.list().find(x => x.id === task.id);
+            if (!t || t.status === 'success') {
+                clearInterval(timer);
+                resolve({ok: true, message: t?.detail ?? '同步完成'});
+            } else if (t.status === 'failed') {
+                clearInterval(timer);
+                resolve({ok: false, message: t?.error ?? '同步失败'});
+            }
+        }, 150);
+    });
+}
 
 // ============ 缓存 IPC 处理器 ============
 

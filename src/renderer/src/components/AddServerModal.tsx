@@ -5,7 +5,7 @@
 import {useEffect, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import Modal from './Modal';
-import ClientIcon from './ClientIcon';
+import ClientMultiSelect from './ClientMultiSelect';
 import type {AnyClientId, ClientInfo} from '../lib/electron';
 
 interface AddServerModalProps {
@@ -17,9 +17,12 @@ interface AddServerModalProps {
 }
 
 interface ServerConfig {
-  command: string;
+  command?: string;
   args?: string[];
   env?: Record<string, string>;
+  url?: string;
+  type?: 'streamable-http' | 'sse';
+  cwd?: string;
 }
 
 interface EnvVar {
@@ -39,7 +42,10 @@ export default function AddServerModal({
   // 表单状态
   const [displayName, setDisplayName] = useState('');
   const [command, setCommand] = useState('');
+  const [url, setUrl] = useState('');
+  const [serverType, setServerType] = useState<'streamable-http' | 'sse'>('streamable-http');
   const [args, setArgs] = useState('');
+  const [cwd, setCwd] = useState('');
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
   const [selectedClients, setSelectedClients] = useState<AnyClientId[]>([]);
   const [jsonInput, setJsonInput] = useState('');
@@ -55,6 +61,7 @@ export default function AddServerModal({
       setDisplayName('');
       setCommand('');
       setArgs('');
+      setCwd('');
       setEnvVars([]);
       setSelectedClients([]);
       setJsonInput('');
@@ -101,14 +108,22 @@ export default function AddServerModal({
     try {
       const parsed = JSON.parse(jsonInput);
       
-      // 验证必要字段
-      if (!parsed.command) {
-        setParseError(t('addServer.missingCommand') || 'Missing "command" field');
+      // 验证必要字段：url 或 command 至少有一个
+      if (!parsed.command && !parsed.url) {
+        setParseError(t('addServer.missingCommand') || 'Missing "command" or "url" field');
         return;
       }
 
       // 填充表单
-      setCommand(parsed.command);
+      if (parsed.command) {
+        setCommand(parsed.command);
+      }
+      if (parsed.url) {
+        setUrl(parsed.url);
+        if (parsed.type) {
+          setServerType(parsed.type);
+        }
+      }
       
       if (parsed.args) {
         if (Array.isArray(parsed.args)) {
@@ -116,6 +131,11 @@ export default function AddServerModal({
         } else {
           setArgs(String(parsed.args));
         }
+      }
+
+      // 工作目录（仅 stdio 类型有意义）
+      if (parsed.cwd && typeof parsed.cwd === 'string') {
+        setCwd(parsed.cwd);
       }
 
       if (parsed.env && typeof parsed.env === 'object') {
@@ -146,7 +166,9 @@ export default function AddServerModal({
 
   // 提交表单
   const handleSubmit = async () => {
-    if (!command.trim()) {
+    const hasCommand = command.trim();
+    const hasUrl = url.trim();
+    if (!hasCommand && !hasUrl) {
       return;
     }
 
@@ -160,12 +182,22 @@ export default function AddServerModal({
       : `custom-${Date.now()}`;
 
     // 构建配置
-    const config: ServerConfig = {
-      command: command.trim(),
-    };
+    const config: ServerConfig = {};
+
+    if (hasCommand) {
+      config.command = hasCommand;
+    }
+    if (hasUrl) {
+      config.url = hasUrl;
+      config.type = serverType;
+    }
 
     if (args.trim()) {
       config.args = args.trim().split(/\s+/);
+    }
+
+    if (cwd.trim()) {
+      config.cwd = cwd.trim();
     }
 
     if (envVars.length > 0) {
@@ -209,7 +241,7 @@ export default function AddServerModal({
         {/* Command */}
         <div>
           <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">
-            {t('addServer.command') || 'Command'} <span className="text-[#ff3b30]">*</span>
+            {t('addServer.command') || 'Command'}
           </label>
           <input
             type="text"
@@ -218,6 +250,32 @@ export default function AddServerModal({
             placeholder="npx, uvx, node, python..."
             className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)]"
           />
+        </div>
+
+        {/* URL（HTTP 模式） */}
+        <div>
+          <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">
+            URL
+          </label>
+          <input
+            type="text"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="http://localhost:8000/mcp"
+            className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)]"
+          />
+          {url.trim() && (
+            <div className="mt-1">
+              <select
+                value={serverType}
+                onChange={(e) => setServerType(e.target.value as 'streamable-http' | 'sse')}
+                className="px-2 py-1 bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-[12px] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
+              >
+                <option value="streamable-http">Streamable HTTP</option>
+                <option value="sse">SSE</option>
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Arguments */}
@@ -235,6 +293,21 @@ export default function AddServerModal({
           <p className="text-[12px] text-[var(--color-muted)] mt-1">
             {t('addServer.argumentsHint') || 'Space-separated arguments'}
           </p>
+        </div>
+
+        {/* Working Directory (CWD) */}
+        <div>
+          <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">
+            {t('addServer.cwd') || 'Working Directory (CWD)'}
+            <span className="text-[var(--color-muted)] ml-1">({t('common.optional') || 'optional'})</span>
+          </label>
+          <input
+            type="text"
+            value={cwd}
+            onChange={(e) => setCwd(e.target.value)}
+            placeholder="d:/path/to/server"
+            className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[13px] text-[var(--color-text)] placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)]"
+          />
         </div>
 
         {/* Environment Variables */}
@@ -296,29 +369,19 @@ export default function AddServerModal({
               {t('addServer.noClients') || 'No MCP clients installed'}
             </p>
           ) : (
-            <div className="grid grid-cols-2 gap-2">
-              {availableClients.map((client) => (
-                <button
-                  key={client.id}
-                  onClick={() => toggleClient(client.id)}
-                  className={`
-                    flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors
-                    ${selectedClients.includes(client.id)
-                      ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10'
-                      : 'border-[var(--color-border)] hover:border-[var(--color-muted)]'
-                    }
-                  `}
-                >
-                  <ClientIcon clientId={client.id} size={20} />
-                  <span className="text-[13px] text-[var(--color-text)]">{client.name}</span>
-                  {selectedClients.includes(client.id) && (
-                    <svg className="w-4 h-4 text-[var(--color-accent)] ml-auto" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                  )}
-                </button>
-              ))}
-            </div>
+            <ClientMultiSelect
+              clients={availableClients}
+              selected={selectedClients}
+              onToggle={toggleClient}
+              className="grid grid-cols-2 gap-2"
+              iconSize={20}
+              check="check"
+              checkClassName="w-4 h-4 text-[var(--color-accent)] ml-auto"
+              variant="sync"
+              baseClass="flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors"
+              selectedClass="border-[var(--color-accent)] bg-[var(--color-accent)]/10"
+              unselectedClass="border-[var(--color-border)] hover:border-[var(--color-muted)]"
+            />
           )}
         </div>
 
@@ -345,6 +408,10 @@ export default function AddServerModal({
   "env": {
     "API_KEY": "xxx"
   }
+}
+// 或 HTTP 模式：
+{
+  "url": "http://localhost:8000/mcp"
 }`}
                 className="w-full h-32 px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[12px] text-[var(--color-text)] font-mono placeholder-[#636366] focus:outline-none focus:border-[var(--color-accent)] resize-none"
               />
@@ -373,7 +440,7 @@ export default function AddServerModal({
           <button
             onClick={handleSubmit}
             className="btn btn-primary"
-            disabled={isLoading || !command.trim() || selectedClients.length === 0}
+            disabled={isLoading || (!command.trim() && !url.trim()) || selectedClients.length === 0}
           >
             {isLoading ? (t('common.loading') || 'Loading...') : (t('addServer.add') || 'Add Server')}
           </button>

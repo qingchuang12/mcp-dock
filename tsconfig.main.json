@@ -11,7 +11,9 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "declaration": false
+    "declaration": false,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
   "include": ["src/main/**/*", "src/preload/**/*"],
   "exclude": ["node_modules", "src/renderer"]

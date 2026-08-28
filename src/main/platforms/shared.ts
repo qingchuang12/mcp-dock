@@ -43,6 +43,40 @@ export async function fetchText(
     }
 }
 
+/** PUT 请求并返回 JSON（用于 ModelScope MCP server 端点）。 */
+export async function fetchJson(
+    url: string,
+    body: Record<string, unknown>,
+    timeoutMs = 20000,
+    extraHeaders: Record<string, string> = {}
+): Promise<{json: any; text: string} | null> {
+    const controller = new AbortController();
+    const t = setTimeout(() => (controller as any).abort(), timeoutMs);
+    try {
+        const res = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'User-Agent': UA,
+                'Accept': 'application/json,text/html,*/*',
+                'Content-Type': 'application/json',
+                ...extraHeaders,
+            },
+            body: JSON.stringify(body),
+            redirect: 'follow',
+            signal: (controller as any).signal,
+        });
+        if (!res.ok) return null;
+        const text = await res.text();
+        let json: any = null;
+        try { json = JSON.parse(text); } catch { /* ignore */ }
+        return {json, text};
+    } catch {
+        return null;
+    } finally {
+        clearTimeout(t);
+    }
+}
+
 /** 拼接 baseUrl 与 path，自动处理斜杠。 */
 export function buildUrl(base: string, path: string): string {
     const b = base.replace(/\/+$/, '');
@@ -66,6 +100,7 @@ export function locateArray(json: any): unknown[] {
     if (Array.isArray(json)) return json;
     const candidates = [
         json?.data?.skills,
+        json?.data?.mcp_server_list,
         json?.skills,
         json?.items,
         json?.data?.list,
@@ -172,6 +207,45 @@ export interface ProbeResult {
     items: Record<string, unknown>[];
 }
 
+/**
+ * 带超时与指数退避重试的 fetch（P1-15）。
+ * - 网络错误（fetch 抛错）/ 5xx 视为可重试，最多重试 2 次，退避 400ms / 800ms；
+ * - 4xx（鉴权/参数错误）与 2xx 为终态，不重试，直接返回。
+ * 每个请求自带 AbortController 超时控制。
+ */
+async function fetchWithRetry(
+    url: string,
+    headers: Record<string, string>,
+    timeoutMs: number,
+    maxRetries = 2
+): Promise<{res: Response; text: string}> {
+    let lastErr: unknown;
+    for (let i = 0; i <= maxRetries; i++) {
+        const controller = new AbortController();
+        const t = setTimeout(() => (controller as any).abort(), timeoutMs);
+        try {
+            const res = await fetch(url, {
+                headers: {'User-Agent': UA, 'Accept': 'application/json,text/html,*/*', ...headers},
+                redirect: 'follow',
+                signal: (controller as any).signal,
+            });
+            if (res.ok || (res.status >= 400 && res.status < 500)) {
+                const text = await res.text();
+                return {res, text};
+            }
+            lastErr = new Error(`HTTP ${res.status}`);
+        } catch (e) {
+            lastErr = e;
+        } finally {
+            clearTimeout(t);
+        }
+        if (i < maxRetries) {
+            await new Promise(r => setTimeout(r, 400 * Math.pow(2, i)));
+        }
+    }
+    throw lastErr;
+}
+
 export async function probeEndpoints(
     platform: SupportedPlatform,
     baseUrl: string,
@@ -196,16 +270,28 @@ export async function probeEndpoints(
     let matchedJson: any = null;
     let matchedItems: Record<string, unknown>[] = [];
 
+    // 总体预算：避免最坏情况串行探测无限挂起（P1-15）
+    const perTimeout = platform === 'modelscope' ? 20000 : 15000;
+    const deadline = Date.now() + Math.min(perTimeout * endpoints.length, 45000);
+
     for (const ep of endpoints) {
+        if (Date.now() > deadline) {
+            attempts.push({
+                url: buildUrl(baseUrl, fillTpl(ep, query, page, pageSize, category, sort, order)),
+                ok: false,
+                durationMs: 0,
+                reason: 'budget',
+                message: '超过总体探测预算，已中止后续端点',
+            });
+            break;
+        }
         const url = buildUrl(baseUrl, fillTpl(ep, query, page, pageSize, category, sort, order));
-        const controller = new AbortController();
-        const timeoutMs = platform === 'modelscope' ? 20000 : 15000;
-        const t = setTimeout(() => (controller as any).abort(), timeoutMs);
+        const timeoutMs = perTimeout;
         const started = Date.now();
         const attempt: DirectSearchAttempt = {url, ok: false, durationMs: 0};
 
         try {
-            const res = await fetch(url, {headers, redirect: 'follow', signal: (controller as any).signal});
+            const {res, text} = await fetchWithRetry(url, headers, timeoutMs);
             attempt.status = res.status;
             attempt.contentType = res.headers.get('content-type') || '';
 
@@ -218,7 +304,6 @@ export async function probeEndpoints(
                 continue;
             }
 
-            const text = await res.text();
             attempt.bytes = text.length;
 
             if (
@@ -247,7 +332,6 @@ export async function probeEndpoints(
             if (liked.length > 0) {
                 attempt.ok = true;
                 attempt.durationMs = Date.now() - started;
-                attempts.push(attempt);
                 matchedUrl = url;
                 matchedJson = json;
                 matchedItems = liked;
@@ -265,7 +349,6 @@ export async function probeEndpoints(
                     ? `请求超时（>${timeoutMs}ms），该端点可能被网关限制或不可达`
                     : `网络错误 ${attempt.errorCode}：${err.message}`;
         } finally {
-            clearTimeout(t);
             if (!attempt.ok) attempt.durationMs = Date.now() - started;
             attempts.push(attempt);
         }

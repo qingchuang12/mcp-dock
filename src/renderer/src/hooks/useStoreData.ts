@@ -24,6 +24,8 @@ interface UseStoreDataParams {
     sort?: string;
     /** 来源过滤（如百炼 source slug） */
     source?: string;
+    /** S0-4: 强制刷新时绕过磁盘缓存拉取最新（透传给 Skills 内置源） */
+    forceRefresh?: boolean;
 }
 
 /**
@@ -53,6 +55,7 @@ export function useStoreData(params: UseStoreDataParams): StoreData<ServerListIt
         debouncedSearch: params.debouncedSearch,
         category: params.category,
         sort: params.sort,
+        forceRefresh: params.forceRefresh,
     });
     return params.resourceType === 'mcp' ? mcp : skills;
 }

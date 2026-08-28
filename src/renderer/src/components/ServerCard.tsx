@@ -4,12 +4,13 @@
  * 紧凑高度设计
  */
 
-import {memo, useState} from 'react';
+import {memo, type KeyboardEvent} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {useTranslation} from 'react-i18next';
 import type {DataSource, ServerListItem} from '../api/registry';
 import {isOfficialListItem, isSmitheryListItem} from '../api/registry';
-import {ClockIcon, DownloadIcon, VerifiedIcon} from './Icons';
+import {ClockIcon, DownloadIcon, EyeIcon, VerifiedIcon} from './Icons';
+import {formatCompactNumber, formatRelativeTime, localizeKey} from '../lib/format';
 
 interface ServerCardProps {
   server: ServerListItem;
@@ -19,126 +20,43 @@ interface ServerCardProps {
   platformConnId?: string | null;
 }
 
-// 格式化数字
-function formatNumber(count?: number | null): string {
-  if (count == null || isNaN(count)) return '';
-  if (count >= 1000000) {
-    return `${(count / 1000000).toFixed(1)}M`;
-  }
-  if (count >= 1000) {
-    return `${(count / 1000).toFixed(1)}K`;
-  }
-  return count.toString();
-}
-
-// 格式化相对时间
-function formatRelativeTime(dateStr: string): string {
-  if (!dateStr) return '';
-  try {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 0) return 'today';
-    if (diffDays === 1) return 'yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
-    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
-    return `${Math.floor(diffDays / 365)}y ago`;
-  } catch {
-    return '';
-  }
-}
-
-// 从仓库 URL 提取 GitHub 用户名
-function extractGitHubUsername(repoUrl: string | null | undefined): string | null {
-  if (!repoUrl) return null;
-  const match = repoUrl.match(/github\.com\/([^\/]+)/);
-  return match ? match[1] : null;
-}
-
-// 获取 GitHub 用户头像 URL
-function getGitHubAvatarUrl(username: string): string {
-  return `https://avatars.githubusercontent.com/${username}`;
-}
-
-// 服务器图标组件
-function ServerIcon({ server }: { server: ServerListItem }) {
-  const [imgError, setImgError] = useState(false);
-  const [avatarError, setAvatarError] = useState(false);
-  
-  // 获取仓库 URL (仅 Official 数据源)
-  const repoUrl = isOfficialListItem(server) ? server.repository?.url : null;
-  const githubUsername = extractGitHubUsername(repoUrl);
-  
-  // 首字母图标
-  const initial = server.displayName.charAt(0).toUpperCase();
-  const colors = [
-    'bg-blue-500',
-    'bg-purple-500',
-    'bg-green-500',
-    'bg-orange-500',
-    'bg-pink-500',
-    'bg-cyan-500',
-  ];
-  const colorIndex = server.displayName.charCodeAt(0) % colors.length;
-  
-  // 优先使用服务器图标
-  if (server.iconUrl && !imgError) {
-    return (
-      <img
-        src={server.iconUrl}
-        alt={server.displayName}
-        className="w-9 h-9 rounded-xl object-cover"
-        onError={() => setImgError(true)}
-      />
-    );
-  }
-  
-  // 其次使用 GitHub 头像
-  if (githubUsername && !avatarError) {
-    return (
-      <img
-        src={getGitHubAvatarUrl(githubUsername)}
-        alt={server.displayName}
-        className="w-9 h-9 rounded-xl object-cover"
-        onError={() => setAvatarError(true)}
-      />
-    );
-  }
-  
-  // 最后使用首字母图标
-  return (
-    <div className={`w-9 h-9 rounded-xl ${colors[colorIndex]} flex items-center justify-center text-[var(--color-text)] font-semibold text-sm`}>
-      {initial}
-    </div>
-  );
-}
+import EntityAvatar from './store/EntityAvatar';
 
 function ServerCard({ server, dataSource, isInstalled, platformConnId }: ServerCardProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
 
-  // 平台直连源（如 modelscope / bailian / skillhub），其 source 为平台 id 或 'platform'
+  const githubUsername = isOfficialListItem(server) 
+    ? server.repository?.url?.match(/github\.com\/([^\/]+)/)?.[1] ?? null
+    : null;
+
   const isPlatformSource =
     server.source === 'platform' ||
     ['modelscope', 'safeskill', 'skillhub', 'skillsmp', 'clawhub', 'bailian'].includes(server.source ?? '');
 
   const handleClick = () => {
-    // 平台源（如 ModelScope）走独立的详情页路由，附带连接 ID
+    // 平台源（如 ModelScope）走独立的详情页路由，附带连接 ID；同时透传列表项以便详情页展示分类/浏览量
     if (isPlatformSource && platformConnId) {
-      navigate(`/detail/platform/${encodeURIComponent(server.id)}?conn=${encodeURIComponent(platformConnId)}`);
+      navigate(`/detail/platform/${encodeURIComponent(server.id)}?conn=${encodeURIComponent(platformConnId)}`, {state: {server}});
       return;
     }
     navigate(`/detail/${dataSource}/${encodeURIComponent(server.id)}`);
   };
 
+  // S1-7: 卡片需键盘可达（Enter / Space 触发跳转）
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleClick();
+    }
+  };
+
   // 分类徽章（平台源提供的 categories/tags）
+  // 平台源优先用中文展示名（categoryNames，与 categories 一一对应），避免直接显示英文 slug；
+  // categories 仍保留原始 slug，供分类过滤精确匹配。
   const catList: string[] = isPlatformSource
-    ? server.categories ?? server.tags ?? []
+    ? (server.categoryNames?.length ? server.categoryNames : server.categories ?? server.tags ?? [])
     : server.tags ?? [];
-  const primaryCat = catList.length > 0 ? catList[0] : null;
 
   // 获取更新时间（Official 数据源）
   const lastCommitAt = isOfficialListItem(server) ? server.lastCommitAt : null;
@@ -148,24 +66,32 @@ function ServerCard({ server, dataSource, isInstalled, platformConnId }: ServerC
   return (
     <div
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={0}
       className="card p-3 cursor-pointer hover:bg-[var(--color-surface-hover)]/30 transition-colors flex flex-col h-[115px]"
     >
       {/* 顶部内容区域 */}
       <div className="flex items-start gap-2.5 flex-1 min-h-0">
         {/* 图标 */}
         <div className="flex-shrink-0">
-          <ServerIcon server={server} />
+          <EntityAvatar name={server.displayName} iconUrl={server.iconUrl} githubUsername={githubUsername} />
         </div>
 
         {/* 内容 */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <h3 className="text-[13px] font-medium text-[var(--color-text)] truncate">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <h3 className="text-[13px] font-medium text-[var(--color-text)] truncate min-w-0 flex-1">
               {server.displayName}
             </h3>
-            {primaryCat && (
-              <span className="px-1.5 py-0 rounded-full text-[9px] bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20 flex-shrink-0">
-                {t(`mcpCategory.${primaryCat}`) || primaryCat}
+            {catList.slice(0, 3).map(cat => (
+              <span key={cat} className="px-1.5 py-0 rounded-full text-[9px] bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20 flex-shrink-0 whitespace-nowrap">
+                {localizeKey(t, i18n, `mcpCategory.${cat}`, cat)}
+              </span>
+            ))}
+            {catList.length > 3 && (
+              <span className="px-1.5 py-0 rounded-full text-[9px] text-[var(--color-muted2)] border border-[var(--color-border)] flex-shrink-0 whitespace-nowrap">
+                +{catList.length - 3}
               </span>
             )}
             {isInstalled && (
@@ -198,14 +124,14 @@ function ServerCard({ server, dataSource, isInstalled, platformConnId }: ServerC
                   <svg className="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                   </svg>
-                  {formatNumber(server.stars)}
+                  {formatCompactNumber(server.stars)}
                 </span>
               )}
               {/* 更新时间 */}
               {updateTime && (
                 <span className="flex items-center gap-0.5">
                   <ClockIcon className="w-3 h-3" />
-                  {formatRelativeTime(updateTime)}
+                  {formatRelativeTime(t, updateTime)}
                 </span>
               )}
             </div>
@@ -216,7 +142,7 @@ function ServerCard({ server, dataSource, isInstalled, platformConnId }: ServerC
             {typeof server.downloads === 'number' && server.downloads > 0 && (
               <span className="text-[12px] text-[var(--color-muted)] flex items-center gap-1">
                 <DownloadIcon className="w-3 h-3" />
-                {formatNumber(server.downloads)}
+                {formatCompactNumber(server.downloads)}
               </span>
             )}
             {server.verified && (
@@ -235,15 +161,21 @@ function ServerCard({ server, dataSource, isInstalled, platformConnId }: ServerC
                   <svg className="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                   </svg>
-                  {formatNumber(server.stars)}
+                  {formatCompactNumber(server.stars)}
+                </span>
+              )}
+              {typeof server.viewCount === 'number' && server.viewCount > 0 && (
+                <span className="flex items-center gap-0.5">
+                  <EyeIcon className="w-3 h-3" />
+                  {formatCompactNumber(server.viewCount)}
                 </span>
               )}
               {server.extra?.callTotalCount != null && (
-                <span>{formatNumber(server.extra.callTotalCount as number)} 次调用</span>
+                <span>{formatCompactNumber(server.extra.callTotalCount as number)} {t('store.callCount')}</span>
               )}
             </div>
             {(server.extra?.isHosted === true || server.isHosted === true) ? (
-              <span className="text-[10px] text-[var(--color-accent)] flex-shrink-0">云端托管</span>
+              <span className="text-[10px] text-[var(--color-accent)] flex-shrink-0">{t('store.cloudHosted')}</span>
             ) : (
               <span className="text-[10px] text-[var(--color-muted2)] flex-shrink-0">{server.source}</span>
             )}

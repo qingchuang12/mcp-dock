@@ -5,6 +5,7 @@
  */
 
 import {useCallback, useEffect, useState} from 'react';
+import {flushSync} from 'react-dom';
 import {useTranslation} from 'react-i18next';
 import {useStore} from '../store/useStore';
 import {useElectronAPI} from '../lib/electron';
@@ -16,11 +17,11 @@ import {useStoreData} from '../hooks/useStoreData';
 import {useStoreFacets} from '../hooks/useStoreFacets';
 import {useDebouncedValue} from '../hooks/useDebouncedValue';
 import {useStoreAttribution} from '../hooks/useStoreAttribution';
-import StoreToolbar from './StoreToolbar';
-import StoreFilterBar from './StoreFilterBar';
-import StoreGrid from './StoreGrid';
-import StoreEmptyState from './StoreEmptyState';
-import StoreErrorState from './StoreErrorState';
+import StoreToolbar from '../components/store/StoreToolbar';
+import StoreFilterBar from '../components/store/StoreFilterBar';
+import StoreGrid from '../components/store/StoreGrid';
+import StoreEmptyState from '../components/store/StoreEmptyState';
+import StoreErrorState from '../components/store/StoreErrorState';
 
 export default function StorePage() {
   const { t } = useTranslation();
@@ -50,6 +51,13 @@ export default function StorePage() {
   const debouncedSearch = useDebouncedValue(searchQuery, 300);
   const source = useStoreSourceSelection();
 
+  const selectedMcpConn = source.mcpSources.find(c => c.id === source.mcpConnId) || null;
+
+  // S1-13: 平台源（如 ModelScope）受「页码 × 每页条数 ≤ 100」配额限制，100 条/页翻到第 2 页必触发配额空态；
+  // 平台源上限 50 条/页，内置源（official/smithery）才放开到 100。
+  const isPlatformSource = !!source.mcpConnId || source.isDirectSkillSource;
+  const pageSizeOptions = isPlatformSource ? [10, 20, 50] : [10, 20, 50, 100];
+
   useEffect(() => {
     setCategory('all');
     setSort('relevance');
@@ -69,45 +77,64 @@ export default function StorePage() {
     category,
     sort,
     source: sourceFilter,
+    // S0-4: 强制刷新时透传，使 Skills 内置源绕过磁盘缓存拉取最新
+    forceRefresh: isForceRefreshing,
   });
 
   const facets = useStoreFacets({
     resourceType,
     mcpConnId: source.mcpConnId,
+    // S0-1: 传 MCP 连接的 platformType，而非 Skill 源连接，避免分类面取错
+    mcpPlatformType: selectedMcpConn?.platformType ?? null,
     selectedConn: source.selectedConn,
     isDirectSkillSource: source.isDirectSkillSource,
+    dataSource: source.dataSource,
   });
 
   useEffect(() => {
+    // S0-5: 切源（含 MCP 连接 / Skill 源切换）或改变每页条数时重置到第一页，
+    // 避免停留越界页（如旧源第 5 页、新源仅 1 页；或改小每页条数后页码超出新总页数）。
+    // S1-13: 切到平台源时若当前每页条数超过其上限（50），先收敛，避免配额空态。
+    const maxPageSize = isPlatformSource ? 50 : 100;
+    if (pageSize > maxPageSize) {
+      setPageSize(maxPageSize);
+      return;
+    }
     setCurrentPage(1);
-  }, [resourceType, setCurrentPage]);
+  }, [resourceType, source.mcpConnId, source.selectedSkillSourceId, source.isDirectSkillSource, pageSize, isPlatformSource, setCurrentPage, setPageSize]);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [category, sort, sourceFilter, debouncedSearch, setCurrentPage]);
 
+  // S0-7: 已安装状态需在返回商店 / 窗口聚焦时刷新（详情页安装/卸载后徽章才更新）
+  // S0-8: 两个请求都加 .catch，避免失败时 unhandled rejection 导致徽章静默失效
   useEffect(() => {
-    api.config.getAllServers().then(({ servers }) => {
-      setInstalledServerIds(Object.keys(servers));
-    });
-  }, [api, setInstalledServerIds]);
-
-  useEffect(() => {
-    api.skills.getAllInstalled().then(({ skills }) => {
-      setInstalledSkillIds(Object.keys(skills));
-    });
-  }, [api, setInstalledSkillIds]);
+    const refreshInstalled = () => {
+      api.config.getAllServers()
+        .then(({ servers }) => setInstalledServerIds(Object.keys(servers)))
+        .catch(() => {});
+      api.skills.getAllInstalled()
+        .then(({ skills }) => setInstalledSkillIds(Object.keys(skills)))
+        .catch(() => {});
+    };
+    refreshInstalled();
+    window.addEventListener('focus', refreshInstalled);
+    window.addEventListener('hashchange', refreshInstalled);
+    return () => {
+      window.removeEventListener('focus', refreshInstalled);
+      window.removeEventListener('hashchange', refreshInstalled);
+    };
+  }, [api, setInstalledServerIds, setInstalledSkillIds]);
 
   const handleForceRefresh = useCallback(async () => {
-    setIsForceRefreshing(true);
-    const startTime = Date.now();
+    // S0-4: 强制刷新需先把 isForceRefreshing 同步提交到渲染，底层数据 hook 才能读到 noCache=true
+    flushSync(() => setIsForceRefreshing(true));
     try {
       await data.refetch();
-      const elapsed = Date.now() - startTime;
-      if (elapsed < 1500) await new Promise(r => setTimeout(r, 1500 - elapsed));
-      toast.success(t('store.refreshSuccess') || 'Data refreshed');
+      toast.success(t('store.refreshSuccess', {defaultValue: 'Data refreshed'}));
     } catch {
-      toast.error(t('store.refreshFailed') || 'Failed to refresh data');
+      toast.error(t('store.refreshFailed', {defaultValue: 'Failed to refresh data'}));
     } finally {
       setIsForceRefreshing(false);
     }
@@ -116,26 +143,18 @@ export default function StorePage() {
   const handleRetry = useCallback(async () => {
     try {
       await data.refetch();
-      toast.success(t('store.retrySuccess') || 'Data loaded successfully');
+      toast.success(t('store.retrySuccess', {defaultValue: 'Data loaded successfully'}));
     } catch {
-      toast.error(t('store.retryFailed') || 'Failed to load data');
+      toast.error(t('store.retryFailed', {defaultValue: 'Failed to load data'}));
     }
   }, [data, t]);
 
-  const selectedMcpConn = source.mcpSources.find(c => c.id === source.mcpConnId) || null;
   const attributionText = useStoreAttribution({
     resourceType,
     dataSource: source.dataSource,
     selectedMcpConn,
     selectedConn: source.selectedConn,
   });
-
-  const result = data;
-  const displayTotal = result.totalItems;
-  const isLoading = data.isLoading;
-  const isFetching = data.isFetching;
-  const error = data.error;
-  const friendlyMessage = data.message;
 
   const handleMcpSourceChange = useCallback((sourceId: string) => {
     const src = source.mcpSources.find(c => c.id === sourceId);
@@ -153,7 +172,7 @@ export default function StorePage() {
       <StoreToolbar
         isMac={isMac}
         resourceType={resourceType}
-        displayTotal={displayTotal}
+        displayTotal={data.totalItems}
         searchQuery={searchQuery}
         dataSource={source.dataSource}
         mcpSources={source.mcpSources}
@@ -162,8 +181,11 @@ export default function StorePage() {
         connections={source.connections}
         selectedSkillSourceId={source.selectedSkillSourceId}
         isForceRefreshing={isForceRefreshing}
-        isLoading={isLoading}
-        isFetching={isFetching}
+        isLoading={data.isLoading}
+        isFetching={data.isFetching}
+        categories={facets?.categories ?? []}
+        category={category}
+        onCategoryChange={setCategory}
         onResourceTypeChange={setResourceType}
         onSearchQueryChange={setSearchQuery}
         onMcpSourceChange={handleMcpSourceChange}
@@ -175,23 +197,21 @@ export default function StorePage() {
       <div className="flex-1 overflow-y-auto">
         <StoreFilterBar
           facets={facets}
-          category={category}
           sort={sort}
           sourceFilter={sourceFilter}
-          onCategoryChange={setCategory}
           onSortChange={setSort}
           onSourceFilterChange={setSourceFilter}
           onClearFilters={() => { setCategory('all'); setSort('relevance'); setSourceFilter('all'); }}
         />
 
-        {isLoading && result.items.length === 0 ? (
+        {data.isLoading && data.items.length === 0 ? (
           <LoadingSpinner />
-        ) : error ? (
+        ) : data.error ? (
           <StoreErrorState onRetry={handleRetry} />
-        ) : result.items.length === 0 ? (
+        ) : data.items.length === 0 ? (
           <StoreEmptyState
             resourceType={resourceType}
-            friendlyMessage={friendlyMessage ?? null}
+            friendlyMessage={data.message ?? null}
             isUnsupported={data.isUnsupported}
             connectionsCount={source.connections.length}
             mcpConnId={source.mcpConnId}
@@ -200,8 +220,7 @@ export default function StorePage() {
         ) : (
           <StoreGrid
             resourceType={resourceType}
-            currentPage={currentPage}
-            items={result.items}
+            items={data.items}
             dataSource={source.dataSource}
             installedServerIds={installedServerIds}
             installedSkillIds={installedSkillIds}
@@ -212,32 +231,33 @@ export default function StorePage() {
         )}
       </div>
 
-      {!isLoading && !error && result.items.length > 0 && (
+      {!data.isLoading && !data.error && data.items.length > 0 && (
         <div className="flex items-center justify-between gap-3 px-4 py-2 border-t border-[var(--color-border)] bg-[var(--color-surface)]">
           <span className="text-[12px] text-[var(--color-muted)] truncate">
             {attributionText}
           </span>
           <div className="flex items-center gap-3 shrink-0">
             <label className="flex items-center gap-1.5 text-[12px] text-[var(--color-muted2)] whitespace-nowrap">
-              {t('store.pageSize') || '每页'}
+              {t('store.pageSize', {defaultValue: '每页'})}
               <select
                 value={pageSize}
                 onChange={e => setPageSize(Number(e.target.value))}
                 className="px-1.5 py-0.5 rounded-md text-[12px] bg-[var(--color-surface-hover)] text-[var(--color-text)] border border-[var(--color-border)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
               >
-                {[10, 20, 50, 100].map(n => (
+                {pageSizeOptions.map(n => (
                   <option key={n} value={n}>{n}</option>
                 ))}
               </select>
-              {t('store.items') || '条'}
+              {t('store.items', {defaultValue: '条'})}
             </label>
             <Pagination
               currentPage={currentPage}
-              totalPages={result.totalPages}
-              totalItems={result.totalItems}
-              startIndex={result.startIndex}
-              endIndex={result.endIndex}
+              totalPages={data.totalPages}
+              totalItems={data.totalItems}
+              startIndex={data.startIndex}
+              endIndex={data.endIndex}
               onPageChange={setCurrentPage}
+              canJump={data.total !== null}
             />
           </div>
         </div>

@@ -1,120 +1,61 @@
 /**
- * 配置管理器
+ * 配置管理器（编排门面）
  * 负责读写多个 MCP 客户端的配置文件
  * 支持: Cursor, VS Code, Claude Code, Gemini CLI, Codex CLI, Windsurf, Zed, TRAE, Opencode
+ *
+ * 本文件为「编排门面」：类型/常量、路径探测、格式适配器、设置持久化均已下沉到
+ * `./config/*` 子模块，此处仅保留 ConfigManager 类并委托给它们，对外 API 完全不变。
  */
 
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import * as jsonc from 'jsonc-parser';
-import * as TOML from 'smol-toml';
 import {getCloudSyncStore} from './cloud-sync-store';
-import {CLOUD_ROOT_DIR} from '../shared/cloud-sync-constants';
+import {resolveSkillsPath} from './client-paths';
 
-export interface McpServerConfig {
-    command?: string;
-    args?: string[];
-    env?: Record<string, string>;
-    url?: string;
-    type?: 'stdio' | 'http' | 'streamable-http' | 'sse';
-    headers?: Record<string, string>;
-}
+import {
+    McpServerConfig,
+    ClientConfig,
+    ClientType,
+    AnyClientId,
+    SkillClientType,
+    SKILL_SUPPORTED_CLIENTS,
+    ALL_BUILTIN_CLIENTS,
+    ClientInfo,
+    CustomClientDef,
+} from './config/types';
+import {
+    getDefaultClientPaths,
+    getClientDisplayName,
+    getClientAppPaths,
+    getClientConfigMarkers,
+    getEnhancedPathEnv,
+    findJetBrainsConfigPath,
+} from './config/client-probe';
+import {
+    readClientConfig,
+    writeClientConfig,
+    reachesDefaultBranch,
+    defaultConfigForMissing,
+} from './config/format-adapters';
+import {
+    writeFileAtomic,
+    loadUserSettingsFile,
+    assertSafeConfigPath,
+    UserSettings,
+} from './config/settings-store';
 
-export interface ClientConfig {
-    mcpServers?: Record<string, McpServerConfig>;
-
-    [key: string]: any;
-}
-
-// 所有 MCP 客户端类型
-// 'cloud' 是虚拟客户端：指向 ~/.ai-tools/cloud/ai-tools 暂存区，由云同步（Git / SFTP）推拉到远端
-export type ClientType =
-    'cursor'
-    | 'vscode'
-    | 'claude-code'
-    | 'gemini-cli'
-    | 'codex-cli'
-    | 'windsurf'
-    | 'zed'
-    | 'trae'
-    | 'trae-cn'
-    | 'marscode'
-    | 'kiro'
-    | 'opencode'
-    | 'jetbrains'
-    | 'antigravity'
-    | 'openclaw'
-    | 'codebuddy'
-    | 'workbuddy'
-    | 'qoder'
-    | 'cloud';
-
-/** 任意客户端 id：内置 ClientType 或用户手动添加的 custom:<slug> */
-export type AnyClientId = ClientType | string;
-
-// 支持 Skills 的客户端类型（含 .agents 统一标准）
-export type SkillClientType =
-    'cursor'
-    | 'claude-code'
-    | 'gemini-cli'
-    | 'codex-cli'
-    | 'opencode'
-    | 'agent-skills'
-    | 'codebuddy'
-    | 'workbuddy'
-    | 'qoder'
-    | 'marscode'
-    | 'cloud';
-
-// 客户端是否支持 Skills
-export const SKILL_SUPPORTED_CLIENTS: SkillClientType[] = ['cursor', 'claude-code', 'gemini-cli', 'codex-cli', 'opencode', 'agent-skills', 'codebuddy', 'workbuddy', 'qoder', 'marscode', 'cloud'];
-
-// VS Code 使用 "servers" 键而非 "mcpServers"
-const SERVERS_KEY_CLIENTS: ClientType[] = ['vscode'];
-
-export interface ClientInfo {
-    id: ClientType | string;
-    name: string;
-    installed: boolean;
-    configPath: string;
-    configExists: boolean;
-    supportsSkills: boolean;
-    skillsPath?: string;
-    /** 是否为用户手动添加的客户端 */
-    isCustom?: boolean;
-}
-
-/** 用户手动添加的客户端定义（持久化到 settings.json） */
-export interface CustomClientDef {
-    /** 唯一 id，形如 custom:<slug> */
-    id: string;
-    name: string;
-    /** MCP 配置文件绝对路径 */
-    configPath: string;
-    /** 是否支持 Skills */
-    supportsSkills: boolean;
-    /** Skills 目录绝对路径（supportsSkills 时有效） */
-    skillsPath?: string;
-}
-
-// 用户自定义配置路径存储
-interface UserSettings {
-    customConfigPaths?: Partial<Record<ClientType, string>>;
-    customSkillsPaths?: Partial<Record<SkillClientType, string>>;
-    // 用户手动添加的客户端列表
-    customClients?: CustomClientDef[];
-    // 编辑保存后转为「手动安装」的 MCP server id 列表：此后不再被当作商店来源，避免线上更新覆盖
-    manualMcpServers?: string[];
-}
+export * from './config/types';
 
 export class ConfigManager {
     private defaultClientPaths: Record<ClientType, string>;
-    private defaultSkillsPaths: Record<SkillClientType, string>;
     private userSettingsPath: string;
     private userSettings: UserSettings = {};
     // 客户端列表缓存：安装状态在会话内很少变化，重复进入「我的库」时直接返回，避免每次重跑检测（含 CLI 的 where/which）。
     private clientsCache: ClientInfo[] | null = null;
+
+    /** 设置加载完成的信号；所有写操作前 await，避免构造期 fire-and-forget 加载未完成就写回空对象（P0-5） */
+    private ready: Promise<void> = Promise.resolve();
 
     constructor() {
         const home = os.homedir();
@@ -123,212 +64,45 @@ export class ConfigManager {
         // 用户设置文件路径
         this.userSettingsPath = path.join(home, '.ai-tools', 'settings.json');
 
-        // 根据平台设置各客户端默认配置路径
-        // 参考: https://modelcontextprotocol.io/docs/configuration
-        if (platform === 'darwin') {
-            // macOS 路径配置
-            this.defaultClientPaths = {
-                cursor: path.join(home, '.cursor', 'mcp.json'),
-                vscode: path.join(home, 'Library', 'Application Support', 'Code', 'User', 'mcp.json'),
-                'claude-code': path.join(home, '.claude.json'),
-                'gemini-cli': path.join(home, '.gemini', 'settings.json'),
-                'codex-cli': path.join(home, '.codex', 'config.toml'),
-                windsurf: path.join(home, '.codeium', 'windsurf', 'mcp_config.json'),
-                zed: path.join(home, '.config', 'zed', 'settings.json'),
-                trae: path.join(home, 'Library', 'Application Support', 'Trae', 'User', 'mcp.json'),
-                'trae-cn': path.join(home, 'Library', 'Application Support', 'Trae CN', 'User', 'mcp.json'),
-                marscode: path.join(home, '.marscode', 'IDEA.mcp.config.json'),
-                kiro: path.join(home, '.kiro', 'settings', 'mcp.json'),
-                opencode: path.join(home, '.config', 'opencode', 'opencode.json'),
-                jetbrains: '', // resolved dynamically via findJetBrainsConfigPath
-                antigravity: path.join(home, '.gemini', 'antigravity', 'mcp_config.json'),
-                openclaw: path.join(home, '.openclaw', 'openclaw.json'),
-                codebuddy: path.join(home, '.codebuddy', 'mcp.json'),
-                workbuddy: path.join(home, '.workbuddy', 'mcp.json'),
-                qoder: path.join(home, '.qoder', 'mcp.json'),
-                cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'mcp', 'mcp.json'),
-            };
-            // Skills 目录路径
-            this.defaultSkillsPaths = {
-                cursor: path.join(home, '.cursor', 'skills'),
-                'claude-code': path.join(home, '.claude', 'skills'),
-                'gemini-cli': path.join(home, '.gemini', 'skills'),
-                'codex-cli': path.join(home, '.codex', 'skills'),
-                opencode: path.join(home, '.config', 'opencode', 'skills'),
-                'agent-skills': path.join(home, '.agents', 'skills'),
-                codebuddy: path.join(home, '.codebuddy', 'skills'),
-                workbuddy: path.join(home, '.workbuddy', 'skills'),
-                qoder: path.join(home, '.qoder', 'skills'),
-                marscode: path.join(home, '.marscode', 'skills'),
-                cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'skills'),
-            };
-        } else if (platform === 'win32') {
-            // Windows 路径配置
-            this.defaultClientPaths = {
-                cursor: path.join(home, 'AppData', 'Roaming', 'Cursor', 'mcp.json'),
-                vscode: path.join(home, 'AppData', 'Roaming', 'Code', 'User', 'mcp.json'),
-                'claude-code': path.join(home, '.claude.json'),
-                'gemini-cli': path.join(home, '.gemini', 'settings.json'),
-                'codex-cli': path.join(home, '.codex', 'config.toml'),
-                windsurf: path.join(home, '.codeium', 'windsurf', 'mcp_config.json'),
-                zed: path.join(home, 'AppData', 'Roaming', 'Zed', 'settings.json'),
-                trae: path.join(home, 'AppData', 'Roaming', 'Trae', 'User', 'mcp.json'),
-                'trae-cn': path.join(home, 'AppData', 'Roaming', 'Trae CN', 'User', 'mcp.json'),
-                marscode: path.join(home, '.marscode', 'IDEA.mcp.config.json'),
-                kiro: path.join(home, '.kiro', 'settings', 'mcp.json'),
-                opencode: path.join(home, '.config', 'opencode', 'opencode.json'),
-                jetbrains: '', // resolved dynamically
-                antigravity: path.join(home, '.gemini', 'antigravity', 'mcp_config.json'),
-                openclaw: path.join(home, '.openclaw', 'openclaw.json'),
-                codebuddy: path.join(home, '.codebuddy', 'mcp.json'),
-                workbuddy: path.join(home, '.workbuddy', 'mcp.json'),
-                qoder: path.join(home, '.qoder', 'mcp.json'),
-                cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'mcp', 'mcp.json'),
-            };
-            this.defaultSkillsPaths = {
-                cursor: path.join(home, '.cursor', 'skills'),
-                'claude-code': path.join(home, '.claude', 'skills'),
-                'gemini-cli': path.join(home, '.gemini', 'skills'),
-                'codex-cli': path.join(home, '.codex', 'skills'),
-                opencode: path.join(home, '.config', 'opencode', 'skills'),
-                'agent-skills': path.join(home, '.agents', 'skills'),
-                codebuddy: path.join(home, '.codebuddy', 'skills'),
-                workbuddy: path.join(home, '.workbuddy', 'skills'),
-                qoder: path.join(home, '.qoder', 'skills'),
-                marscode: path.join(home, '.marscode', 'skills'),
-                cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'skills'),
-            };
-        } else {
-            // Linux 路径配置
-            this.defaultClientPaths = {
-                cursor: path.join(home, '.cursor', 'mcp.json'),
-                vscode: path.join(home, '.config', 'Code', 'User', 'mcp.json'),
-                'claude-code': path.join(home, '.claude.json'),
-                'gemini-cli': path.join(home, '.gemini', 'settings.json'),
-                'codex-cli': path.join(home, '.codex', 'config.toml'),
-                windsurf: path.join(home, '.codeium', 'windsurf', 'mcp_config.json'),
-                zed: path.join(home, '.config', 'zed', 'settings.json'),
-                trae: path.join(home, '.config', 'Trae', 'User', 'mcp.json'),
-                'trae-cn': path.join(home, '.config', 'Trae CN', 'User', 'mcp.json'),
-                marscode: path.join(home, '.marscode', 'IDEA.mcp.config.json'),
-                kiro: path.join(home, '.kiro', 'settings', 'mcp.json'),
-                opencode: path.join(home, '.config', 'opencode', 'opencode.json'),
-                jetbrains: '', // resolved dynamically
-                antigravity: path.join(home, '.gemini', 'antigravity', 'mcp_config.json'),
-                openclaw: path.join(home, '.openclaw', 'openclaw.json'),
-                codebuddy: path.join(home, '.codebuddy', 'mcp.json'),
-                workbuddy: path.join(home, '.workbuddy', 'mcp.json'),
-                qoder: path.join(home, '.qoder', 'mcp.json'),
-                cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'mcp', 'mcp.json'),
-            };
-            this.defaultSkillsPaths = {
-                cursor: path.join(home, '.cursor', 'skills'),
-                'claude-code': path.join(home, '.claude', 'skills'),
-                'gemini-cli': path.join(home, '.gemini', 'skills'),
-                'codex-cli': path.join(home, '.codex', 'skills'),
-                opencode: path.join(home, '.config', 'opencode', 'skills'),
-                'agent-skills': path.join(home, '.agents', 'skills'),
-                codebuddy: path.join(home, '.codebuddy', 'skills'),
-                workbuddy: path.join(home, '.workbuddy', 'skills'),
-                qoder: path.join(home, '.qoder', 'skills'),
-                marscode: path.join(home, '.marscode', 'skills'),
-                cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'skills'),
-            };
-        }
+        // 根据平台设置各客户端默认配置路径（下沉到 ./config/client-probe）
+        this.defaultClientPaths = getDefaultClientPaths(home, platform);
 
-        // 异步加载用户设置
-        this.loadUserSettings();
+        // 异步加载用户设置（可 await 的 ready Promise）
+        this.ready = this.loadUserSettings();
     }
 
     /**
      * 加载用户设置
      */
     private async loadUserSettings(): Promise<void> {
-        try {
-            const content = await fs.readFile(this.userSettingsPath, 'utf-8');
-            this.userSettings = JSON.parse(content);
-        } catch {
-            this.userSettings = {};
-        }
-        this.resolvedJetBrainsPath = await this.findJetBrainsConfigPath();
+        this.userSettings = await loadUserSettingsFile(this.userSettingsPath);
+        this.resolvedJetBrainsPath = await findJetBrainsConfigPath(os.homedir(), process.platform);
     }
 
-    /**
-     * 保存用户设置
-     */
+    private resolvedJetBrainsPath: string = '';
+
     private async saveUserSettings(): Promise<void> {
+        // 确保构造期加载已完成，避免用空对象覆盖整份设置（P0-5）
+        await this.ready;
         try {
-            await fs.mkdir(path.dirname(this.userSettingsPath), {recursive: true});
-            await fs.writeFile(this.userSettingsPath, JSON.stringify(this.userSettings, null, 2), 'utf-8');
+            await writeFileAtomic(this.userSettingsPath, JSON.stringify(this.userSettings, null, 2));
         } catch (error) {
             console.error('Failed to save user settings:', error);
         }
     }
 
     /**
-     * 获取客户端配置路径（优先使用用户自定义路径）
+     * 校验自定义客户端路径安全性（P1-6）：转发到 ./config/settings-store
      */
-    private getClientConfigPath(client: ClientType | string): string {
-        // 自定义客户端：直接返回其配置路径
-        const custom = this.userSettings.customClients?.find(c => c.id === client);
-        if (custom) return custom.configPath;
-
-        if (client === 'jetbrains') {
-            const customPath = this.userSettings.customConfigPaths?.['jetbrains'];
-            if (customPath) return customPath;
-            return this.resolvedJetBrainsPath || '';
-        }
-        return this.userSettings.customConfigPaths?.[client as ClientType] || this.defaultClientPaths[client as ClientType];
-    }
-
-    private resolvedJetBrainsPath: string = '';
-
-    /**
-     * 扫描 JetBrains 配置目录，找到最新版本的 mcp.json
-     */
-    private async findJetBrainsConfigPath(): Promise<string> {
-        const home = os.homedir();
-        const platform = process.platform;
-        let baseDir: string;
-        if (platform === 'darwin') {
-            baseDir = path.join(home, 'Library', 'Application Support', 'JetBrains');
-        } else if (platform === 'win32') {
-            baseDir = path.join(home, 'AppData', 'Roaming', 'JetBrains');
-        } else {
-            baseDir = path.join(home, '.config', 'JetBrains');
-        }
-
-        try {
-            const entries = await fs.readdir(baseDir, {withFileTypes: true});
-            const idePatterns = /^(IntelliJIdea|IdeaIC|WebStorm|PyCharm|GoLand|Rider|CLion|PhpStorm|RubyMine|DataGrip)/;
-            const ideDirs = entries
-                .filter(e => e.isDirectory() && idePatterns.test(e.name))
-                .map(e => e.name)
-                .sort()
-                .reverse();
-
-            for (const dir of ideDirs) {
-                const mcpPath = path.join(baseDir, dir, 'mcp.json');
-                try {
-                    await fs.access(mcpPath);
-                    return mcpPath;
-                } catch {
-                    // mcp.json doesn't exist in this dir
-                }
-            }
-            if (ideDirs.length > 0) {
-                return path.join(baseDir, ideDirs[0], 'mcp.json');
-            }
-        } catch {
-            // JetBrains dir doesn't exist
-        }
-        return '';
+    private assertSafeConfigPath(raw: string, field: string): string {
+        return assertSafeConfigPath(raw, field);
     }
 
     /**
      * 设置自定义配置路径
      */
     async setCustomConfigPath(client: ClientType, customPath: string | null): Promise<void> {
+        await this.ready;
         if (!this.userSettings.customConfigPaths) {
             this.userSettings.customConfigPaths = {};
         }
@@ -347,9 +121,10 @@ export class ConfigManager {
      * 获取客户端 Skills 目录路径（优先使用用户自定义路径）
      */
     getSkillsPath(client: SkillClientType | string): string {
-        const custom = this.userSettings.customClients?.find(c => c.id === client);
-        if (custom?.skillsPath) return custom.skillsPath;
-        return this.userSettings.customSkillsPaths?.[client as SkillClientType] || this.defaultSkillsPaths[client as SkillClientType];
+        return resolveSkillsPath(client, {
+            customClients: this.userSettings.customClients,
+            customSkillsPaths: this.userSettings.customSkillsPaths,
+        });
     }
 
     /**
@@ -375,6 +150,7 @@ export class ConfigManager {
      * 若同名下已存在则返回已存在项（去重）。
      */
     async addCustomClient(input: { name: string; configPath: string; supportsSkills?: boolean; skillsPath?: string }): Promise<CustomClientDef> {
+        await this.ready;
         if (!this.userSettings.customClients) {
             this.userSettings.customClients = [];
         }
@@ -397,9 +173,11 @@ export class ConfigManager {
         const def: CustomClientDef = {
             id,
             name,
-            configPath: input.configPath.trim(),
+            configPath: this.assertSafeConfigPath(input.configPath.trim(), 'configPath'),
             supportsSkills: !!input.supportsSkills,
-            skillsPath: input.supportsSkills ? input.skillsPath?.trim() || undefined : undefined,
+            skillsPath: input.supportsSkills
+                ? this.assertSafeConfigPath(input.skillsPath?.trim() || '', 'skillsPath')
+                : undefined,
         };
         this.userSettings.customClients.push(def);
         await this.saveUserSettings();
@@ -411,6 +189,7 @@ export class ConfigManager {
      * 删除用户手动客户端
      */
     async removeCustomClient(id: string): Promise<void> {
+        await this.ready;
         if (!this.userSettings.customClients) return;
         this.userSettings.customClients = this.userSettings.customClients.filter(c => c.id !== id);
         await this.saveUserSettings();
@@ -425,11 +204,20 @@ export class ConfigManager {
     }
 
     /**
+     * 返回全部应纳入备份/遍历的客户端类型：内置全量 + 用户手动添加（P1-3）。
+     * 'cloud' 暂存区非真实客户端配置，不在此列。
+     */
+    getClientTypes(): ClientType[] {
+        const custom = (this.userSettings.customClients || []).map(c => c.id as ClientType);
+        return [...ALL_BUILTIN_CLIENTS, ...custom];
+    }
+
+    /**
      * 标记 MCP server 为「手动安装」：用户在「我的库」编辑保存后调用，
      * 此后该 server 不再被当作商店来源（避免从线上商店更新覆盖本地调整）。
      */
     async markMcpServerManual(serverId: string): Promise<void> {
-        await this.loadUserSettings();
+        await this.ready;
         if (!this.userSettings.manualMcpServers) {
             this.userSettings.manualMcpServers = [];
         }
@@ -447,263 +235,31 @@ export class ConfigManager {
     }
 
     /**
-     * 获取客户端显示名称
+     * 获取客户端显示名称（转发到 ./config/client-probe）
      */
     private getClientName(client: ClientType | string): string {
-        const names: Partial<Record<ClientType | string, string>> = {
-            cursor: 'Cursor',
-            vscode: 'VS Code',
-            'claude-code': 'Claude Code',
-            'gemini-cli': 'Gemini CLI',
-            'codex-cli': 'Codex CLI',
-            windsurf: 'Windsurf',
-            zed: 'Zed',
-            trae: 'TRAE',
-            'trae-cn': 'TRAE CN',
-            marscode: 'TRAE Plugin',
-            kiro: 'Kiro',
-            opencode: 'Opencode',
-            jetbrains: 'JetBrains',
-            antigravity: 'Antigravity',
-            openclaw: 'OpenClaw',
-            codebuddy: 'CodeBuddy',
-            workbuddy: 'WorkBuddy',
-            qoder: 'Qoder',
-            cloud: '云端存储',
-        };
-        return names[client] || (typeof client === 'string' ? client.replace(/^custom:/, '') : 'Unknown Client');
+        return getClientDisplayName(client);
     }
 
     /**
-     * 获取各平台的应用路径
+     * 获取各平台的应用路径（转发到 ./config/client-probe）
      */
     private getAppPaths(client: AnyClientId): string[] {
-        const home = os.homedir();
-        const platform = process.platform;
+        return getClientAppPaths(client, process.platform);
+    }
 
-        const darwinPaths: Record<string, string[]> = {
-            cursor: ['/Applications/Cursor.app', path.join(home, 'Applications', 'Cursor.app')],
-            vscode: ['/Applications/Visual Studio Code.app', path.join(home, 'Applications', 'Visual Studio Code.app')],
-            'claude-code': ['/usr/local/bin/claude', path.join(home, '.local', 'bin', 'claude')],
-            'gemini-cli': ['/usr/local/bin/gemini', path.join(home, '.local', 'bin', 'gemini')],
-            'codex-cli': [
-                '/usr/local/bin/codex',
-                path.join(home, '.local', 'bin', 'codex'),
-                '/opt/homebrew/bin/codex',
-                path.join(home, '.npm', 'bin', 'codex'),
-                path.join(home, '.codex'),
-            ],
-            windsurf: ['/Applications/Windsurf.app', path.join(home, 'Applications', 'Windsurf.app')],
-            zed: ['/Applications/Zed.app', path.join(home, 'Applications', 'Zed.app')],
-            trae: ['/Applications/Trae.app', path.join(home, 'Applications', 'Trae.app'), '/Applications/TRAE.app', path.join(home, 'Applications', 'TRAE.app')],
-            'trae-cn': ['/Applications/Trae CN.app', path.join(home, 'Applications', 'Trae CN.app')],
-            marscode: [],
-            kiro: ['/Applications/Kiro.app', path.join(home, 'Applications', 'Kiro.app')],
-            opencode: ['/usr/local/bin/opencode', path.join(home, '.local', 'bin', 'opencode'), '/opt/homebrew/bin/opencode'],
-            antigravity: ['/Applications/Antigravity.app', path.join(home, 'Applications', 'Antigravity.app')],
-            openclaw: ['/usr/local/bin/openclaw', '/usr/local/bin/oclaw', path.join(home, '.local', 'bin', 'openclaw'), '/opt/homebrew/bin/openclaw'],
-            codebuddy: ['/Applications/CodeBuddy.app', path.join(home, 'Applications', 'CodeBuddy.app')],
-            workbuddy: ['/Applications/WorkBuddy.app', path.join(home, 'Applications', 'WorkBuddy.app')],
-            qoder: ['/Applications/Qoder.app', path.join(home, 'Applications', 'Qoder.app')],
-            cloud: [], // 虚拟客户端：可用性由云同步配置决定，不做文件探测
-            jetbrains: [
-                '/Applications/IntelliJ IDEA.app',
-                '/Applications/IntelliJ IDEA CE.app',
-                '/Applications/WebStorm.app',
-                '/Applications/PyCharm.app',
-                '/Applications/GoLand.app',
-                '/Applications/CLion.app',
-                '/Applications/PhpStorm.app',
-                '/Applications/Rider.app',
-                path.join(home, 'Applications', 'IntelliJ IDEA.app'),
-                path.join(home, 'Library', 'Application Support', 'JetBrains', 'Toolbox'),
-            ],
-        };
+    /**
+     * 客户端「配置目录标记」（转发到 ./config/client-probe）
+     */
+    private getConfigMarkers(client: AnyClientId): string[] {
+        return getClientConfigMarkers(client);
+    }
 
-        const win32Paths: Record<string, string[]> = {
-            cursor: [
-                path.join(home, 'AppData', 'Local', 'Programs', 'cursor', 'Cursor.exe'),
-                path.join(home, 'AppData', 'Local', 'cursor', 'Cursor.exe'),
-            ],
-            vscode: [
-                path.join(home, 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'Code.exe'),
-                path.join('C:', 'Program Files', 'Microsoft VS Code', 'Code.exe'),
-            ],
-            'claude-code': [
-                path.join(home, 'AppData', 'Local', 'Programs', 'claude', 'claude.exe'),
-                path.join(home, '.claude', 'claude.exe'),
-                path.join(home, 'AppData', 'Roaming', 'npm', 'claude.cmd'),
-            ],
-            'gemini-cli': [
-                path.join(home, 'AppData', 'Local', 'Programs', 'gemini', 'gemini.exe'),
-                path.join(home, '.gemini', 'gemini.exe'),
-            ],
-            'codex-cli': [
-                path.join(home, 'AppData', 'Local', 'Programs', 'codex', 'codex.exe'),
-                path.join(home, '.codex', 'codex.exe'),
-                path.join(home, 'AppData', 'Roaming', 'npm', 'codex.cmd'),
-                path.join(home, '.codex'),
-            ],
-            windsurf: [
-                path.join(home, 'AppData', 'Local', 'Programs', 'windsurf', 'Windsurf.exe'),
-                path.join(home, 'AppData', 'Local', 'Windsurf', 'Windsurf.exe'),
-            ],
-            zed: [
-                path.join(home, 'AppData', 'Local', 'Programs', 'Zed', 'Zed.exe'),
-                path.join(home, 'AppData', 'Local', 'Zed', 'Zed.exe'),
-            ],
-            trae: [
-                path.join(home, 'AppData', 'Local', 'Programs', 'trae', 'TRAE.exe'),
-                path.join(home, 'AppData', 'Local', 'TRAE', 'TRAE.exe'),
-            ],
-            'trae-cn': [
-                path.join(home, 'AppData', 'Local', 'Programs', 'trae-cn', 'TRAE CN.exe'),
-                path.join(home, 'AppData', 'Local', 'Trae CN', 'Trae CN.exe'),
-            ],
-            marscode: [],
-            kiro: [
-                path.join(home, 'AppData', 'Local', 'Programs', 'Kiro', 'Kiro.exe'),
-                path.join(home, 'AppData', 'Local', 'Kiro', 'Kiro.exe'),
-            ],
-            opencode: [
-                path.join(home, 'AppData', 'Local', 'Programs', 'opencode', 'opencode.exe'),
-                path.join(home, '.config', 'opencode'),
-            ],
-            antigravity: [
-                path.join(home, 'AppData', 'Local', 'Programs', 'Antigravity', 'Antigravity.exe'),
-            ],
-            openclaw: [
-                path.join(home, 'AppData', 'Roaming', 'npm', 'openclaw.cmd'),
-                path.join(home, 'AppData', 'Local', 'Programs', 'openclaw', 'openclaw.exe'),
-                path.join(home, '.openclaw'),
-            ],
-            codebuddy: [
-                path.join(home, 'AppData', 'Local', 'Programs', 'CodeBuddy', 'CodeBuddy.exe'),
-                path.join(home, 'AppData', 'Local', 'CodeBuddy', 'CodeBuddy.exe'),
-                path.join(home, '.codebuddy', 'bin', 'codebuddy.exe'),
-            ],
-            workbuddy: [
-                path.join(home, 'AppData', 'Local', 'Programs', 'WorkBuddy', 'WorkBuddy.exe'),
-                path.join(home, 'AppData', 'Local', 'WorkBuddy', 'WorkBuddy.exe'),
-                path.join(home, '.workbuddy', 'bin', 'workbuddy.exe'),
-            ],
-            qoder: [
-                path.join(home, 'AppData', 'Local', 'Programs', 'Qoder', 'Qoder.exe'),
-                path.join(home, 'AppData', 'Local', 'Qoder', 'Qoder.exe'),
-                path.join(home, '.qoder', 'bin', 'qoder.exe'),
-            ],
-            cloud: [],
-            jetbrains: [
-                path.join(home, 'AppData', 'Local', 'JetBrains', 'Toolbox'),
-                path.join('C:', 'Program Files', 'JetBrains'),
-            ],
-        };
-
-        const linuxPaths: Record<string, string[]> = {
-            cursor: [
-                '/usr/bin/cursor',
-                '/usr/local/bin/cursor',
-                path.join(home, '.local', 'bin', 'cursor'),
-                '/opt/Cursor/cursor',
-            ],
-            vscode: [
-                '/usr/bin/code',
-                '/usr/local/bin/code',
-                '/snap/bin/code',
-                '/usr/share/code/code',
-            ],
-            'claude-code': [
-                '/usr/bin/claude',
-                '/usr/local/bin/claude',
-                path.join(home, '.local', 'bin', 'claude'),
-            ],
-            'gemini-cli': [
-                '/usr/bin/gemini',
-                '/usr/local/bin/gemini',
-                path.join(home, '.local', 'bin', 'gemini'),
-            ],
-            'codex-cli': [
-                '/usr/bin/codex',
-                '/usr/local/bin/codex',
-                path.join(home, '.local', 'bin', 'codex'),
-                path.join(home, '.npm', 'bin', 'codex'),
-                path.join(home, '.codex'),
-            ],
-            windsurf: [
-                '/usr/bin/windsurf',
-                '/usr/local/bin/windsurf',
-                '/opt/Windsurf/windsurf',
-            ],
-            zed: [
-                '/usr/bin/zed',
-                '/usr/local/bin/zed',
-                path.join(home, '.local', 'bin', 'zed'),
-                '/opt/Zed/zed',
-            ],
-            trae: [
-                '/usr/bin/trae',
-                '/usr/local/bin/trae',
-                '/opt/TRAE/trae',
-            ],
-            'trae-cn': [
-                '/usr/bin/trae-cn',
-                '/usr/local/bin/trae-cn',
-                '/opt/Trae CN/trae-cn',
-            ],
-            marscode: [],
-            kiro: [
-                '/usr/bin/kiro',
-                '/usr/local/bin/kiro',
-                path.join(home, '.local', 'bin', 'kiro'),
-            ],
-            opencode: [
-                '/usr/bin/opencode',
-                '/usr/local/bin/opencode',
-                path.join(home, '.local', 'bin', 'opencode'),
-            ],
-            antigravity: [
-                '/usr/bin/antigravity',
-                path.join(home, '.local', 'bin', 'antigravity'),
-            ],
-            openclaw: [
-                '/usr/local/bin/openclaw',
-                '/usr/local/bin/oclaw',
-                path.join(home, '.local', 'bin', 'openclaw'),
-            ],
-            codebuddy: [
-                '/usr/bin/codebuddy',
-                '/usr/local/bin/codebuddy',
-                path.join(home, '.local', 'bin', 'codebuddy'),
-                path.join(home, '.codebuddy', 'bin', 'codebuddy'),
-            ],
-            workbuddy: [
-                '/usr/bin/workbuddy',
-                '/usr/local/bin/workbuddy',
-                path.join(home, '.local', 'bin', 'workbuddy'),
-                path.join(home, '.workbuddy', 'bin', 'workbuddy'),
-            ],
-            qoder: [
-                '/usr/bin/qoder',
-                '/usr/local/bin/qoder',
-                path.join(home, '.local', 'bin', 'qoder'),
-                path.join(home, '.qoder', 'bin', 'qoder'),
-            ],
-            cloud: [],
-            jetbrains: [
-                path.join(home, '.local', 'share', 'JetBrains', 'Toolbox'),
-                '/opt/idea',
-                '/opt/webstorm',
-                '/opt/pycharm',
-            ],
-        };
-
-        if (platform === 'darwin') {
-            return darwinPaths[client] || [];
-        } else if (platform === 'win32') {
-            return win32Paths[client] || [];
-        } else {
-            return linuxPaths[client] || [];
-        }
+    /**
+     * 获取增强的 PATH（转发到 ./config/client-probe）
+     */
+    private getEnhancedPath(): string {
+        return getEnhancedPathEnv();
     }
 
     /**
@@ -727,7 +283,7 @@ export class ConfigManager {
         // 未配置时它不会出现在同步窗口的目标列表里。
         if (client === 'cloud') return getCloudSyncStore().isActive();
 
-        const paths = this.getAppPaths(client as ClientType);
+        const paths = this.getAppPaths(client);
 
         for (const appPath of paths) {
             try {
@@ -742,7 +298,7 @@ export class ConfigManager {
         // JetBrains / VS Code 插件安装），没有独立可执行文件，也不注册 CLI。
         // 此时用户主目录下的配置目录才是唯一可靠的"已安装"信号。
         // 由于本软件只需完成配置同步，配置目录存在即足以支持全部功能。
-        for (const marker of this.getConfigMarkers(client as ClientType)) {
+        for (const marker of this.getConfigMarkers(client)) {
             try {
                 await fs.access(marker);
                 return true;
@@ -789,53 +345,6 @@ export class ConfigManager {
         }
 
         return false;
-    }
-
-    /**
-     * 客户端「配置目录标记」：这些路径存在即视为客户端可用。
-     *
-     * 适用于以 IDE 插件 / 无独立可执行文件形态分发的客户端。
-     * 典型场景：CodeBuddy 作为 JetBrains 或 VS Code 插件安装时，
-     * 既没有 CodeBuddy.exe，也不会把 `codebuddy` 注册进 PATH，
-     * 但会在用户主目录创建 `~/.codebuddy/`（内含 mcp.json、skills、settings.json）。
-     * 由于本软件的职责仅为配置同步，该目录存在就意味着功能完全可用。
-     */
-    private getConfigMarkers(client: AnyClientId): string[] {
-        const home = os.homedir();
-        const markers: Record<string, string[]> = {
-            codebuddy: [
-                path.join(home, '.codebuddy'),
-            ],
-            workbuddy: [
-                path.join(home, '.workbuddy'),
-            ],
-            qoder: [
-                path.join(home, '.qoder'),
-            ],
-            openclaw: [
-                path.join(home, '.openclaw'),
-            ],
-            marscode: [
-                path.join(home, '.marscode'),
-            ],
-        };
-        return markers[client] || [];
-    }
-
-    /**
-     * 获取增强的 PATH（包含常见安装路径）
-     */
-    private getEnhancedPath(): string {
-        const home = os.homedir();
-        const currentPath = process.env.PATH || '';
-        const additionalPaths = [
-            '/usr/local/bin',
-            '/opt/homebrew/bin',
-            path.join(home, '.local', 'bin'),
-            path.join(home, '.npm', 'bin'),
-            path.join(home, '.cargo', 'bin'),
-        ];
-        return [...additionalPaths, currentPath].join(path.delimiter);
     }
 
     /**
@@ -928,6 +437,22 @@ export class ConfigManager {
     }
 
     /**
+     * 获取客户端配置路径（优先使用用户自定义路径）
+     */
+    private getClientConfigPath(client: ClientType | string): string {
+        // 自定义客户端：直接返回其配置路径
+        const custom = this.userSettings.customClients?.find(c => c.id === client);
+        if (custom) return custom.configPath;
+
+        if (client === 'jetbrains') {
+            const customPath = this.userSettings.customConfigPaths?.['jetbrains'];
+            if (customPath) return customPath;
+            return this.resolvedJetBrainsPath || '';
+        }
+        return this.userSettings.customConfigPaths?.[client as ClientType] || this.defaultClientPaths[client as ClientType];
+    }
+
+    /**
      * 获取指定客户端的配置文件路径
      */
     getConfigPath(client: AnyClientId = 'cursor'): string {
@@ -944,136 +469,24 @@ export class ConfigManager {
     }
 
     /**
-     * 获取客户端使用的 MCP 服务器键名
-     */
-    private getServersKey(client: AnyClientId): string {
-        if (SERVERS_KEY_CLIENTS.includes(client as ClientType)) return 'servers';
-        if (client === 'zed') return 'context_servers';
-        if (client === 'opencode') return 'mcp';
-        return 'mcpServers';
-    }
-
-    /**
-     * 读取配置文件
-     * VS Code: JSON 格式，key 为 servers
-     * Zed: JSONC 格式，key 为 context_servers
-     * Opencode: JSON/JSONC 格式，key 为 mcp
+     * 读取配置文件（委托 ./config/format-adapters）
      */
     async readConfig(client: AnyClientId = 'cursor'): Promise<ClientConfig> {
         const configPath = this.getClientConfigPath(client);
 
         try {
             const content = await fs.readFile(configPath, 'utf-8');
-
-            if (client === 'jetbrains') {
-                const config = JSON.parse(content);
-                return {mcpServers: config.mcpServers || {}};
-            }
-
-            if (client === 'codex-cli') {
-                const tomlConfig = TOML.parse(content) as Record<string, any>;
-                const mcpServers: Record<string, McpServerConfig> = {};
-                const rawServers = tomlConfig.mcp_servers || {};
-                for (const [name, serverDef] of Object.entries(rawServers)) {
-                    const def = serverDef as Record<string, any>;
-                    if (def.command) {
-                        mcpServers[name] = {
-                            command: def.command,
-                            args: def.args || [],
-                            env: def.env || {},
-                        };
-                    }
-                }
-                return {mcpServers};
-            }
-
-            if (client === 'openclaw') {
-                const config = jsonc.parse(content);
-                const rawServers = config.mcp?.servers || {};
-                const mcpServers: Record<string, McpServerConfig> = {};
-                for (const [name, def] of Object.entries(rawServers)) {
-                    const d = def as Record<string, any>;
-                    if (d.url) {
-                        mcpServers[name] = {
-                            url: d.url,
-                            type: d.type || 'http',
-                            headers: d.headers || {},
-                        };
-                    } else if (d.command) {
-                        mcpServers[name] = {
-                            command: d.command,
-                            args: d.args || [],
-                            env: {},
-                        };
-                    }
-                }
-                return {mcpServers, ...config};
-            }
-
-            if (client === 'opencode') {
-                const config = jsonc.parse(content);
-                const rawMcp = config.mcp || {};
-                const mcpServers: Record<string, McpServerConfig> = {};
-                for (const [name, def] of Object.entries(rawMcp)) {
-                    const d = def as Record<string, any>;
-                    if (d.type === 'local' && Array.isArray(d.command) && d.command.length > 0) {
-                        mcpServers[name] = {
-                            command: d.command[0],
-                            args: d.command.slice(1),
-                            env: d.environment || d.env || {},
-                        };
-                    } else if (d.type === 'remote' && d.url) {
-                        mcpServers[name] = {
-                            url: d.url,
-                            type: 'http',
-                            headers: d.headers || {},
-                        };
-                    }
-                }
-                return {mcpServers, ...config};
-            }
-
-            if (client === 'claude-code' || client === 'zed') {
-                const config = jsonc.parse(content);
-                const serversKey = this.getServersKey(client);
-                return {
-                    mcpServers: config[serversKey] || {},
-                    ...config,
-                };
-            }
-
-            if (SERVERS_KEY_CLIENTS.includes(client as ClientType)) {
-                const config = JSON.parse(content);
-                return {
-                    mcpServers: config.servers || {},
-                    ...config,
-                };
-            }
-
-            const config = JSON.parse(content);
-            return config;
+            return readClientConfig(client, content);
         } catch (error: any) {
             if (error.code === 'ENOENT') {
-                if (client === 'zed') {
-                    return {mcpServers: {}, context_servers: {}};
-                }
-                if (client === 'opencode' || client === 'openclaw') {
-                    return {mcpServers: {}};
-                }
-                if (SERVERS_KEY_CLIENTS.includes(client as ClientType)) {
-                    return {mcpServers: {}, servers: {}};
-                }
-                return {mcpServers: {}};
+                return defaultConfigForMissing(client);
             }
             throw error;
         }
     }
 
     /**
-     * 写入配置文件
-     * VS Code: JSON 格式，key 为 servers
-     * Zed: JSONC 格式，key 为 context_servers，保留用户注释
-     * Opencode: JSONC 格式，key 为 mcp，保留用户注释
+     * 写入配置文件（委托 ./config/format-adapters）
      */
     async writeConfig(config: ClientConfig, client: AnyClientId = 'cursor', merge = true): Promise<void> {
         await this.ensureConfigDir(client);
@@ -1094,148 +507,21 @@ export class ConfigManager {
             }
         }
 
-        if (client === 'jetbrains') {
-            let existingConfig: Record<string, any> = {};
-            try {
-                const existing = await fs.readFile(configPath, 'utf-8');
-                existingConfig = JSON.parse(existing);
-            } catch {
-                // file doesn't exist
-            }
-            existingConfig.mcpServers = config.mcpServers || {};
-            const content = JSON.stringify(existingConfig, null, 2);
-            await fs.writeFile(configPath, content, 'utf-8');
-            return;
+        // 读取现有内容（文件不存在则按 '{}' 处理），交由 writeClientConfig 按客户端格式序列化
+        let existingContent = '{}';
+        try {
+            existingContent = await fs.readFile(configPath, 'utf-8');
+        } catch {
+            // 文件不存在
         }
 
-        if (client === 'codex-cli') {
-            let existingToml: Record<string, any> = {};
-            try {
-                const content = await fs.readFile(configPath, 'utf-8');
-                existingToml = TOML.parse(content) as Record<string, any>;
-            } catch {
-                // 文件不存在或解析失败
-            }
-            const mcpServers = config.mcpServers || {};
-            const tomlServers: Record<string, any> = {};
-            for (const [name, serverDef] of Object.entries(mcpServers)) {
-                tomlServers[name] = {
-                    command: serverDef.command,
-                    ...(serverDef.args && serverDef.args.length > 0 ? {args: serverDef.args} : {}),
-                    ...(serverDef.env && Object.keys(serverDef.env).length > 0 ? {env: serverDef.env} : {}),
-                };
-            }
-            existingToml.mcp_servers = tomlServers;
-            const tomlContent = TOML.stringify(existingToml);
-            await fs.writeFile(configPath, tomlContent, 'utf-8');
-            return;
+        const out = writeClientConfig(client, config, existingContent);
+        await writeFileAtomic(configPath, out);
+        // 仅「默认分支」触发缓存失效（原 writeConfig 行为：jetbrains/codex/openclaw/opencode/
+        // claude+zed/servers-key 分支提前 return，不失效缓存；只有默认分支会失效）。
+        if (reachesDefaultBranch(client)) {
+            this.invalidateClientsCache();
         }
-
-        if (client === 'openclaw') {
-            let existingContent = '{}';
-            try {
-                existingContent = await fs.readFile(configPath, 'utf-8');
-            } catch {
-                // file doesn't exist
-            }
-
-            const mcpServers = config.mcpServers || {};
-            const openclawServers: Record<string, any> = {};
-            for (const [name, def] of Object.entries(mcpServers)) {
-                if (def.url) {
-                    openclawServers[name] = {
-                        url: def.url,
-                        type: 'http',
-                        ...(def.headers && Object.keys(def.headers).length > 0 ? {headers: def.headers} : {}),
-                    };
-                } else {
-                    openclawServers[name] = {
-                        command: def.command,
-                        ...(def.args && def.args.length > 0 ? {args: def.args} : {}),
-                    };
-                }
-            }
-
-            const edits = jsonc.modify(existingContent, ['mcp', 'servers'], openclawServers, {
-                formattingOptions: {tabSize: 2, insertSpaces: true}
-            });
-            const newContent = jsonc.applyEdits(existingContent, edits);
-            await fs.writeFile(configPath, newContent, 'utf-8');
-            return;
-        }
-
-        if (client === 'opencode') {
-            let existingContent = '{}';
-            try {
-                existingContent = await fs.readFile(configPath, 'utf-8');
-            } catch {
-                // 文件不存在
-            }
-
-            const mcpServers = config.mcpServers || {};
-            const opencodeMcp: Record<string, any> = {};
-            for (const [name, def] of Object.entries(mcpServers)) {
-                if (def.url) {
-                    opencodeMcp[name] = {
-                        type: 'remote',
-                        url: def.url,
-                        ...(def.headers && Object.keys(def.headers).length > 0 ? {headers: def.headers} : {}),
-                        enabled: true,
-                    };
-                } else {
-                    opencodeMcp[name] = {
-                        type: 'local',
-                        command: [def.command, ...(def.args || [])],
-                        ...(def.env && Object.keys(def.env).length > 0 ? {environment: def.env} : {}),
-                        enabled: true,
-                    };
-                }
-            }
-
-            const edits = jsonc.modify(existingContent, ['mcp'], opencodeMcp, {
-                formattingOptions: {tabSize: 2, insertSpaces: true}
-            });
-            const newContent = jsonc.applyEdits(existingContent, edits);
-            await fs.writeFile(configPath, newContent, 'utf-8');
-            return;
-        }
-
-        // Claude Code / Zed: 包含非 MCP 设置，需 merge 写入
-        if (client === 'claude-code' || client === 'zed') {
-            let existingContent = '{}';
-            try {
-                existingContent = await fs.readFile(configPath, 'utf-8');
-            } catch {
-                // 文件不存在，使用空对象
-            }
-
-            const serversKey = this.getServersKey(client);
-            const mcpServers = config.mcpServers || config[serversKey] || {};
-
-            const edits = jsonc.modify(existingContent, [serversKey], mcpServers, {
-                formattingOptions: {tabSize: 2, insertSpaces: true}
-            });
-
-            const newContent = jsonc.applyEdits(existingContent, edits);
-            await fs.writeFile(configPath, newContent, 'utf-8');
-            return;
-        }
-
-        // VS Code: 写入时将 mcpServers -> servers
-        if (SERVERS_KEY_CLIENTS.includes(client as ClientType)) {
-            const {mcpServers, servers, ...rest} = config;
-            const writeConfig = {
-                ...rest,
-                servers: mcpServers || servers || {},
-            };
-            const content = JSON.stringify(writeConfig, null, 2);
-            await fs.writeFile(configPath, content, 'utf-8');
-            return;
-        }
-
-        const content = JSON.stringify(config, null, 2);
-        await fs.writeFile(configPath, content, 'utf-8');
-        this.invalidateClientsCache();
     }
 
     /**
