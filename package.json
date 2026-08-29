@@ -81,7 +81,7 @@
       "LICENSE"
     ],
     "mac": {
-      "icon": "build/icon.icns",
+      "icon": "assets/icon.png",
       "category": "public.app-category.developer-tools",
       "target": [
         {
@@ -101,7 +101,7 @@
       ]
     },
     "win": {
-      "icon": "build/icon.ico",
+      "icon": "assets/icon.png",
       "target": [
         {
           "target": "nsis",
@@ -126,7 +126,7 @@
       "license": "LICENSE"
     },
     "linux": {
-      "icon": "build/icon.png",
+      "icon": "assets/icon.png",
       "target": [
         {
           "target": "AppImage",

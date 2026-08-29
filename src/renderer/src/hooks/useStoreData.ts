@@ -10,6 +10,13 @@ interface UseStoreDataParams {
     mcpConnId: string | null;
     /** 内置 MCP 源类型（official/smithery） */
     dataSource: DataSource;
+    /**
+     * 当前选中的 MCP 平台连接的 platformType。
+     * MCP 列表查询必须用「MCP 连接」的平台类型：传 Skill 源连接会在 Skill 源是
+     * github 内置源时把 'github' 当平台类型发出去，导致 platforms:search-servers 直接抛错。
+     * 缺省时回退 selectedConn，兼容旧调用方。
+     */
+    mcpPlatformType?: string;
     /** 当前选中的 Skill 源连接（含 github 内置） */
     selectedConn: ApiConnection | null;
     /** 是否为平台直连 Skill 源 */
@@ -36,7 +43,7 @@ export function useStoreData(params: UseStoreDataParams): StoreData<ServerListIt
     const mcp = useMcpData({
         resourceType: params.resourceType,
         mcpConnId: params.mcpConnId,
-        platformType: params.selectedConn?.platformType,
+        platformType: params.mcpPlatformType ?? params.selectedConn?.platformType,
         dataSource: params.dataSource,
         page: params.page,
         pageSize: params.pageSize,

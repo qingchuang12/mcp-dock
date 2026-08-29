@@ -1,5 +1,5 @@
 import {useMemo} from 'react';
-import {useQuery, keepPreviousData} from '@tanstack/react-query';
+import {keepPreviousData, useQuery} from '@tanstack/react-query';
 import {type DataSource, fetchServerList, fetchSmitheryServersPaged, type ServerListItem,} from '../api/registry';
 import type {PlatformServerListItem} from '../lib/electron';
 import {useElectronAPI} from '../lib/electron';
@@ -121,8 +121,11 @@ export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> 
         const items = (res?.items ?? []).map(mapPlatformServer);
         const total = res ? (res.pageInfo.total ?? res.items.length) : 0;
         const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 0;
-        const startIndex = total > 0 ? (page - 1) * pageSize : 0;
-        const endIndex = Math.min((page - 1) * pageSize + items.length, total);
+        // 页码越界时 (page-1)*pageSize 会超过 total，导致分页器显示「101-100」这类反向区间，
+        // 故把起始下标收敛到 total 以内。
+        const rawStart = (page - 1) * pageSize;
+        const startIndex = total > 0 ? Math.min(rawStart, Math.max(0, total - 1)) : 0;
+        const endIndex = Math.min(rawStart + items.length, total);
         return {
             items,
             total,

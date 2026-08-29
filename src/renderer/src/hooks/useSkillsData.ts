@@ -1,5 +1,5 @@
-import {useRef, useMemo} from 'react';
-import {useQuery, keepPreviousData} from '@tanstack/react-query';
+import {useMemo, useRef} from 'react';
+import {keepPreviousData, useQuery} from '@tanstack/react-query';
 import {fetchSkillsList, inferSkillCategoryId, type SkillListItem,} from '../api/registry';
 import type {ApiConnection, PlatformSkillListItem} from '../lib/electron';
 import {useElectronAPI} from '../lib/electron';
@@ -143,8 +143,10 @@ export function useSkillsData(params: UseSkillsDataParams): StoreData<SkillListI
             : 0;
         const hasMore = res?.pageInfo?.hasMore ?? false;
         const totalPages = total !== null && total > 0 ? Math.max(1, Math.ceil(total / pageSize)) : (hasMore ? page + 1 : 1);
-        const startIndex = total !== null && total > 0 ? (page - 1) * pageSize : 0;
-        const endIndex = Math.min((page - 1) * pageSize + items.length, total ?? items.length);
+        // 同 useMcpData：越界页把起始下标收敛到 total 以内，避免分页器显示反向区间
+        const rawStart = (page - 1) * pageSize;
+        const startIndex = total !== null && total > 0 ? Math.min(rawStart, Math.max(0, total - 1)) : 0;
+        const endIndex = Math.min(rawStart + items.length, total ?? items.length);
         return {
             items,
             total,

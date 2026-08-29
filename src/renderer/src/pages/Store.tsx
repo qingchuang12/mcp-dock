@@ -68,6 +68,7 @@ export default function StorePage() {
     resourceType,
     mcpConnId: source.mcpConnId,
     dataSource: source.dataSource,
+    mcpPlatformType: selectedMcpConn?.platformType ?? undefined,
     selectedConn: source.selectedConn,
     isDirectSkillSource: source.isDirectSkillSource,
     selectedSkillSourceId: source.selectedSkillSourceId,
@@ -195,6 +196,14 @@ export default function StorePage() {
       />
 
       <div className="flex-1 overflow-y-auto">
+        {/* 翻页时 react-query 保留上一页数据作占位（keepPreviousData），若不给可见反馈，
+            用户点击翻页后会看到「内容没变化」。用顶部进度条表明请求正在进行。 */}
+        {data.isFetching && data.items.length > 0 && (
+          <div className="h-[2px] w-full bg-[var(--color-accent)]/15 overflow-hidden">
+            <div className="h-full w-1/3 bg-[var(--color-accent)] animate-pulse" />
+          </div>
+        )}
+
         <StoreFilterBar
           facets={facets}
           sort={sort}
@@ -216,6 +225,7 @@ export default function StorePage() {
             connectionsCount={source.connections.length}
             mcpConnId={source.mcpConnId}
             connName={source.selectedConn?.name || null}
+            onRetry={handleRetry}
           />
         ) : (
           <StoreGrid
@@ -231,7 +241,8 @@ export default function StorePage() {
         )}
       </div>
 
-      {!data.isLoading && !data.error && data.items.length > 0 && (
+      {/* 空结果但带提示（如页码越界）时也保留分页器，否则用户无法点回有效页 */}
+      {!data.isLoading && !data.error && (data.items.length > 0 || !!data.message) && (
         <div className="flex items-center justify-between gap-3 px-4 py-2 border-t border-[var(--color-border)] bg-[var(--color-surface)]">
           <span className="text-[12px] text-[var(--color-muted)] truncate">
             {attributionText}

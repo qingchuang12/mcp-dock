@@ -9,6 +9,8 @@ interface StoreEmptyStateProps {
   connectionsCount: number;
   mcpConnId: string | null;
   connName: string | null;
+  /** 带提示的空态（限流/请求失败）需提供重试入口：失败结果会被查询缓存保留，不重试取不回来。 */
+  onRetry?: () => void;
 }
 
 export default function StoreEmptyState({
@@ -18,6 +20,7 @@ export default function StoreEmptyState({
   connectionsCount,
   mcpConnId,
   connName,
+  onRetry,
 }: StoreEmptyStateProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -37,7 +40,15 @@ export default function StoreEmptyState({
         renderNormalEmpty(resourceType, isUnsupported, connectionsCount, mcpConnId, connName, t)
       )}
 
-      {((resourceType === 'mcp') || (resourceType === 'skills' && connectionsCount === 0)) ? (
+      {/* 限流 / 请求失败属于可恢复错误，优先给重试；「前往设置/库」对这类状态没有任何帮助 */}
+      {friendlyMessage && onRetry ? (
+        <button
+          onClick={onRetry}
+          className="px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent)]/80 text-white text-[13px] font-medium rounded-lg transition-colors"
+        >
+          {t('store.retry', {defaultValue: '重试'})}
+        </button>
+      ) : ((resourceType === 'mcp') || (resourceType === 'skills' && connectionsCount === 0)) ? (
         <button
           onClick={() => navigate('/settings')}
           className="px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent)]/80 text-white text-[13px] font-medium rounded-lg transition-colors"
@@ -60,19 +71,39 @@ function renderFriendlyMessage(
   friendlyMessage: string,
   t: ReturnType<typeof useTranslation>['t']
 ) {
-  const isQuota = friendlyMessage === '__QUOTA_LIMIT_EXCEED__';
+  const titleClass = 'text-[15px] text-[var(--color-text)] font-medium mb-2';
+  const descClass = 'text-[13px] text-[var(--color-muted2)] text-center leading-relaxed mb-4';
+
+  // 配额超限与页码越界是同一件事的两种叫法（都是「这一页查不到」），共用一条文案，避免重复维护。
+  // 两个哨兵都保留：旧通道（resolvers/*）仍在发 __QUOTA_LIMIT_EXCEED__。
+  if (friendlyMessage === '__QUOTA_LIMIT_EXCEED__' || friendlyMessage === '__PAGE_OUT_OF_RANGE__') {
+    return (
+      <p className={titleClass}>{t('store.pageOutOfRangeHint', '当前页码超出数据源可查询范围，建议增加查询条件（关键字或分类筛选）以缩小结果，或返回上一页。') as string}</p>
+    );
+  }
+
+  if (friendlyMessage === '__RATE_LIMITED__') {
+    return (
+      <>
+        <p className={titleClass}>{t('store.rateLimitedTitle', '请求过于频繁') as string}</p>
+        <p className={descClass}>{t('store.rateLimitedHint', '该数据源暂时拒绝了请求（翻页过快会触发限流）。请稍等几秒后重试。') as string}</p>
+      </>
+    );
+  }
+
+  if (friendlyMessage === '__FETCH_FAILED__') {
+    return (
+      <>
+        <p className={titleClass}>{t('store.fetchFailedTitle', '请求失败') as string}</p>
+        <p className={descClass}>{t('store.fetchFailedHint', '未能从该数据源取回数据（网络超时或服务端异常）。请重试，或返回上一页。') as string}</p>
+      </>
+    );
+  }
+
   return (
     <>
-      <p className="text-[15px] text-[var(--color-text)] font-medium mb-2">
-        {isQuota
-          ? (t('store.quotaLimitTitle', '请尝试使用关键字搜索') as string)
-          : (t('store.queryHintTitle', '无法完成查询') as string)}
-      </p>
-      <p className="text-[13px] text-[var(--color-muted2)] text-center leading-relaxed mb-4">
-        {isQuota
-          ? (t('store.quotaLimitHint', '当前查询超出了 ModelScope 接口的单次配额限制（页码 × 每页条数上限为 100）。请在上方搜索框输入关键字以缩小范围后再试。') as string)
-          : friendlyMessage}
-      </p>
+      <p className={titleClass}>{t('store.queryHintTitle', '无法完成查询') as string}</p>
+      <p className={descClass}>{friendlyMessage}</p>
     </>
   );
 }

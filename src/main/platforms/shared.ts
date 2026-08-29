@@ -43,38 +43,61 @@ export async function fetchText(
     }
 }
 
-/** PUT 请求并返回 JSON（用于 ModelScope MCP server 端点）。 */
+/**
+ * PUT 请求并返回 JSON（用于 ModelScope MCP server 端点）。
+ *
+ * 返回值区分两种失败，供调用方给出准确提示：
+ * - `null`：网络层失败/超时且重试后仍失败，根本没拿到响应；
+ * - `{ok: false, status}`：拿到了 HTTP 响应但非 2xx（status 用于区分 403 限流与 5xx 等）。
+ *
+ * 重试：ModelScope 网关对突发/并发连接偶发返回连接超时（UND_ERR_CONNECT_TIMEOUT），
+ * 单次裸请求失败率很高，翻页时几乎每页都可能误报「请求失败」。对网络错误/超时/5xx
+ * 自动重试 2 次（退避 400/800ms），与 Skill 端点 probeEndpoints 内的 fetchWithRetry 一致。
+ * 4xx（鉴权/参数错误/配额 403）为终态不重试——403 限流需保持原样让调用方提示用户稍后重试。
+ */
 export async function fetchJson(
     url: string,
     body: Record<string, unknown>,
     timeoutMs = 20000,
     extraHeaders: Record<string, string> = {}
-): Promise<{json: any; text: string} | null> {
-    const controller = new AbortController();
-    const t = setTimeout(() => (controller as any).abort(), timeoutMs);
-    try {
-        const res = await fetch(url, {
-            method: 'PUT',
-            headers: {
-                'User-Agent': UA,
-                'Accept': 'application/json,text/html,*/*',
-                'Content-Type': 'application/json',
-                ...extraHeaders,
-            },
-            body: JSON.stringify(body),
-            redirect: 'follow',
-            signal: (controller as any).signal,
-        });
-        if (!res.ok) return null;
-        const text = await res.text();
-        let json: any = null;
-        try { json = JSON.parse(text); } catch { /* ignore */ }
-        return {json, text};
-    } catch {
-        return null;
-    } finally {
-        clearTimeout(t);
+): Promise<{json: any; text: string; status: number; ok: boolean} | null> {
+    const headers: Record<string, string> = {
+        'User-Agent': UA,
+        'Accept': 'application/json,text/html,*/*',
+        'Content-Type': 'application/json',
+        ...extraHeaders,
+    };
+
+    for (let i = 0; i <= 2; i++) {
+        const controller = new AbortController();
+        const t = setTimeout(() => (controller as any).abort(), timeoutMs);
+        try {
+            const res = await fetch(url, {
+                method: 'PUT',
+                headers,
+                body: JSON.stringify(body),
+                redirect: 'follow',
+                signal: (controller as any).signal,
+            });
+            if (res.ok) {
+                const text = await res.text();
+                let json: any = null;
+                try { json = JSON.parse(text); } catch { /* ignore */ }
+                return {json, text, status: res.status, ok: true};
+            }
+            // 4xx 为终态（含 403 配额/限流），不重试，直接返回供调用方判定
+            if (res.status >= 400 && res.status < 500) {
+                return {json: null, text: '', status: res.status, ok: false};
+            }
+            // 5xx：落空到下方重试逻辑（下一轮）
+        } catch {
+            // 网络错误 / 超时（AbortError）：可重试
+        } finally {
+            clearTimeout(t);
+        }
+        if (i < 2) await new Promise(r => setTimeout(r, 400 * Math.pow(2, i)));
     }
+    return null;
 }
 
 /** 拼接 baseUrl 与 path，自动处理斜杠。 */

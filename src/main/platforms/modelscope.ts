@@ -7,6 +7,7 @@
 import type {
     CategoryNode,
     PlatformAdapter,
+    PlatformPageInfo,
     PlatformSearchPage,
     PlatformSearchParams,
     PlatformServerDetail,
@@ -18,6 +19,50 @@ import {buildHint, extractPageInfo, fetchJson, locateArray, probeEndpoints, setD
 
 const MS_BASE = 'https://modelscope.cn';
 
+/**
+ * 开放接口配额窗口：page_number × page_size 不得超过该值，超出时服务端直接返回
+ * HTTP 403（code=QuotaLimitExceed），而不是 200 空数组。实测：
+ * - Skill 端点：120×20=2400 正常，121×20=2420 报 403；
+ * - MCP 端点：5×20=100 正常，6×20=120 报 403。
+ * 分类与搜索都不重置窗口，只能靠缩小结果集查看更靠后的数据。
+ */
+const MS_SKILL_QUOTA_PRODUCT = 2400;
+const MS_SERVER_QUOTA_PRODUCT = 100;
+
+/**
+ * 除深分页窗口外，该域名还有一层高频限流：连续无间隔翻页时，即使页码远在窗口内
+ * （实测 2×20=40、4×20=80）也会被 403 拒绝；间隔 3s 后同样的页码全部 200。
+ * 这与「页码越界」是两种完全不同的失败，必须区分提示，否则会把限流误报成越界。
+ */
+const PAGE_OUT_OF_RANGE = '__PAGE_OUT_OF_RANGE__';
+const RATE_LIMITED = '__RATE_LIMITED__';
+/** 网络层失败/超时或服务端 5xx：页码本身有效，只是这一次请求没成功。 */
+const FETCH_FAILED = '__FETCH_FAILED__';
+
+/**
+ * 页码越界时回填的分页信息：给配额窗口内的 total/totalPages，
+ * 这样前端分页器仍可用，用户能点回上一页，而不是卡在空页里出不来。
+ */
+function outOfRangePageInfo(page: number, pageSize: number, quotaProduct: number): PlatformPageInfo {
+    const size = Math.max(1, pageSize);
+    const maxPage = Math.max(1, Math.floor(quotaProduct / size));
+    return {page, pageSize: size, total: maxPage * size, totalPages: maxPage, hasMore: false};
+}
+
+/**
+ * 请求失败时判定原因，避免把限流/网络故障误报成「页码超出可查询范围」。
+ * @param quotaExceeded 该页是否确实越过配额窗口（page × size > 窗口）
+ * @param httpStatus HTTP 状态码；为 null 表示网络层失败/超时（根本没拿到响应）
+ */
+function failureMessage(page: number, quotaExceeded: boolean, httpStatus: number | null): string | undefined {
+    if (page <= 1) return undefined; // 首页失败走原空态，诊断面板可查具体原因
+    if (quotaExceeded) return PAGE_OUT_OF_RANGE;
+    if (httpStatus === 403) return RATE_LIMITED;
+    // 网络超时（httpStatus 为 null）或 5xx：不能静默返回空列表，否则渲染层只会显示
+    // 「暂无匹配的 MCP Server」，用户既不知道失败、也无法重试。
+    return FETCH_FAILED;
+}
+
 // Skill 搜索端点（实测：支持 search 搜索 + filter.category 分类过滤，一次到位）
 const MS_SKILL_TPLS = [
     '/openapi/v1/skills?search={q}&page_number={page}&page_size={size}&filter.category={category}',
@@ -26,12 +71,11 @@ const MS_SKILL_TPLS = [
 // MCP server 搜索端点（doc：PUT /openapi/v1/mcp/servers）
 // ModelScope Skill 分类（来自对接文档第五节：对可访问前 2400 条统计得到的真实 18 类，
 // id 为 API 返回的英文 slug，name 为对应的中文展示名。注意：这是 ModelScope 真实分类，
-// 与 MCP 的 81 类（MS_SERVER_CATEGORIES）是完全两套体系，不要混用）。
+// 与 MCP 的分类（MS_SERVER_CATEGORIES）是完全两套体系，不要混用）。
 const MS_CATEGORIES: CategoryNode[] = [
     {id: 'developer-tools', name: '开发工具'},
     {id: 'ai-media', name: 'AI 多媒体'},
     {id: 'marketing-seo', name: '营销与 SEO'},
-    {id: 'other', name: '其他'},
     {id: 'skill-management', name: '技能管理'},
     {id: 'code-quality-testing', name: '代码质量与测试'},
     {id: 'frontend-development', name: '前端开发'},
@@ -45,11 +89,13 @@ const MS_CATEGORIES: CategoryNode[] = [
     {id: 'ui-ux-design', name: 'UI/UX 设计'},
     {id: 'general-tools', name: '通用工具'},
     {id: 'api-design', name: 'API 设计'},
+    {id: 'other', name: '其他'},
 ];
 
-// ModelScope MCP server 分类（来自文档「MCP 分类枚举」第五节，完整 81 类，含 count<10 与
-// 大小写变体脏数据，按用户要求全部保留）。注意：MCP 端点只认英文 slug，
-// 中文名仅用于展示；与 Skill 的 18 类中文分类（MS_CATEGORIES）是两套完全不同的体系。
+// ModelScope MCP server 分类（来源：用 filter.category 做 BFS 从全量数据发现，原始 153 类，
+// 去前导空格归一化后 81 类；再删除 3 个实测等价的大小写变体（Search/Finance/AIGC）后为 78 类）。
+// 注意：MCP 端点只认英文 slug，中文名仅用于展示；
+// 与 Skill 的 18 类中文分类（MS_CATEGORIES）是两套完全不同的体系。
 const MS_SERVER_CATEGORIES: CategoryNode[] = [
     {id: 'developer-tools', name: '开发工具'},
     {id: 'search', name: '搜索'},
@@ -62,7 +108,6 @@ const MS_SERVER_CATEGORIES: CategoryNode[] = [
     {id: 'communication', name: '通讯工具'},
     {id: 'research-and-data', name: '研究与数据'},
     {id: 'os-automation', name: '操作系统自动化'},
-    {id: 'other', name: '其他'},
     {id: 'image-and-video-processing', name: '图像与视频处理'},
     {id: 'entertainment-and-media', name: '娱乐与媒体'},
     {id: 'finance', name: '金融'},
@@ -120,21 +165,23 @@ const MS_SERVER_CATEGORIES: CategoryNode[] = [
     {id: 'erp-systems', name: 'ERP 系统'},
     {id: 'fitness-tracking', name: '健身追踪'},
     {id: 'legal-and-compliance', name: '法律与合规'},
-    // 以下为文档「MCP 分类枚举」中 count<10 的分类，按用户要求保留完整 81 类（不再聚合到 other）。
-    // 注：部分 slug 为大小写变体（Search/Finance/Knowledge&Memory/aigc/AIGC），属源数据脏数据，
-    // 但为保持分类完整性一并保留；调用 filter.category 时服务端按精确大小写匹配。
     {id: 'biology-and-medicine', name: '生物与医学'},
+    // 以下为 BFS 枚举到的 count<10 稀有分类。数量虽少但实测均有数据（1~9 条），
+    // 删除会让这部分服务无法被筛出，故保留。
+    //
+    // 注：原先还保留了 3 个「大小写变体」slug（Search/Finance/aigc），但实测它们与对应小写
+    // 形式的命中数完全相同（search 1427=Search 1427、finance 425=Finance 425、aigc 7=AIGC 7），
+    // 服务端实际不区分大小写。保留只会导致下拉出现两个「搜索」/「金融」/「AIGC」，已删除。
+    // knowledge-and-memory(591) 与 Knowledge&Memory(1) 是不同写法而非大小写变体，两者均保留。
     {id: 'software-architecture', name: '软件架构'},
-    {id: 'AIGC', name: '生成式人工智能(AIGC)'},
+    {id: 'aigc', name: '生成式人工智能(AIGC)'},
     {id: 'bioinformatics', name: '生物信息学'},
     {id: 'transportation', name: '交通'},
     {id: 'sports', name: '体育'},
-    {id: 'Search', name: '搜索'},
     {id: 'real-estate', name: '房地产'},
-    {id: 'aigc', name: '生成式人工智能(AIGC)'},
     {id: 'Knowledge&Memory', name: '知识与记忆'},
-    {id: 'Finance', name: '金融'},
     {id: 'aerospace-and-astrodynamics', name: '航空航天与天体动力学'},
+    {id: 'other', name: '其他'},
 ];
 
 // ModelScope 分类 slug → 中文名映射（Skill 用 MS_CATEGORIES，MCP 用 MS_SERVER_CATEGORIES）。
@@ -238,6 +285,16 @@ async function msSearchImpl(params: PlatformSearchParams): Promise<PlatformSearc
     const base = baseUrl || MS_BASE;
     const started = Date.now();
 
+    // 配额窗口预判：page_number × page_size 超限时服务端必返 403，直接给提示，省掉一次必然失败的请求。
+    // 第 1 页 1 × pageSize 恒在窗口内，不受影响，保证首页数据正常展示。
+    if (safePage > 1 && safePage * pageSize > MS_SKILL_QUOTA_PRODUCT) {
+        return {
+            items: [],
+            pageInfo: outOfRangePageInfo(safePage, pageSize, MS_SKILL_QUOTA_PRODUCT),
+            message: PAGE_OUT_OF_RANGE,
+        };
+    }
+
     // category 为 'all' 或空时不传 filter.category 参数，否则 ModelScope 会按字面量 "all" 过滤导致无结果
     const effectiveCategory = (category && category !== 'all') ? category : '';
     const tpls = effectiveCategory
@@ -269,10 +326,18 @@ async function msSearchImpl(params: PlatformSearchParams): Promise<PlatformSearc
     });
 
     if (!probe.matchedUrl) {
+        // 区分两种失败：页码真越过配额窗口 vs 被高频限流（403 但页码在窗口内）/网络故障。
+        // 越界时回填配额内的分页信息，让用户能点分页器回到有效页；限流则保持原分页信息，
+        // 因为页码本身是有效的，稍后重试即可成功。
+        const quotaExceeded = safePage > 1 && safePage * pageSize > MS_SKILL_QUOTA_PRODUCT;
+        const httpStatus = probe.attempts.find(a => typeof a.status === 'number')?.status ?? null;
         return {
             items: [],
-            pageInfo: {page: safePage, pageSize, total: null, totalPages: null, hasMore: false},
+            pageInfo: quotaExceeded
+                ? outOfRangePageInfo(safePage, pageSize, MS_SKILL_QUOTA_PRODUCT)
+                : {page: safePage, pageSize, total: null, totalPages: null, hasMore: false},
             unsupported: probe.attempts.length > 0 && probe.attempts.every(a => a.reason === 'non-json'),
+            message: failureMessage(safePage, quotaExceeded, httpStatus),
         };
     }
 
@@ -293,7 +358,14 @@ async function msSearchImpl(params: PlatformSearchParams): Promise<PlatformSearc
     }
 
     const pageInfo = extractPageInfo(probe.json, safePage, pageSize, items.length);
-    return {items, pageInfo, pagingMode: 'client', complete: false};
+    return {
+        items,
+        pageInfo,
+        pagingMode: 'client',
+        complete: false,
+        // 请求成功但没有数据：仅非首页提示「页码超出可查询范围」，首页无结果属正常空态
+        message: safePage > 1 && items.length === 0 ? PAGE_OUT_OF_RANGE : undefined,
+    };
 }
 
 /** MCP server 搜索（PUT /openapi/v1/mcp/servers，JSON Body 传参）。 */
@@ -303,6 +375,15 @@ async function msServerSearchImpl(params: PlatformSearchParams): Promise<Platfor
     const base = baseUrl || MS_BASE;
     const url = `${base}/openapi/v1/mcp/servers`;
     const started = Date.now();
+
+    // 配额窗口预判（与 Skill 端点同理）：超限必返 403，直接给提示，避免一次必然失败的请求。
+    if (safePage > 1 && safePage * pageSize > MS_SERVER_QUOTA_PRODUCT) {
+        return {
+            items: [],
+            pageInfo: outOfRangePageInfo(safePage, pageSize, MS_SERVER_QUOTA_PRODUCT),
+            message: PAGE_OUT_OF_RANGE,
+        };
+    }
 
     const body: Record<string, unknown> = {
         page_number: safePage,
@@ -330,9 +411,15 @@ async function msServerSearchImpl(params: PlatformSearchParams): Promise<Platfor
     });
 
     if (!result || !result.json) {
+        // 区分两种失败：页码真越过配额窗口 vs 被高频限流（403 但页码在窗口内）/网络故障。
+        // 越界时回填配额内的分页信息，让用户能点回上一页；限流保持原分页信息，稍后重试即可成功。
+        const quotaExceeded = safePage > 1 && safePage * pageSize > MS_SERVER_QUOTA_PRODUCT;
         return {
             items: [],
-            pageInfo: {page: safePage, pageSize, total: null, totalPages: null, hasMore: false},
+            pageInfo: quotaExceeded
+                ? outOfRangePageInfo(safePage, pageSize, MS_SERVER_QUOTA_PRODUCT)
+                : {page: safePage, pageSize, total: null, totalPages: null, hasMore: false},
+            message: failureMessage(safePage, quotaExceeded, result?.status ?? null),
         };
     }
 
@@ -345,7 +432,12 @@ async function msServerSearchImpl(params: PlatformSearchParams): Promise<Platfor
     }
 
     const pageInfo = extractPageInfo(result.json, safePage, pageSize, items.length);
-    return {items, pageInfo};
+    return {
+        items,
+        pageInfo,
+        // 请求成功但无数据：仅非首页提示（首页无结果属正常空态）
+        message: safePage > 1 && items.length === 0 ? PAGE_OUT_OF_RANGE : undefined,
+    };
 }
 
 export const modelscopeAdapter: PlatformAdapter = {
