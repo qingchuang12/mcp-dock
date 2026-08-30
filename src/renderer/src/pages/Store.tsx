@@ -4,7 +4,7 @@
  * 数据查询收口到 hooks，本文件只负责状态编排与子组件渲染
  */
 
-import {useCallback, useEffect, useState} from 'react';
+import {useCallback, useEffect, useRef, useState} from 'react';
 import {flushSync} from 'react-dom';
 import {useTranslation} from 'react-i18next';
 import {useStore} from '../store/useStore';
@@ -41,12 +41,15 @@ export default function StorePage() {
     setInstalledServerIds,
     installedSkillIds,
     setInstalledSkillIds,
+    storeCategory: category,
+    setStoreCategory: setCategory,
+    storeSort: sort,
+    setStoreSort: setSort,
+    storeSourceFilter: sourceFilter,
+    setStoreSourceFilter: setSourceFilter,
   } = useStore();
 
   const [isForceRefreshing, setIsForceRefreshing] = useState(false);
-  const [category, setCategory] = useState<string>('all');
-  const [sort, setSort] = useState<string>('relevance');
-  const [sourceFilter, setSourceFilter] = useState<string>('all');
 
   const debouncedSearch = useDebouncedValue(searchQuery, 300);
   const source = useStoreSourceSelection();
@@ -58,7 +61,16 @@ export default function StorePage() {
   const isPlatformSource = !!source.mcpConnId || source.isDirectSkillSource;
   const pageSizeOptions = isPlatformSource ? [10, 20, 50] : [10, 20, 50, 100];
 
+  // 仅在「切换资源类型 / 切换源」时把筛选项重置为默认；跳过组件挂载那一次。
+  // 原因：/store 与详情页是平级路由，进入详情会卸载本组件、返回时重新挂载；
+  // 而 useEffect 在挂载时必定执行一次，若不在首次挂载跳过，返回时即便筛选值
+  // 已保存在全局 store，也会被这次执行冲成 'all'，表现为「返回后分类变回全部」。
+  const skipResetOnMount = useRef(true);
   useEffect(() => {
+    if (skipResetOnMount.current) {
+      skipResetOnMount.current = false;
+      return;
+    }
     setCategory('all');
     setSort('relevance');
     setSourceFilter('all');

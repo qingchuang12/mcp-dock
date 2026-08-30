@@ -74,6 +74,16 @@ interface StoreState {
     addInstalledSkillId: (id: string) => void;
     removeInstalledSkillId: (id: string) => void;
 
+    // 商店筛选状态（分类 / 排序 / 来源过滤）。提升为内存态而非组件本地 state，
+    // 使「进入详情页再返回」时组件重新挂载也不会丢失用户已选的筛选条件。
+    // 不写入 persist（partialize 未包含），进程重启后回到默认，避免跨会话污染。
+    storeCategory: string;
+    setStoreCategory: (v: string) => void;
+    storeSort: string;
+    setStoreSort: (v: string) => void;
+    storeSourceFilter: string;
+    setStoreSourceFilter: (v: string) => void;
+
     // MCP 平台源直连连接 ID（从详情返回时需保留）
     mcpConnId: string | null;
     setMcpConnId: (id: string | null) => void;
@@ -190,6 +200,14 @@ export const useStore = create<StoreState>()(
             // Skills 源选择
             selectedSkillSourceId: null,
             setSelectedSkillSourceId: (id) => set({selectedSkillSourceId: id}),
+
+            // 商店筛选状态（内存态，不持久化）
+            storeCategory: 'all',
+            setStoreCategory: (v) => set({storeCategory: v}),
+            storeSort: 'relevance',
+            setStoreSort: (v) => set({storeSort: v}),
+            storeSourceFilter: 'all',
+            setStoreSourceFilter: (v) => set({storeSourceFilter: v}),
 
             // Inspector 状态
             inspectorState: {

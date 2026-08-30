@@ -1,6 +1,6 @@
 {
   "name": "ai-tools",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "AI-Tools - A beautiful desktop app for managing MCP servers and AI agent skills",
   "author": {
     "name": "AI-Tools Team",
@@ -12,16 +12,18 @@
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
     "dev:main": "tsc -p tsconfig.main.json --watch",
     "dev:renderer": "vite",
-    "build": "npm run build:main && npm run build:renderer",
+    "build": "npm run build:icons && npm run link:deps && npm run build:main && npm run build:renderer",
+    "build:icons": "node scripts/build-icons.cjs",
+    "link:deps": "node scripts/link-pnpm-deps.cjs",
     "build:main": "tsc -p tsconfig.main.json && node scripts/copy-platform-data.mjs",
     "build:renderer": "vite build",
     "typecheck": "npx tsc -p tsconfig.main.json --noEmit && npx tsc -p tsconfig.json --noEmit",
     "start": "electron .",
     "electron:dev": "npm run build:main && concurrently -k \"npm run dev:main\" \"npm run dev:renderer\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
-    "package": "npm run build && electron-builder",
-    "package:mac": "npm run build && electron-builder --mac",
-    "package:win": "npm run build && electron-builder --win --x64",
-    "package:linux": "npm run build && electron-builder --linux",
+    "package": "npm run build && npm run link:deps && electron-builder",
+    "package:mac": "npm run build && npm run link:deps && electron-builder --mac",
+    "package:win": "npm run build && npm run link:deps && electron-builder --win --x64",
+    "package:linux": "npm run build && npm run link:deps && electron-builder --linux",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -40,6 +42,7 @@
     "smol-toml": "^1.6.1",
     "ssh2": "^1.17.0",
     "ssh2-sftp-client": "^12.1.1",
+    "asn1": "^0.2.6",
     "zustand": "^4.4.0"
   },
   "devDependencies": {
