@@ -3,7 +3,8 @@
  * 覆盖: 备份创建、列表、恢复、差异比较、清理
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+// 显式导入 vi：src/__tests__ 未被任何 tsconfig include 覆盖，拿不到 vitest/globals 的全局类型
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
@@ -16,7 +17,6 @@ vi.mock('electron', () => ({
 import { HistoryManager } from '../main/history-manager';
 
 let historyManager: HistoryManager;
-let originalBackupDir: string;
 let testBackupDir: string;
 
 beforeEach(async () => {
@@ -24,7 +24,6 @@ beforeEach(async () => {
   await fs.mkdir(testBackupDir, { recursive: true });
 
   historyManager = new HistoryManager();
-  originalBackupDir = (historyManager as any).backupDir;
   (historyManager as any).backupDir = testBackupDir;
 });
 
@@ -88,6 +87,65 @@ describe('listBackups', () => {
   });
 });
 
+describe('listBackups · 计数口径与客户端清单', () => {
+  const write = async (ts: string, data: Record<string, any>) => {
+    await fs.writeFile(
+      path.join(testBackupDir, `backup-${ts.replace(/[:.]/g, '-')}.json`),
+      JSON.stringify({timestamp: ts, clients: {}, skills: {}, ...data}),
+      'utf-8'
+    );
+  };
+
+  it('serverCount 跨客户端去重，不再累加（与 skillCount 口径一致）', async () => {
+    // s1 装在 3 个客户端、s2 装在 2 个客户端 → 去重后应为 2，累加则为 5
+    await write('2025-02-01T00:00:00.000Z', {
+      clients: {
+        cursor: {config: {mcpServers: {s1: {}, s2: {}}}, serverCount: 2},
+        vscode: {config: {mcpServers: {s1: {}, s2: {}}}, serverCount: 2},
+        zed: {config: {mcpServers: {s1: {}}}, serverCount: 1},
+      },
+    });
+
+    const backups = await historyManager.listBackups();
+    expect(backups).toHaveLength(1);
+    expect(backups[0].serverCount).toBe(2);
+  });
+
+  it('clients 只含承载内容的客户端，未安装的空配置不进列表', async () => {
+    await write('2025-02-02T00:00:00.000Z', {
+      clients: {
+        // 未安装：文件不存在，readConfig 返回空配置落盘
+        cursor: {config: {mcpServers: {}}, serverCount: 0},
+        windsurf: {config: {mcpServers: {}}, serverCount: 0},
+        // 有 MCP server
+        marscode: {config: {mcpServers: {s1: {}}}, serverCount: 1},
+        // 无 server 但有 Skill
+        codebuddy: {config: {mcpServers: {}}, serverCount: 0},
+        // 既无 server 也无 skill
+        qoder: {config: {mcpServers: {}}, serverCount: 0},
+      },
+      skills: {codebuddy: ['my-skill']},
+    });
+
+    const backups = await historyManager.listBackups();
+    expect(backups[0].clients).toEqual(['marscode', 'codebuddy']);
+  });
+
+  it('Skill 去重统计：同一 Skill 装在多个客户端只计 1 次', async () => {
+    await write('2025-02-03T00:00:00.000Z', {
+      clients: {
+        cursor: {config: {mcpServers: {}}, serverCount: 0},
+        codebuddy: {config: {mcpServers: {}}, serverCount: 0},
+      },
+      skills: {cursor: ['a', 'b'], codebuddy: ['b', 'c']},
+    });
+
+    const backups = await historyManager.listBackups();
+    expect(backups[0].skillCount).toBe(3);
+    expect(backups[0].clients).toEqual(['cursor', 'codebuddy']);
+  });
+});
+
 describe('getDiff (相对上一条备份)', () => {
   const writeBackup = async (ts: string, clients: Record<string, Record<string, any>>) => {
     const data = {
@@ -147,6 +205,79 @@ describe('getDiff (相对上一条备份)', () => {
   });
 });
 
+describe('getDiff · Skill 内容变更（skillsModified）', () => {
+  /** 写入含 skills / skillContents 的备份（模拟 P1-3 之后产生的备份） */
+  const writeSkillBackup = async (
+    ts: string,
+    opts: {
+      skills?: Record<string, string[]>;
+      skillContents?: Record<string, Record<string, string>>;
+    } = {},
+  ) => {
+    const data = {
+      timestamp: ts,
+      clients: {},
+      skills: opts.skills ?? {},
+      ...(opts.skillContents ? {skillContents: opts.skillContents} : {}),
+    };
+    await fs.writeFile(
+      path.join(testBackupDir, `backup-${ts.replace(/[:.]/g, '-')}.json`),
+      JSON.stringify(data),
+      'utf-8'
+    );
+  };
+
+  it('名字不变、SKILL.md 内容变了 → 记为 modified', async () => {
+    const skills = {cursor: ['demo-skill']};
+    await writeSkillBackup('2025-05-01T00:00:00.000Z', {
+      skills,
+      skillContents: {cursor: {'demo-skill': '---\nname: demo-skill\n---\n\nold body'}},
+    });
+    await writeSkillBackup('2025-05-02T00:00:00.000Z', {
+      skills,
+      skillContents: {cursor: {'demo-skill': '---\nname: demo-skill\n---\n\nnew body'}},
+    });
+
+    const diff = await historyManager.getDiff('2025-05-02T00:00:00.000Z');
+    expect(diff!.skillsModified).toEqual(['demo-skill']);
+    expect(diff!.skillsAdded).toEqual([]);
+    expect(diff!.skillsRemoved).toEqual([]);
+    expect(diff!.skillClientChanges).toEqual([
+      {client: 'cursor', added: [], removed: [], modified: ['demo-skill']},
+    ]);
+  });
+
+  it('内容完全没变 → 不产生 modified（不会刷出空变更记录）', async () => {
+    const payload = {
+      skills: {cursor: ['demo-skill']},
+      skillContents: {cursor: {'demo-skill': '---\nname: demo-skill\n---\n\nsame body'}},
+    };
+    await writeSkillBackup('2025-05-03T00:00:00.000Z', payload);
+    await writeSkillBackup('2025-05-04T00:00:00.000Z', payload);
+
+    const diff = await historyManager.getDiff('2025-05-04T00:00:00.000Z');
+    expect(diff!.skillsModified).toEqual([]);
+    expect(diff!.skillsAdded).toEqual([]);
+    expect(diff!.skillsRemoved).toEqual([]);
+  });
+
+  it('旧备份无 skillContents 字段时跳过内容比较（不误报全量 modified）', async () => {
+    const skills = {cursor: ['demo-skill']};
+    // 上一条：P1-3 之前的旧备份，没有 skillContents
+    await writeSkillBackup('2025-05-05T00:00:00.000Z', {skills});
+    // 当前：新备份，有 skillContents
+    await writeSkillBackup('2025-05-06T00:00:00.000Z', {
+      skills,
+      skillContents: {cursor: {'demo-skill': '---\nname: demo-skill\n---\n\nbody'}},
+    });
+
+    const diff = await historyManager.getDiff('2025-05-06T00:00:00.000Z');
+    expect(diff!.skillsModified).toEqual([]);
+    expect(diff!.skillsAdded).toEqual([]);
+    expect(diff!.skillsRemoved).toEqual([]);
+  });
+});
+
 describe('backup 去重（避免空变更历史）', () => {
   const install = (map: Record<string, Record<string, any>>) => ({
     getClientTypes: () => ['cursor'],
@@ -167,7 +298,7 @@ describe('backup 去重（避免空变更历史）', () => {
   });
 
   it('状态发生变化时仍应创建新备份', async () => {
-    const state = { cursor: { 's1': { command: 'node' } } };
+    const state: Record<string, Record<string, any>> = { cursor: { 's1': { command: 'node' } } };
     (historyManager as any).configManager = install(state);
     await (historyManager as any).backup();
     state.cursor['s2'] = { command: 'node' }; // 新增一个 server

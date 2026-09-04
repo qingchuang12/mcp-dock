@@ -4,6 +4,7 @@
  */
 
 import {type ClientType, type SkillClientType} from '../lib/electron';
+import {resolveIconKey} from '../lib/client-icon-key';
 
 import cursorIcon from '../../assets/icons/cursor.png';
 import claudeCodeIcon from '../../assets/icons/claude-code.png';
@@ -36,6 +37,17 @@ const ClientIconMap: Partial<Record<ClientType | SkillClientType, string>> = {
     codebuddy: undefined,
 };
 
+/**
+ * 图标由代码绘制而非图片资源的客户端（见下方各 if 分支）。
+ * 需与 ClientIconMap 的键一并作为关键字匹配的候选，否则自定义客户端
+ * 名称含 jetbrains / codebuddy 等时仍会落到兜底图标。
+ * codebuddy 在 ClientIconMap 中显式置为 undefined 以便走代码分支，故此处去重后再合并。
+ */
+const CODE_DRAWN_KEYS = ['jetbrains', 'agent-skills', 'codebuddy', 'workbuddy', 'qoder', 'cloud'];
+
+/** 自定义客户端按名称关键字匹配图标时的候选 key（单一来源：图片键 + 代码绘制键） */
+const ICON_MATCH_CANDIDATES = Array.from(new Set([...Object.keys(ClientIconMap), ...CODE_DRAWN_KEYS]));
+
 interface ClientIconProps {
     clientId: ClientType | SkillClientType | string;
     size?: number;
@@ -50,7 +62,10 @@ export default function ClientIcon({
                                        size = 20,
                                        className = '',
                                    }: ClientIconProps) {
-    const iconSrc = ClientIconMap[clientId as ClientType];
+    // 自定义客户端（custom:<slug>）无图标资源，按名称关键字最长匹配复用内置客户端图标，
+    // 未命中时 resolveIconKey 原样返回，落到下方兜底图标。
+    const iconKey = resolveIconKey(clientId, ICON_MATCH_CANDIDATES);
+    const iconSrc = ClientIconMap[iconKey as ClientType];
 
     // 如果有图标文件，使用图片
     if (iconSrc) {
@@ -66,7 +81,7 @@ export default function ClientIcon({
     }
 
     // JetBrains: 钻石形 IDE 图标
-    if (clientId === 'jetbrains') {
+    if (iconKey === 'jetbrains') {
         return (
             <div
                 className={`inline-flex items-center justify-center rounded bg-[#000000] ${className}`}
@@ -81,7 +96,7 @@ export default function ClientIcon({
     }
 
     // Agent Skills (.agents): 统一标准图标
-    if (clientId === 'agent-skills') {
+    if (iconKey === 'agent-skills') {
         return (
             <div
                 className={`inline-flex items-center justify-center rounded bg-[#8b5cf6] ${className}`}
@@ -97,7 +112,7 @@ export default function ClientIcon({
     }
 
     // CodeBuddy: 蓝紫渐变方块 + "CB" 文字
-    if (clientId === 'codebuddy') {
+    if (iconKey === 'codebuddy') {
         return (
             <div
                 className={`inline-flex items-center justify-center rounded bg-gradient-to-br from-[#2b6cff] to-[#7c3aed] ${className}`}
@@ -114,7 +129,7 @@ export default function ClientIcon({
     }
 
     // WorkBuddy: 青绿渐变方块 + "WB" 文字
-    if (clientId === 'workbuddy') {
+    if (iconKey === 'workbuddy') {
         return (
             <div
                 className={`inline-flex items-center justify-center rounded bg-gradient-to-br from-[#10b981] to-[#0ea5e9] ${className}`}
@@ -131,7 +146,7 @@ export default function ClientIcon({
     }
 
     // Qoder: 橙红渐变方块 + "Q" 文字
-    if (clientId === 'qoder') {
+    if (iconKey === 'qoder') {
         return (
             <div
                 className={`inline-flex items-center justify-center rounded bg-gradient-to-br from-[#f97316] to-[#ef4444] ${className}`}
@@ -148,7 +163,7 @@ export default function ClientIcon({
     }
 
     // 云端存储：蓝色云朵
-    if (clientId === 'cloud') {
+    if (iconKey === 'cloud') {
         return (
             <div
                 className={`inline-flex items-center justify-center rounded bg-gradient-to-br from-[#0a84ff] to-[#5e5ce6] ${className}`}

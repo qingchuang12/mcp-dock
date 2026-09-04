@@ -36,6 +36,14 @@ export interface DiffResult {
     modified: string[];
     current: any;
     backup: any;
+    skillsAdded: string[];
+    skillsRemoved: string[];
+    /** 内容发生变更的 Skill 名；仅当前后两条备份都含 skillContents 时才可能有值 */
+    skillsModified: string[];
+    /** 客户端级变更（按客户端分别比对，识别「从多客户端之一移除」等单客户端变更） */
+    clientChanges?: { client: string; added: string[]; removed: string[]; modified: string[] }[];
+    /** Skills 客户端级变更；modified 为「内容变更」（名字未变、SKILL.md 变了） */
+    skillClientChanges?: { client: string; added: string[]; removed: string[]; modified: string[] }[];
 }
 
 // 客户端类型统一从主进程 config-manager 引入，避免多端重复定义导致类型不兼容

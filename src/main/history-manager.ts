@@ -13,8 +13,11 @@ export interface BackupInfo {
     timestamp: string;
     filename: string;
     size: number;
+    /** 去重后的 MCP server 数（同一 server 装在多个客户端只计 1 次） */
     serverCount: number;
+    /** 去重后的 Skill 数 */
     skillCount: number;
+    /** 仅含真正承载内容的客户端（有 MCP server 或 Skill），不含未安装的空配置客户端 */
     clients: ClientType[];
 }
 
@@ -27,10 +30,12 @@ export interface DiffResult {
     // Skills 变更
     skillsAdded: string[];
     skillsRemoved: string[];
+    /** 内容发生变更的 Skill 名（跨客户端去重）。仅当前后两条备份都含 skillContents 时才可能有值。 */
+    skillsModified: string[];
     /** 客户端级变更（修复：按全局 server 集合比较会漏掉「从多客户端之一移除」等单客户端变更） */
     clientChanges?: { client: string; added: string[]; removed: string[]; modified: string[] }[];
-    /** Skills 客户端级变更 */
-    skillClientChanges?: { client: string; added: string[]; removed: string[] }[];
+    /** Skills 客户端级变更；modified 为「内容变更」（名字未变、SKILL.md 变了） */
+    skillClientChanges?: { client: string; added: string[]; removed: string[]; modified: string[] }[];
 }
 
 interface BackupData {
@@ -281,20 +286,28 @@ export class HistoryManager {
                     const content = await fs.readFile(filePath, 'utf-8');
                     const data: BackupData = JSON.parse(content);
 
-                    // 计算总服务器数
-                    let serverCount = 0;
+                    // 服务器总数：跨客户端【去重】。同一个 server 装在 N 个客户端只算 1 个，
+                    // 与 skillCount 的去重口径保持一致——此前 serverCount 累加、skillCount 去重，
+                    // 两个数字并排展示却口径不同，实测同一份数据算出 22 与 11 两个值，易被误读为数据错误。
+                    const allServerIds = new Set<string>();
                     const clientList: ClientType[] = [];
+                    const skillsMap = (data.skills || {}) as Record<string, string[]>;
 
                     for (const [clientId, clientData] of Object.entries(data.clients || {})) {
-                        if (clientData) {
-                            serverCount += clientData.serverCount || 0;
+                        if (!clientData) continue;
+                        const clientServerIds = Object.keys(clientData.config?.mcpServers || {});
+                        clientServerIds.forEach(id => allServerIds.add(id));
+                        // 只纳入真正承载内容的客户端。备份时无条件遍历全部内置 + 自定义客户端，
+                        // 未安装者的配置文件不存在，readConfig 返回空配置而非抛错，同样会落盘；
+                        // 不过滤的话每条历史都会渲染全部客户端图标（实测 19 个里 16 个是空的）。
+                        if (clientServerIds.length > 0 || (skillsMap[clientId]?.length ?? 0) > 0) {
                             clientList.push(clientId as ClientType);
                         }
                     }
 
                     // 计算总 Skills 数（去重）
                     const allSkillNames = new Set<string>();
-                    for (const skillNames of Object.values(data.skills || {})) {
+                    for (const skillNames of Object.values(skillsMap)) {
                         if (skillNames) {
                             skillNames.forEach(name => allSkillNames.add(name));
                         }
@@ -304,7 +317,7 @@ export class HistoryManager {
                         timestamp: data.timestamp,
                         filename,
                         size: stat.size,
-                        serverCount,
+                        serverCount: allServerIds.size,
                         skillCount: allSkillNames.size,
                         clients: clientList,
                     });
@@ -541,19 +554,35 @@ export class HistoryManager {
                 ...Object.keys(targetSkillsMap),
                 ...Object.keys(prevSkillsMap),
             ]);
-            const skillClientChanges: { client: string; added: string[]; removed: string[] }[] = [];
+            const skillClientChanges: { client: string; added: string[]; removed: string[]; modified: string[] }[] = [];
             const aggSkillAdded = new Set<string>();
             const aggSkillRemoved = new Set<string>();
+            const aggSkillModified = new Set<string>();
+
+            // Skill 内容比较：仅当前后两条备份【都】采到该客户端的 skillContents 时才进行。
+            // 旧备份（P1-3 之前产生）无此字段，或某侧因自定义路径 / 读取失败而缺失时，
+            // 一律跳过——否则「字段缺失」会被误判成「内容已修改」，表现为满屏 ~modified。
+            const targetContents = (targetData.skillContents || {}) as Record<string, Record<string, string>>;
+            const prevContents = (prevData?.skillContents || {}) as Record<string, Record<string, string>>;
+
             for (const cid of allSkillClients) {
                 const prevSet = new Set(prevSkillsMap[cid] || []);
                 const targetSet = new Set(targetSkillsMap[cid] || []);
                 const added = [...targetSet].filter(n => !prevSet.has(n));
                 const removed = [...prevSet].filter(n => !targetSet.has(n));
-                if (added.length || removed.length) {
-                    skillClientChanges.push({client: cid, added, removed});
+
+                const prevC = prevContents[cid];
+                const targetC = targetContents[cid];
+                const modified = (prevC && targetC)
+                    ? [...targetSet].filter(n => prevSet.has(n) && prevC[n] !== targetC[n])
+                    : [];
+
+                if (added.length || removed.length || modified.length) {
+                    skillClientChanges.push({client: cid, added, removed, modified});
                 }
                 added.forEach(n => aggSkillAdded.add(n));
                 removed.forEach(n => aggSkillRemoved.add(n));
+                modified.forEach(n => aggSkillModified.add(n));
             }
 
             return {
@@ -564,6 +593,7 @@ export class HistoryManager {
                 backup: prevServers,
                 skillsAdded: [...aggSkillAdded],
                 skillsRemoved: [...aggSkillRemoved],
+                skillsModified: [...aggSkillModified],
                 clientChanges,
                 skillClientChanges,
             };

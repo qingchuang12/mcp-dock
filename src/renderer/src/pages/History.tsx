@@ -15,10 +15,16 @@ interface BackupInfo {
   timestamp: string;
   filename: string;
   size: number;
+  /** 去重后的 MCP server 数（同一 server 装在多个客户端只计 1 次） */
   serverCount: number;
+  /** 去重后的 Skill 数 */
   skillCount: number;
+  /** 仅含真正承载内容的客户端（有 MCP server 或 Skill），不含未安装的空配置客户端 */
   clients: AnyClientId[];
 }
+
+/** 列表单行最多展示的客户端图标数，超出部分折叠为「+N」 */
+const MAX_CLIENT_ICONS = 5;
 
 /** 差异行：新增(+)/移除(-)/修改(~) 统一配色 */
 function DiffChangeRow({id, kind, label}: { id: string; kind: 'added' | 'removed' | 'modified'; label?: string }) {
@@ -237,14 +243,11 @@ export default function History() {
                       <span className="text-[12px] text-[var(--color-muted2)]">
                         {backup.serverCount} {t('history.servers')}
                       </span>
-                      {(backup.skillCount || 0) > 0 && (
-                        <>
-                          <span className="text-[12px] text-[var(--color-muted)]">•</span>
-                          <span className="text-[12px] text-[var(--color-muted2)]">
-                            {backup.skillCount} {t('history.skills') || 'Skills'}
-                          </span>
-                        </>
-                      )}
+                      {/* 恒显示（含 0）：此前仅在 >0 时渲染，为 0 时整段消失，易被误读为「没统计 Skill」 */}
+                      <span className="text-[12px] text-[var(--color-muted)]">•</span>
+                      <span className="text-[12px] text-[var(--color-muted2)]">
+                        {backup.skillCount || 0} {t('history.skills') || 'Skills'}
+                      </span>
                       <span className="text-[12px] text-[var(--color-muted)]">•</span>
                       <span className="text-[12px] text-[var(--color-muted)]">
                         {formatSize(backup.size)}
@@ -252,10 +255,16 @@ export default function History() {
                       {backup.clients && backup.clients.length > 0 && (
                         <>
                           <span className="text-[12px] text-[var(--color-muted)]">•</span>
-                          <span className="text-[12px] text-[var(--color-muted)] flex items-center gap-1">
-                            {backup.clients.map(c => (
+                          <span className="text-[12px] text-[var(--color-muted)] flex items-center gap-1"
+                                title={backup.clients.join(', ')}>
+                            {backup.clients.slice(0, MAX_CLIENT_ICONS).map(c => (
                               <ClientIcon key={c} clientId={c} size={12} />
                             ))}
+                            {backup.clients.length > MAX_CLIENT_ICONS && (
+                              <span className="text-[12px] text-[var(--color-muted2)]">
+                                +{backup.clients.length - MAX_CLIENT_ICONS}
+                              </span>
+                            )}
                           </span>
                         </>
                       )}
@@ -324,7 +333,7 @@ export default function History() {
             </div>
 
             {/* Skills 变更统计 */}
-            {((selectedDiff.skillsAdded?.length || 0) > 0 || (selectedDiff.skillsRemoved?.length || 0) > 0) && (
+            {((selectedDiff.skillsAdded?.length || 0) > 0 || (selectedDiff.skillsRemoved?.length || 0) > 0 || (selectedDiff.skillsModified?.length || 0) > 0) && (
               <div>
                 <p className="text-[12px] text-[var(--color-muted)] mb-2">Skills</p>
                 <div className="flex gap-2 flex-wrap">
@@ -336,6 +345,11 @@ export default function History() {
                   {(selectedDiff.skillsRemoved?.length || 0) > 0 && (
                     <span className="px-2 py-0.5 rounded text-[12px] bg-[#ff3b30]/15 text-[#ff3b30]">
                       -{selectedDiff.skillsRemoved.length} {t('history.removed')}
+                    </span>
+                  )}
+                  {(selectedDiff.skillsModified?.length || 0) > 0 && (
+                    <span className="tag tag-warning">
+                      ~{selectedDiff.skillsModified.length} {t('history.modified')}
                     </span>
                   )}
                 </div>
@@ -382,7 +396,7 @@ export default function History() {
             )}
 
             {/* Skills 变更详情（按客户端展示） */}
-            {((selectedDiff.skillsAdded?.length || 0) > 0 || (selectedDiff.skillsRemoved?.length || 0) > 0) && (
+            {((selectedDiff.skillsAdded?.length || 0) > 0 || (selectedDiff.skillsRemoved?.length || 0) > 0 || (selectedDiff.skillsModified?.length || 0) > 0) && (
               selectedDiff.skillClientChanges && selectedDiff.skillClientChanges.length > 0 ? (
                 <div className="space-y-2 max-h-60 overflow-y-auto">
                   {selectedDiff.skillClientChanges.map((cc) => (
@@ -395,6 +409,9 @@ export default function History() {
                         {cc.added.map((name) => (
                           <DiffChangeRow key={`a-${name}`} id={name} kind="added" label="Skill" />
                         ))}
+                        {(cc.modified || []).map((name) => (
+                          <DiffChangeRow key={`m-${name}`} id={name} kind="modified" label="Skill" />
+                        ))}
                         {cc.removed.map((name) => (
                           <DiffChangeRow key={`r-${name}`} id={name} kind="removed" label="Skill" />
                         ))}
@@ -406,6 +423,9 @@ export default function History() {
                 <div className="space-y-1.5 max-h-40 overflow-y-auto">
                   {selectedDiff.skillsAdded?.map((name) => (
                     <DiffChangeRow key={name} id={name} kind="added" label="Skill" />
+                  ))}
+                  {selectedDiff.skillsModified?.map((name) => (
+                    <DiffChangeRow key={name} id={name} kind="modified" label="Skill" />
                   ))}
                   {selectedDiff.skillsRemoved?.map((name) => (
                     <DiffChangeRow key={name} id={name} kind="removed" label="Skill" />

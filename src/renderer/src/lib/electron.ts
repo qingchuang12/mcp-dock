@@ -73,8 +73,11 @@ export interface BackupInfo {
     timestamp: string;
     filename: string;
     size: number;
+    /** 去重后的 MCP server 数（同一 server 装在多个客户端只计 1 次） */
     serverCount: number;
+    /** 去重后的 Skill 数 */
     skillCount: number;
+    /** 仅含真正承载内容的客户端（有 MCP server 或 Skill），不含未安装的空配置客户端 */
     clients: AnyClientId[];
 }
 
@@ -86,10 +89,12 @@ export interface DiffResult {
     backup: any;
     skillsAdded: string[];
     skillsRemoved: string[];
+    /** 内容发生变更的 Skill 名；仅当前后两条备份都含 skillContents 时才可能有值 */
+    skillsModified: string[];
     /** 客户端级变更（按客户端分别比对，识别「从多客户端之一移除」等单客户端变更） */
     clientChanges?: { client: string; added: string[]; removed: string[]; modified: string[] }[];
-    /** Skills 客户端级变更 */
-    skillClientChanges?: { client: string; added: string[]; removed: string[] }[];
+    /** Skills 客户端级变更；modified 为「内容变更」（名字未变、SKILL.md 变了） */
+    skillClientChanges?: { client: string; added: string[]; removed: string[]; modified: string[] }[];
 }
 
 export type {ClientType, SkillClientType, ClientInfo, AnyClientId, CustomClientDef};
