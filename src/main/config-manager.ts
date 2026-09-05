@@ -1,7 +1,10 @@
 /**
  * 配置管理器（编排门面）
- * 负责读写多个 MCP 客户端的配置文件
- * 支持: Cursor, VS Code, Claude Code, Gemini CLI, Codex CLI, Windsurf, Zed, TRAE, Opencode
+ * 读写多个 MCP 客户端的配置文件
+ *
+ * 内置客户端清单统一维护在 ./config/types.ts 的 ALL_BUILTIN_CLIENTS：
+ * Cursor / VS Code / Claude Code / Gemini CLI / Codex CLI / Windsurf / Zed / TRAE 系列 /
+ * Kiro / Opencode / JetBrains / Antigravity / OpenClaw / CodeBuddy / WorkBuddy / Qoder / ZCode 等。
  *
  * 本文件为「编排门面」：类型/常量、路径探测、格式适配器、设置持久化均已下沉到
  * `./config/*` 子模块，此处仅保留 ConfigManager 类并委托给它们，对外 API 完全不变。
@@ -14,36 +17,31 @@ import {getCloudSyncStore} from './cloud-sync-store';
 import {resolveSkillsPath} from './client-paths';
 
 import {
-    McpServerConfig,
-    ClientConfig,
-    ClientType,
-    AnyClientId,
-    SkillClientType,
-    SKILL_SUPPORTED_CLIENTS,
     ALL_BUILTIN_CLIENTS,
+    AnyClientId,
+    ClientConfig,
     ClientInfo,
+    ClientType,
     CustomClientDef,
+    McpServerConfig,
+    SKILL_SUPPORTED_CLIENTS,
+    SkillClientType,
 } from './config/types';
 import {
-    getDefaultClientPaths,
-    getClientDisplayName,
+    findJetBrainsConfigPath,
     getClientAppPaths,
     getClientConfigMarkers,
+    getClientDisplayName,
+    getDefaultClientPaths,
     getEnhancedPathEnv,
-    findJetBrainsConfigPath,
 } from './config/client-probe';
 import {
+    defaultConfigForMissing,
+    reachesDefaultBranch,
     readClientConfig,
     writeClientConfig,
-    reachesDefaultBranch,
-    defaultConfigForMissing,
 } from './config/format-adapters';
-import {
-    writeFileAtomic,
-    loadUserSettingsFile,
-    assertSafeConfigPath,
-    UserSettings,
-} from './config/settings-store';
+import {assertSafeConfigPath, loadUserSettingsFile, UserSettings, writeFileAtomic,} from './config/settings-store';
 
 export * from './config/types';
 
@@ -372,10 +370,12 @@ export class ConfigManager {
             return this.clientsCache;
         }
 
-        const clients: (ClientType | string)[] = ['cursor', 'vscode', 'claude-code', 'gemini-cli', 'codex-cli', 'windsurf', 'zed', 'trae', 'trae-cn', 'marscode', 'kiro', 'opencode', 'jetbrains', 'antigravity', 'openclaw', 'codebuddy', 'workbuddy', 'qoder', 'cloud'];
+        // 内置客户端清单统一取自 ALL_BUILTIN_CLIENTS，避免每加一个客户端就要同步多处字面量数组。
+        // 'cloud' 是虚拟客户端（云同步暂存区），不在 ALL_BUILTIN_CLIENTS 内，单独追加在末尾。
+        const clients: AnyClientId[] = [...ALL_BUILTIN_CLIENTS, 'cloud'];
 
         // 并行检测所有客户端：原先串行 await 每个客户端的 isClientInstalled（其中 CLI 客户端
-        // 要走 where/which，最坏有 3s 超时），18 个客户端累计可达 1~2s，导致「我的库」打开明显卡顿。
+        // 要走 where/which，最坏有 3s 超时），全部客户端串行累计可达 1~2s，导致「我的库」打开明显卡顿。
         // 改为并发后，耗时约等于最慢单个客户端的检测时间。
         const results: ClientInfo[] = await Promise.all(clients.map(async (client): Promise<ClientInfo> => {
             const [installed, configExists] = await Promise.all([
@@ -385,11 +385,13 @@ export class ConfigManager {
 
             const supportsSkills = SKILL_SUPPORTED_CLIENTS.includes(client as SkillClientType);
 
-            // 「存在」判定简化为：对应配置文件是否存在。
-            // 有配置文件 -> 显示（已安装）；删掉配置文件 -> 不显示。
-            // 不依赖应用是否安装 / 是否含 server，纯粹以配置文件为准，符合用户对「客户端存在」的直觉。
-            // cloud 是虚拟客户端，仍按云同步是否激活判定。
-            const isInstalled = client === 'cloud' ? installed : configExists;
+            // 已安装判定合并「客户端本体探测」与「配置文件存在」两个信号（通用口径，非特例）：
+            // - 客户端装了但没配过 MCP（isClientInstalled=true、configExists=false）→ 应判已安装，
+            //   否则会出现「装了 ZCode 却显示未安装」这类反直觉结果；
+            // - 仅残留配置文件（isClientInstalled=false、configExists=true）→ 仍判已安装。
+            // UI 侧另有独立的 configExists 字段，可区分「已安装但未配置」。
+            // cloud 是虚拟客户端，installed 由云同步是否激活决定，不并入上面的探测逻辑。
+            const isInstalled = client === 'cloud' ? installed : (installed || configExists);
 
             return {
                 id: client,
@@ -545,32 +547,15 @@ export class ConfigManager {
         // 内置客户端 + 用户手动添加的自定义客户端（custom:<slug>），保证新增客户端也会被扫描。
         const customIds: string[] = (this.userSettings.customClients || []).map(c => c.id);
         const clients: AnyClientId[] = [
-            'cursor', 'vscode', 'claude-code', 'gemini-cli', 'codex-cli', 'windsurf', 'zed', 'trae', 'trae-cn', 'marscode', 'kiro', 'opencode', 'jetbrains', 'antigravity', 'openclaw', 'codebuddy', 'workbuddy', 'qoder', 'cloud',
+            ...ALL_BUILTIN_CLIENTS,
+            'cloud',
             ...customIds,
         ];
         const servers: Record<string, { config: McpServerConfig; clients: AnyClientId[] }> = {};
-        const byClient: Record<string, Record<string, McpServerConfig>> = {
-            cursor: {},
-            vscode: {},
-            'claude-code': {},
-            'gemini-cli': {},
-            'codex-cli': {},
-            windsurf: {},
-            zed: {},
-            trae: {},
-            'trae-cn': {},
-            marscode: {},
-            kiro: {},
-            opencode: {},
-            jetbrains: {},
-            antigravity: {},
-            openclaw: {},
-            codebuddy: {},
-            workbuddy: {},
-            qoder: {},
-            cloud: {},
-            ...Object.fromEntries(customIds.map(id => [id, {}])),
-        };
+        // 由 clients 派生，键集合与遍历范围永远一致，杜绝「列表加了新客户端、byClient 忘了补」的漏算
+        const byClient: Record<string, Record<string, McpServerConfig>> = Object.fromEntries(
+            clients.map(id => [id, {} as Record<string, McpServerConfig>])
+        );
 
         for (const client of clients) {
             try {

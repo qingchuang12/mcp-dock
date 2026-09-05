@@ -530,8 +530,12 @@ ipcMain.handle('skills:get-installed', async (_, client: SkillClientType) => {
 });
 
 // 获取所有客户端的已安装 Skills
+// 注入安装态：共享同一物理 Skills 目录的客户端（如 trae-cn 与 trae-solo-cn 共用 ~/.trae-cn/skills）
+// 技能只归属给其中实际已安装者，避免重复计数
 ipcMain.handle('skills:get-all-installed', async () => {
-    return skillsManager.getAllInstalledSkills();
+    const clients = await configManager.getAllClients();
+    const installed = clients.filter(c => c.installed).map(c => c.id as SkillClientType);
+    return skillsManager.getAllInstalledSkills(installed);
 });
 
 // 安装 Skill
@@ -718,9 +722,11 @@ ipcMain.handle('dialog:select-directory', async (_, defaultPath?: string) => {
     return {canceled: false, path: result.filePaths[0]};
 });
 
-// 获取本地 Skill 详情
+// 获取本地 Skill 详情（同样注入安装态做共享目录归属，见 skills:get-all-installed）
 ipcMain.handle('skills:get-local-detail', async (_, skillId: string) => {
-    return skillsManager.getLocalSkillDetail(skillId);
+    const clients = await configManager.getAllClients();
+    const installed = clients.filter(c => c.installed).map(c => c.id as SkillClientType);
+    return skillsManager.getLocalSkillDetail(skillId, installed);
 });
 
 // 远程 GitHub Registry skill 详情：复用 parseImportUrl 解析仓库并取回首个 Skill 的源 / SKILL.md

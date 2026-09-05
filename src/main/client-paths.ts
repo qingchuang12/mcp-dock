@@ -31,7 +31,13 @@ export function computeDefaultSkillsPaths(home: string = os.homedir()): Record<S
         codebuddy: path.join(home, '.codebuddy', 'skills'),
         workbuddy: path.join(home, '.workbuddy', 'skills'),
         qoder: path.join(home, '.qoder', 'skills'),
+        zcode: path.join(home, '.zcode', 'skills'),
         marscode: path.join(home, '.marscode', 'skills'),
+        // TRAE 系列：国际版 trae 走 ~/.trae/skills；CN 系（trae-cn / trae-solo-cn = TRAE SOLO CN / TRAE Work 桌面版）
+        // 共用 ~/.trae-cn/skills（官方文档 + 本机 ~/.trae-cn 实测）。依据 docs.trae.ai 与社区文档，非臆测。
+        trae: path.join(home, '.trae', 'skills'),
+        'trae-cn': path.join(home, '.trae-cn', 'skills'),
+        'trae-solo-cn': path.join(home, '.trae-cn', 'skills'),
         cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'skills'),
     };
 }

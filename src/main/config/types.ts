@@ -14,6 +14,11 @@ export interface McpServerConfig {
     url?: string;
     type?: 'stdio' | 'http' | 'streamable-http' | 'sse';
     headers?: Record<string, string>;
+    /**
+     * ZCode 专用：显式 false 表示在客户端内被停用，字段缺失即视为启用。
+     * 读写均原样透传——若读写时丢弃该字段，客户端内已停用的 Server 会被静默重新启用。
+     */
+    enable?: boolean;
 }
 
 export interface ClientConfig {
@@ -34,6 +39,7 @@ export type ClientType =
     | 'zed'
     | 'trae'
     | 'trae-cn'
+    | 'trae-solo-cn'
     | 'marscode'
     | 'kiro'
     | 'opencode'
@@ -43,6 +49,7 @@ export type ClientType =
     | 'codebuddy'
     | 'workbuddy'
     | 'qoder'
+    | 'zcode'
     | 'cloud';
 
 /** 任意客户端 id：内置 ClientType 或用户手动添加的 custom:<slug> */
@@ -59,17 +66,21 @@ export type SkillClientType =
     | 'codebuddy'
     | 'workbuddy'
     | 'qoder'
+    | 'zcode'
     | 'marscode'
+    | 'trae'
+    | 'trae-cn'
+    | 'trae-solo-cn'
     | 'cloud';
 
 // 客户端是否支持 Skills
-export const SKILL_SUPPORTED_CLIENTS: SkillClientType[] = ['cursor', 'claude-code', 'gemini-cli', 'codex-cli', 'opencode', 'agent-skills', 'codebuddy', 'workbuddy', 'qoder', 'marscode', 'cloud'];
+export const SKILL_SUPPORTED_CLIENTS: SkillClientType[] = ['cursor', 'claude-code', 'gemini-cli', 'codex-cli', 'opencode', 'agent-skills', 'codebuddy', 'workbuddy', 'qoder', 'zcode', 'marscode', 'trae', 'trae-cn', 'trae-solo-cn', 'cloud'];
 
 /** 所有内置客户端类型（单一来源：备份/遍历统一复用，避免硬编码遗漏，P1-3/P2-4）。'cloud' 为暂存区非真实配置，单独排除。 */
 export const ALL_BUILTIN_CLIENTS: ClientType[] = [
     'cursor', 'vscode', 'claude-code', 'gemini-cli', 'codex-cli', 'windsurf', 'zed',
-    'trae', 'trae-cn', 'marscode', 'kiro', 'opencode', 'jetbrains', 'antigravity',
-    'openclaw', 'codebuddy', 'workbuddy', 'qoder',
+    'trae', 'trae-cn', 'trae-solo-cn', 'marscode', 'kiro', 'opencode', 'jetbrains', 'antigravity',
+    'openclaw', 'codebuddy', 'workbuddy', 'qoder', 'zcode',
 ];
 
 // VS Code 使用 "servers" 键而非 "mcpServers"

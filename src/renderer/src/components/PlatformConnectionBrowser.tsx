@@ -30,7 +30,11 @@ const SKILL_CLIENTS = [
     'codebuddy',
     'workbuddy',
     'qoder',
+    'zcode',
     'marscode',
+    'trae',
+    'trae-cn',
+    'trae-solo-cn',
 ];
 
 export default function PlatformConnectionBrowser({

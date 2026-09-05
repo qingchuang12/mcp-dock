@@ -11,7 +11,7 @@ import {DiscoveredSkill, SkillsManager, SkillSourceMeta} from '../main/skills-ma
 
 // Mock electron 的 config-manager 依赖
 vi.mock('../main/config-manager', () => ({
-  SKILL_SUPPORTED_CLIENTS: ['cursor', 'claude-code', 'gemini-cli', 'codex-cli', 'opencode', 'agent-skills', 'codebuddy', 'workbuddy', 'qoder'],
+  SKILL_SUPPORTED_CLIENTS: ['cursor', 'claude-code', 'gemini-cli', 'codex-cli', 'opencode', 'agent-skills', 'codebuddy', 'workbuddy', 'qoder', 'zcode', 'marscode', 'trae', 'trae-cn', 'trae-solo-cn', 'cloud'],
 }));
 
 let manager: SkillsManager;
@@ -641,5 +641,81 @@ describe('fetchWithRetry', () => {
     await expect((manager as any).fetchWithRetry('https://example.com', 3, 10))
       .rejects.toThrow('Persistent failure');
     expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+});
+
+// ===================== 共享 Skills 目录去重 =====================
+// 场景：trae-cn 与 trae-solo-cn 共用 ~/.trae-cn/skills（产品 dataFolderName 相同），
+// 同一物理目录的技能只应归属给其中「实际已安装」的客户端，避免重复计数。
+
+describe('共享 Skills 目录去重（resolveScanGroups / getAllInstalledSkills）', () => {
+  /** 把 cursor 与 claude-code 指到同一物理目录，其余客户端各给独立目录 */
+  const stubSharedPaths = (sharedDir: string) => {
+    (manager as any).getSkillsPath = (client: string) =>
+      (client === 'cursor' || client === 'claude-code')
+        ? sharedDir
+        : path.join(testDir, `skills-${client}`);
+  };
+
+  const makeSharedSkill = async (sharedDir: string) => {
+    await fs.mkdir(path.join(sharedDir, 'demo'), {recursive: true});
+    await fs.writeFile(
+      path.join(sharedDir, 'demo', 'SKILL.md'),
+      '---\nname: demo\ndescription: dedup test\n---\n# demo'
+    );
+  };
+
+  it('只装其中一个时，共享目录技能不归属给未安装客户端', async () => {
+    const shared = path.join(testDir, 'shared-only-one');
+    await makeSharedSkill(shared);
+    stubSharedPaths(shared);
+
+    const result = await manager.getAllInstalledSkills(['claude-code']);
+    expect(result.byClient.cursor).toEqual([]);
+    expect(result.byClient['claude-code'].map(s => s.name)).toContain('demo');
+    expect(result.skills['demo'].clients).toEqual(['claude-code']);
+  });
+
+  it('两个都安装时共享目录技能归属双方（技能确实同时生效）', async () => {
+    const shared = path.join(testDir, 'shared-both');
+    await makeSharedSkill(shared);
+    stubSharedPaths(shared);
+
+    const result = await manager.getAllInstalledSkills(['cursor', 'claude-code']);
+    expect(result.skills['demo'].clients).toEqual(['cursor', 'claude-code']);
+  });
+
+  it('未注入安装态时保持历史行为（归属组内全部成员）', async () => {
+    const shared = path.join(testDir, 'shared-legacy');
+    await makeSharedSkill(shared);
+    stubSharedPaths(shared);
+
+    const result = await manager.getAllInstalledSkills();
+    expect(result.skills['demo'].clients).toEqual(['cursor', 'claude-code']);
+  });
+
+  it('resolveScanGroups：同目录客户端合组，组内无已安装者回退为全部成员', () => {
+    stubSharedPaths(path.join(testDir, 'shared-groups'));
+    const groups = (manager as any).resolveScanGroups(['claude-code']) as
+      { clients: string[]; owners: string[] }[];
+
+    const sharedGroup = groups.find(g => g.clients.length === 2)!;
+    expect(sharedGroup.clients).toEqual(['cursor', 'claude-code']);
+    expect(sharedGroup.owners).toEqual(['claude-code']);
+
+    // 未注入安装态 → owners === clients
+    const legacy = (manager as any).resolveScanGroups() as { clients: string[]; owners: string[] }[];
+    const legacyShared = legacy.find(g => g.clients.length === 2)!;
+    expect(legacyShared.owners).toEqual(legacyShared.clients);
+  });
+
+  it('getLocalSkillDetail：共享目录不再把未安装客户端计入 clients', async () => {
+    const shared = path.join(testDir, 'shared-detail');
+    await makeSharedSkill(shared);
+    stubSharedPaths(shared);
+
+    const detail = await manager.getLocalSkillDetail('demo', ['claude-code']);
+    expect(detail?.found).toBe(true);
+    expect(detail?.clients).toEqual(['claude-code']);
   });
 });

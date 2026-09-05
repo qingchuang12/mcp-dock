@@ -16,6 +16,7 @@ describe('computeDefaultSkillsPaths', () => {
         expect(paths.codebuddy).toBe(path.join(HOME, '.codebuddy', 'skills'));
         expect(paths.workbuddy).toBe(path.join(HOME, '.workbuddy', 'skills'));
         expect(paths.qoder).toBe(path.join(HOME, '.qoder', 'skills'));
+        expect(paths.zcode).toBe(path.join(HOME, '.zcode', 'skills'));
         expect(paths.marscode).toBe(path.join(HOME, '.marscode', 'skills'));
         expect(paths.cloud).toBe(path.join(HOME, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'skills'));
     });

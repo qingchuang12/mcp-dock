@@ -7,7 +7,6 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import {ClientType, ConfigManager, SKILL_SUPPORTED_CLIENTS, SkillClientType} from './config-manager';
-import {CLOUD_ROOT_DIR} from '../shared/cloud-sync-constants';
 
 export interface BackupInfo {
     timestamp: string;
@@ -113,22 +112,7 @@ export class HistoryManager {
      * 读取指定客户端各已安装 Skill 的 SKILL.md 内容（用于回滚快照，P1-3）
      */
     private async getInstalledSkillContents(client: SkillClientType): Promise<Record<string, string>> {
-        const home = os.homedir();
-        const skillsPaths: Record<SkillClientType, string> = {
-            cursor: path.join(home, '.cursor', 'skills'),
-            'claude-code': path.join(home, '.claude', 'skills'),
-            'gemini-cli': path.join(home, '.gemini', 'skills'),
-            'codex-cli': path.join(home, '.codex', 'skills'),
-            opencode: path.join(home, '.config', 'opencode', 'skills'),
-            'agent-skills': path.join(home, '.agents', 'skills'),
-            codebuddy: path.join(home, '.codebuddy', 'skills'),
-            workbuddy: path.join(home, '.workbuddy', 'skills'),
-            qoder: path.join(home, '.qoder', 'skills'),
-            marscode: path.join(home, '.marscode', 'skills'),
-            cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'skills'),
-        };
-
-        const skillsPath = skillsPaths[client];
+        const skillsPath = this.configManager.getSkillsPath(client);
         const result: Record<string, string> = {};
         try {
             const entries = await fs.readdir(skillsPath, {withFileTypes: true});
@@ -376,23 +360,9 @@ export class HistoryManager {
     /**
      * 获取备份与当前配置的差异
      */
-    /** 客户端对应的本机 Skills 目录（与 getInstalledSkillNames 保持一致） */
+    /** 客户端对应的本机 Skills 目录（单一来源：config-manager.getSkillsPath，含用户自定义路径） */
     private skillPathFor(client: SkillClientType): string {
-        const home = os.homedir();
-        const skillsPaths: Record<SkillClientType, string> = {
-            cursor: path.join(home, '.cursor', 'skills'),
-            'claude-code': path.join(home, '.claude', 'skills'),
-            'gemini-cli': path.join(home, '.gemini', 'skills'),
-            'codex-cli': path.join(home, '.codex', 'skills'),
-            opencode: path.join(home, '.config', 'opencode', 'skills'),
-            'agent-skills': path.join(home, '.agents', 'skills'),
-            codebuddy: path.join(home, '.codebuddy', 'skills'),
-            workbuddy: path.join(home, '.workbuddy', 'skills'),
-            qoder: path.join(home, '.qoder', 'skills'),
-            marscode: path.join(home, '.marscode', 'skills'),
-            cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'skills'),
-        };
-        return skillsPaths[client];
+        return this.configManager.getSkillsPath(client);
     }
 
     /**

@@ -28,6 +28,8 @@ export function getDefaultClientPaths(home: string, platform: NodeJS.Platform): 
             zed: path.join(home, '.config', 'zed', 'settings.json'),
             trae: path.join(home, 'Library', 'Application Support', 'Trae', 'User', 'mcp.json'),
             'trae-cn': path.join(home, 'Library', 'Application Support', 'Trae CN', 'User', 'mcp.json'),
+            // TRAE SOLO CN（TraeWork 桌面端）：VS Code fork，MCP 配置走标准 User/mcp.json
+            'trae-solo-cn': path.join(home, 'Library', 'Application Support', 'TRAE SOLO CN', 'User', 'mcp.json'),
             marscode: path.join(home, '.marscode', 'IDEA.mcp.config.json'),
             kiro: path.join(home, '.kiro', 'settings', 'mcp.json'),
             opencode: path.join(home, '.config', 'opencode', 'opencode.json'),
@@ -37,6 +39,8 @@ export function getDefaultClientPaths(home: string, platform: NodeJS.Platform): 
             codebuddy: path.join(home, '.codebuddy', 'mcp.json'),
             workbuddy: path.join(home, '.workbuddy', 'mcp.json'),
             qoder: path.join(home, '.qoder', 'mcp.json'),
+            // ZCode 用户级配置位于 .zcode/cli/ 下（工作区级才是 .zcode/config.json，本项目只管用户级）
+            zcode: path.join(home, '.zcode', 'cli', 'config.json'),
             cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'mcp', 'mcp.json'),
         };
     } else if (platform === 'win32') {
@@ -50,6 +54,8 @@ export function getDefaultClientPaths(home: string, platform: NodeJS.Platform): 
             zed: path.join(home, 'AppData', 'Roaming', 'Zed', 'settings.json'),
             trae: path.join(home, 'AppData', 'Roaming', 'Trae', 'User', 'mcp.json'),
             'trae-cn': path.join(home, 'AppData', 'Roaming', 'Trae CN', 'User', 'mcp.json'),
+            // TRAE SOLO CN（TraeWork 桌面端）：VS Code fork，MCP 配置走标准 User/mcp.json
+            'trae-solo-cn': path.join(home, 'AppData', 'Roaming', 'TRAE SOLO CN', 'User', 'mcp.json'),
             marscode: path.join(home, '.marscode', 'IDEA.mcp.config.json'),
             kiro: path.join(home, '.kiro', 'settings', 'mcp.json'),
             opencode: path.join(home, '.config', 'opencode', 'opencode.json'),
@@ -59,6 +65,8 @@ export function getDefaultClientPaths(home: string, platform: NodeJS.Platform): 
             codebuddy: path.join(home, '.codebuddy', 'mcp.json'),
             workbuddy: path.join(home, '.workbuddy', 'mcp.json'),
             qoder: path.join(home, '.qoder', 'mcp.json'),
+            // ZCode 用户级配置位于 .zcode/cli/ 下（工作区级才是 .zcode/config.json，本项目只管用户级）
+            zcode: path.join(home, '.zcode', 'cli', 'config.json'),
             cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'mcp', 'mcp.json'),
         };
     } else {
@@ -72,6 +80,8 @@ export function getDefaultClientPaths(home: string, platform: NodeJS.Platform): 
             zed: path.join(home, '.config', 'zed', 'settings.json'),
             trae: path.join(home, '.config', 'Trae', 'User', 'mcp.json'),
             'trae-cn': path.join(home, '.config', 'Trae CN', 'User', 'mcp.json'),
+            // TRAE SOLO CN（TraeWork 桌面端）：VS Code fork，MCP 配置走标准 User/mcp.json
+            'trae-solo-cn': path.join(home, '.config', 'TRAE SOLO CN', 'User', 'mcp.json'),
             marscode: path.join(home, '.marscode', 'IDEA.mcp.config.json'),
             kiro: path.join(home, '.kiro', 'settings', 'mcp.json'),
             opencode: path.join(home, '.config', 'opencode', 'opencode.json'),
@@ -81,6 +91,8 @@ export function getDefaultClientPaths(home: string, platform: NodeJS.Platform): 
             codebuddy: path.join(home, '.codebuddy', 'mcp.json'),
             workbuddy: path.join(home, '.workbuddy', 'mcp.json'),
             qoder: path.join(home, '.qoder', 'mcp.json'),
+            // ZCode 用户级配置位于 .zcode/cli/ 下（工作区级才是 .zcode/config.json，本项目只管用户级）
+            zcode: path.join(home, '.zcode', 'cli', 'config.json'),
             cloud: path.join(home, '.ai-tools', 'cloud', CLOUD_ROOT_DIR, 'mcp', 'mcp.json'),
         };
     }
@@ -100,6 +112,7 @@ export function getClientDisplayName(client: AnyClientId): string {
         zed: 'Zed',
         trae: 'TRAE',
         'trae-cn': 'TRAE CN',
+        'trae-solo-cn': 'TRAE SOLO CN',
         marscode: 'TRAE Plugin',
         kiro: 'Kiro',
         opencode: 'Opencode',
@@ -109,6 +122,7 @@ export function getClientDisplayName(client: AnyClientId): string {
         codebuddy: 'CodeBuddy',
         workbuddy: 'WorkBuddy',
         qoder: 'Qoder',
+        zcode: 'ZCode',
         cloud: '云端存储',
     };
     return names[client] || (typeof client === 'string' ? client.replace(/^custom:/, '') : 'Unknown Client');
@@ -136,6 +150,7 @@ export function getClientAppPaths(client: AnyClientId, platform: NodeJS.Platform
         zed: ['/Applications/Zed.app', path.join(home, 'Applications', 'Zed.app')],
         trae: ['/Applications/Trae.app', path.join(home, 'Applications', 'Trae.app'), '/Applications/TRAE.app', path.join(home, 'Applications', 'TRAE.app')],
         'trae-cn': ['/Applications/Trae CN.app', path.join(home, 'Applications', 'Trae CN.app')],
+        'trae-solo-cn': ['/Applications/TRAE SOLO CN.app', path.join(home, 'Applications', 'TRAE SOLO CN.app')],
         marscode: [],
         kiro: ['/Applications/Kiro.app', path.join(home, 'Applications', 'Kiro.app')],
         opencode: ['/usr/local/bin/opencode', path.join(home, '.local', 'bin', 'opencode'), '/opt/homebrew/bin/opencode'],
@@ -144,6 +159,13 @@ export function getClientAppPaths(client: AnyClientId, platform: NodeJS.Platform
         codebuddy: ['/Applications/CodeBuddy.app', path.join(home, 'Applications', 'CodeBuddy.app')],
         workbuddy: ['/Applications/WorkBuddy.app', path.join(home, 'Applications', 'WorkBuddy.app')],
         qoder: ['/Applications/Qoder.app', path.join(home, 'Applications', 'Qoder.app')],
+        zcode: [
+            '/Applications/ZCode.app',
+            path.join(home, 'Applications', 'ZCode.app'),
+            '/usr/local/bin/zcode',
+            path.join(home, '.local', 'bin', 'zcode'),
+            path.join(home, '.zcode', 'cli'),
+        ],
         cloud: [], // 虚拟客户端：可用性由云同步配置决定，不做文件探测
         jetbrains: [
             '/Applications/IntelliJ IDEA.app',
@@ -199,6 +221,10 @@ export function getClientAppPaths(client: AnyClientId, platform: NodeJS.Platform
             path.join(home, 'AppData', 'Local', 'Programs', 'trae-cn', 'TRAE CN.exe'),
             path.join(home, 'AppData', 'Local', 'Trae CN', 'Trae CN.exe'),
         ],
+        'trae-solo-cn': [
+            path.join(home, 'AppData', 'Local', 'Programs', 'TRAE SOLO CN', 'TRAE SOLO CN.exe'),
+            path.join(home, 'AppData', 'Local', 'TRAE SOLO CN', 'TRAE SOLO CN.exe'),
+        ],
         marscode: [],
         kiro: [
             path.join(home, 'AppData', 'Local', 'Programs', 'Kiro', 'Kiro.exe'),
@@ -230,6 +256,12 @@ export function getClientAppPaths(client: AnyClientId, platform: NodeJS.Platform
             path.join(home, 'AppData', 'Local', 'Programs', 'Qoder', 'Qoder.exe'),
             path.join(home, 'AppData', 'Local', 'Qoder', 'Qoder.exe'),
             path.join(home, '.qoder', 'bin', 'qoder.exe'),
+        ],
+        zcode: [
+            path.join(home, 'AppData', 'Local', 'Programs', 'ZCode', 'ZCode.exe'),
+            path.join(home, 'AppData', 'Local', 'ZCode', 'ZCode.exe'),
+            path.join(home, 'AppData', 'Roaming', 'npm', 'zcode.cmd'),
+            path.join(home, '.zcode', 'cli'),
         ],
         cloud: [],
         jetbrains: [
@@ -289,6 +321,11 @@ export function getClientAppPaths(client: AnyClientId, platform: NodeJS.Platform
             '/usr/local/bin/trae-cn',
             '/opt/Trae CN/trae-cn',
         ],
+        'trae-solo-cn': [
+            '/usr/bin/trae-solo-cn',
+            '/usr/local/bin/trae-solo-cn',
+            '/opt/TRAE SOLO CN/trae-solo-cn',
+        ],
         marscode: [],
         kiro: [
             '/usr/bin/kiro',
@@ -327,6 +364,12 @@ export function getClientAppPaths(client: AnyClientId, platform: NodeJS.Platform
             path.join(home, '.local', 'bin', 'qoder'),
             path.join(home, '.qoder', 'bin', 'qoder'),
         ],
+        zcode: [
+            '/usr/bin/zcode',
+            '/usr/local/bin/zcode',
+            path.join(home, '.local', 'bin', 'zcode'),
+            path.join(home, '.zcode', 'cli'),
+        ],
         cloud: [],
         jetbrains: [
             path.join(home, '.local', 'share', 'JetBrains', 'Toolbox'),
@@ -360,6 +403,9 @@ export function getClientConfigMarkers(client: AnyClientId): string[] {
         ],
         qoder: [
             path.join(home, '.qoder'),
+        ],
+        zcode: [
+            path.join(home, '.zcode'),
         ],
         openclaw: [
             path.join(home, '.openclaw'),

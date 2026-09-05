@@ -27,7 +27,7 @@
 
 - **MCP Store** - Browse and search 8500+ MCP Servers from Official Registry and Smithery
 - **Skills Store** - Discover 4400+ AI Skills for Cursor, Claude Code, Gemini CLI, Codex CLI, Opencode, and more
-- **One-Click Install** - Auto-configure to Cursor, VS Code, Claude Code, Gemini CLI, Codex CLI, Windsurf, Zed, TRAE, TRAE CN, TRAE Plugin (MarsCode), Kiro, Opencode, JetBrains, Antigravity, OpenClaw, CodeBuddy, WorkBuddy, Qoder, Cloud
+- **One-Click Install** - Auto-configure to Cursor, VS Code, Claude Code, Gemini CLI, Codex CLI, Windsurf, Zed, TRAE, TRAE CN, TRAE SOLO CN (TraeWork), TRAE Plugin (MarsCode), Kiro, Opencode, JetBrains, Antigravity, OpenClaw, CodeBuddy, WorkBuddy, Qoder, ZCode, Cloud
 - **Agent Skills Standard** - Support for `~/.agents/skills/` unified standard ([skills.sh](https://skills.sh/))
 - **MCP Inspector** - Interactive debugging tool for testing MCP Server tools
 - **Config Management** - Unified management of MCP configurations across all clients
@@ -82,6 +82,7 @@ brew upgrade --cask mcp-dock
 | Zed | Supported |
 | TRAE | Supported |
 | TRAE CN | Supported |
+| TRAE SOLO CN (TraeWork) | Supported |
 | TRAE Plugin (MarsCode, `~/.marscode`) | Supported |
 | Kiro | Supported |
 | Opencode | Supported |
@@ -91,6 +92,7 @@ brew upgrade --cask mcp-dock
 | CodeBuddy | Supported |
 | WorkBuddy | Supported |
 | Qoder | Supported |
+| ZCode | Supported |
 | Cloud (云端存储) | Supported |
 
 ### Skills Clients

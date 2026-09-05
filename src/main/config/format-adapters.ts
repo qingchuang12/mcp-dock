@@ -8,12 +8,7 @@
 
 import * as jsonc from 'jsonc-parser';
 import * as TOML from 'smol-toml';
-import type {
-    AnyClientId,
-    ClientConfig,
-    ClientType,
-    McpServerConfig,
-} from './types';
+import type {AnyClientId, ClientConfig, ClientType, McpServerConfig,} from './types';
 import {SERVERS_KEY_CLIENTS} from './types';
 
 /**
@@ -33,7 +28,7 @@ export function defaultConfigForMissing(client: AnyClientId): ClientConfig {
     if (client === 'zed') {
         return {mcpServers: {}, context_servers: {}};
     }
-    if (client === 'opencode' || client === 'openclaw') {
+    if (client === 'opencode' || client === 'openclaw' || client === 'zcode') {
         return {mcpServers: {}};
     }
     if (SERVERS_KEY_CLIENTS.includes(client as ClientType)) {
@@ -52,6 +47,7 @@ export function reachesDefaultBranch(client: AnyClientId): boolean {
         || client === 'codex-cli'
         || client === 'openclaw'
         || client === 'opencode'
+        || client === 'zcode'
         || client === 'claude-code'
         || client === 'zed'
         || SERVERS_KEY_CLIENTS.includes(client as ClientType)
@@ -110,6 +106,35 @@ export function readClientConfig(client: AnyClientId, content: string): ClientCo
         return {mcpServers, ...config};
     }
 
+    // ZCode：配置挂在 mcp.servers 下（与 openclaw 同形），另带 enable 启停标记需透传
+    if (client === 'zcode') {
+        const config = jsonc.parse(content);
+        const rawServers = config.mcp?.servers || {};
+        const mcpServers: Record<string, McpServerConfig> = {};
+        for (const [name, def] of Object.entries(rawServers)) {
+            const d = def as Record<string, any>;
+            // enable 只保留显式 false——缺失即启用，写回时补 true 会给客户端配置平添噪声
+            const enable = d.enable === false ? {enable: false} : {};
+            if (d.url) {
+                mcpServers[name] = {
+                    url: d.url,
+                    type: d.type || 'http',
+                    headers: d.headers || {},
+                    ...enable,
+                };
+            } else if (d.command) {
+                mcpServers[name] = {
+                    command: d.command,
+                    args: d.args || [],
+                    env: d.env || {},
+                    ...(d.cwd ? {cwd: d.cwd} : {}),
+                    ...enable,
+                };
+            }
+        }
+        return {mcpServers, ...config};
+    }
+
     if (client === 'opencode') {
         const config = jsonc.parse(content);
         const rawMcp = config.mcp || {};
@@ -158,7 +183,7 @@ export function readClientConfig(client: AnyClientId, content: string): ClientCo
 /**
  * 将 ClientConfig 序列化为待写入的配置文本。
  * 对应 ConfigManager.writeConfig 的各分支（jetbrains / codex-cli / openclaw /
- * opencode / claude-code+zed / servers-key / 默认），行为与原文逐字一致。
+ * zcode / opencode / claude-code+zed / servers-key / 默认），行为与原文逐字一致。
  * existingContent 为「已读取到的现有文件内容」（文件不存在时由调用方传入 '{}'）。
  */
 export function writeClientConfig(client: AnyClientId, config: ClientConfig, existingContent: string): string {
@@ -214,6 +239,36 @@ export function writeClientConfig(client: AnyClientId, config: ClientConfig, exi
         }
 
         const edits = jsonc.modify(existingContent, ['mcp', 'servers'], openclawServers, {
+            formattingOptions: {tabSize: 2, insertSpaces: true}
+        });
+        return jsonc.applyEdits(existingContent, edits);
+    }
+
+    // ZCode：同样写 mcp.servers，但保留 env（openclaw 分支不写 env，勿照抄）与 enable 标记
+    if (client === 'zcode') {
+        const mcpServers = config.mcpServers || {};
+        const zcodeServers: Record<string, any> = {};
+        for (const [name, def] of Object.entries(mcpServers)) {
+            const enable = def.enable === false ? {enable: false} : {};
+            if (def.url) {
+                zcodeServers[name] = {
+                    url: def.url,
+                    type: def.type || 'http',
+                    ...(def.headers && Object.keys(def.headers).length > 0 ? {headers: def.headers} : {}),
+                    ...enable,
+                };
+            } else {
+                zcodeServers[name] = {
+                    command: def.command,
+                    ...(def.args && def.args.length > 0 ? {args: def.args} : {}),
+                    ...(def.env && Object.keys(def.env).length > 0 ? {env: def.env} : {}),
+                    ...(def.cwd ? {cwd: def.cwd} : {}),
+                    ...enable,
+                };
+            }
+        }
+
+        const edits = jsonc.modify(existingContent, ['mcp', 'servers'], zcodeServers, {
             formattingOptions: {tabSize: 2, insertSpaces: true}
         });
         return jsonc.applyEdits(existingContent, edits);

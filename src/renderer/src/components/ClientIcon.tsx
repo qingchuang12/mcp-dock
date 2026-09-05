@@ -28,6 +28,7 @@ const ClientIconMap: Partial<Record<ClientType | SkillClientType, string>> = {
     zed: zedIcon,
     trae: traeIcon,
     'trae-cn': traeIcon,
+    'trae-solo-cn': traeIcon,
     marscode: traeIcon,
     vscode: vscodeIcon,
     opencode: opencodeIcon,
@@ -43,7 +44,7 @@ const ClientIconMap: Partial<Record<ClientType | SkillClientType, string>> = {
  * 名称含 jetbrains / codebuddy 等时仍会落到兜底图标。
  * codebuddy 在 ClientIconMap 中显式置为 undefined 以便走代码分支，故此处去重后再合并。
  */
-const CODE_DRAWN_KEYS = ['jetbrains', 'agent-skills', 'codebuddy', 'workbuddy', 'qoder', 'cloud'];
+const CODE_DRAWN_KEYS = ['jetbrains', 'agent-skills', 'codebuddy', 'workbuddy', 'qoder', 'zcode', 'cloud'];
 
 /** 自定义客户端按名称关键字匹配图标时的候选 key（单一来源：图片键 + 代码绘制键） */
 const ICON_MATCH_CANDIDATES = Array.from(new Set([...Object.keys(ClientIconMap), ...CODE_DRAWN_KEYS]));
@@ -157,6 +158,23 @@ export default function ClientIcon({
             style={{fontSize: size * 0.42}}
         >
           Q
+        </span>
+            </div>
+        );
+    }
+
+    // ZCode: 靛蓝渐变方块 + "Z" 文字
+    if (iconKey === 'zcode') {
+        return (
+            <div
+                className={`inline-flex items-center justify-center rounded bg-gradient-to-br from-[#1e3a8a] to-[#4338ca] ${className}`}
+                style={{width: size, height: size}}
+            >
+        <span
+            className="font-bold text-[var(--color-text)] leading-none"
+            style={{fontSize: size * 0.46}}
+        >
+          Z
         </span>
             </div>
         );

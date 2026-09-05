@@ -14,40 +14,41 @@ import {execFile} from 'child_process';
 import {SKILL_SUPPORTED_CLIENTS, SkillClientType} from './config-manager';
 import {resolveSkillsPath} from './client-paths';
 import {extractZipEntries} from './archive';
-export {extractZipEntries} from './archive';
-export * from './github';
 import {
-    githubParseGitHubUrl,
-    getDefaultBranch,
-    findSkillDirs,
-    resolveFilesViaRaw,
     fetchWithTimeout as githubFetchWithTimeout,
+    findSkillDirs,
+    getDefaultBranch,
+    githubParseGitHubUrl,
     listDirFiles as githubListDirFiles,
+    resolveFilesViaRaw,
 } from './github';
 
 import {
     DiscoveredSkill,
     ImportParseResult,
-    SkillSourceMeta,
     InstalledSkill,
-    SkillInstallResult,
-    SkillSyncResult,
     SkillBatchSyncResult,
     SkillCloudConflict,
+    SkillInstallResult,
+    SkillSourceMeta,
     SkillsSettings,
+    SkillSyncResult,
 } from './skills/types';
-export * from './skills/types';
 import {
-    sanitizeSkillName,
     assertSafeSkillName,
     assertWithin,
-    dirByteSize,
-    findSkillRootDir,
     copyDir,
+    dirByteSize,
     findSkillMdInDir,
+    findSkillRootDir,
+    sanitizeSkillName,
 } from './skills/local-store';
-import {parseSkillMd, buildSkillMd} from './skills/html-parse';
+import {buildSkillMd, parseSkillMd} from './skills/html-parse';
 import {detectCloudConflicts} from './skills/conflict';
+
+export {extractZipEntries} from './archive';
+export * from './github';
+export * from './skills/types';
 
 export class SkillsManager {
     private settingsPath: string;
@@ -100,7 +101,13 @@ export class SkillsManager {
      */
     async getInstalledSkills(client: SkillClientType): Promise<InstalledSkill[]> {
         await this.loadSettings();
-        const skillsPath = this.getSkillsPath(client);
+        return this.scanSkillsDir(this.getSkillsPath(client));
+    }
+
+    /**
+     * 扫描单个 Skills 目录（物理目录级，不含客户端归属逻辑）
+     */
+    private async scanSkillsDir(skillsPath: string): Promise<InstalledSkill[]> {
         const skills: InstalledSkill[] = [];
 
         try {
@@ -139,6 +146,45 @@ export class SkillsManager {
         }
 
         return skills;
+    }
+
+    /**
+     * 目录键规范化：Windows 大小写不敏感且分隔符可混用，统一 resolve + 小写后比较，
+     * 避免同一物理目录因写法差异被拆成两组。
+     */
+    private normalizeDirKey(dir: string): string {
+        const resolved = path.resolve(dir);
+        return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    }
+
+    /**
+     * 共享目录归属分组：多个客户端 id 可能解析到同一物理 Skills 目录
+     * （如 trae-cn 与 trae-solo-cn 共用 ~/.trae-cn/skills，由产品 dataFolderName 决定）。
+     * 同一物理目录只扫描一次；归属（owners）取组内「已安装」的客户端——
+     * 只装其中一个时技能不会重复计入未安装的那个，两个都装了则都归属（技能确实同时生效）。
+     * installedClients 缺省（未注入安装态）或组内无已安装客户端时回退为全部成员，保持历史行为。
+     */
+    private resolveScanGroups(installedClients?: SkillClientType[]): { clients: SkillClientType[]; owners: SkillClientType[] }[] {
+        const groups = new Map<string, SkillClientType[]>();
+
+        for (const client of SKILL_SUPPORTED_CLIENTS) {
+            const dir = this.getSkillsPath(client);
+            if (!dir) continue;
+            const key = this.normalizeDirKey(dir);
+            const members = groups.get(key);
+            if (members) {
+                members.push(client);
+            } else {
+                groups.set(key, [client]);
+            }
+        }
+
+        return Array.from(groups.values(), clients => {
+            const owners = installedClients
+                ? clients.filter(c => installedClients.includes(c))
+                : clients;
+            return {clients, owners: owners.length > 0 ? owners : clients};
+        });
     }
 
     /**
@@ -871,35 +917,35 @@ export class SkillsManager {
 
     /**
      * 获取所有客户端的已安装 Skills
+     * @param installedClients 已安装客户端集合（IPC 层由 ConfigManager 注入）。
+     *   共享同一物理 Skills 目录的客户端只归属给其中已安装者，避免同一批技能重复计入多个客户端。
      */
-    async getAllInstalledSkills(): Promise<{
+    async getAllInstalledSkills(installedClients?: SkillClientType[]): Promise<{
         skills: Record<string, { name: string; clients: SkillClientType[] }>;
         byClient: Record<SkillClientType, InstalledSkill[]>;
     }> {
+        await this.loadSettings();
         const skills: Record<string, { name: string; clients: SkillClientType[] }> = {};
-        const byClient: Record<SkillClientType, InstalledSkill[]> = {
-            cursor: [],
-            'claude-code': [],
-            'gemini-cli': [],
-            'codex-cli': [],
-            opencode: [],
-            'agent-skills': [],
-            codebuddy: [],
-            workbuddy: [],
-            qoder: [],
-            marscode: [],
-            cloud: [],
-        };
+        // 由 SKILL_SUPPORTED_CLIENTS 派生，键集合与 SKILL_SUPPORTED_CLIENTS 始终一致
+        const byClient = Object.fromEntries(
+            SKILL_SUPPORTED_CLIENTS.map(c => [c, [] as InstalledSkill[]])
+        ) as Record<SkillClientType, InstalledSkill[]>;
 
-        for (const client of SKILL_SUPPORTED_CLIENTS) {
-            const clientSkills = await this.getInstalledSkills(client);
-            byClient[client] = clientSkills;
+        for (const group of this.resolveScanGroups(installedClients)) {
+            // 同组共享同一物理目录：任取组内首个客户端的目录扫描一次
+            const clientSkills = await this.scanSkillsDir(this.getSkillsPath(group.clients[0]));
+
+            for (const client of group.owners) {
+                byClient[client] = clientSkills;
+            }
 
             for (const skill of clientSkills) {
-                if (skills[skill.name]) {
-                    skills[skill.name].clients.push(client);
-                } else {
-                    skills[skill.name] = {name: skill.name, clients: [client]};
+                for (const client of group.owners) {
+                    if (skills[skill.name]) {
+                        skills[skill.name].clients.push(client);
+                    } else {
+                        skills[skill.name] = {name: skill.name, clients: [client]};
+                    }
                 }
             }
         }
@@ -910,7 +956,7 @@ export class SkillsManager {
     /**
      * 获取本地已安装 Skill 的详情（用于详情页 fallback）
      */
-    async getLocalSkillDetail(skillId: string): Promise<{
+    async getLocalSkillDetail(skillId: string, installedClients?: SkillClientType[]): Promise<{
         found: boolean;
         name: string;
         skillMdContent: string;
@@ -926,15 +972,16 @@ export class SkillsManager {
         let skillMdContent = '';
         let fileList: string[] = [];
 
-        for (const client of SKILL_SUPPORTED_CLIENTS) {
-            const skillPath = path.join(this.getSkillsPath(client), skillName);
+        for (const group of this.resolveScanGroups(installedClients)) {
+            // 同组共享同一物理目录：按组内首个客户端的路径探测一次，命中归属给 owners
+            const skillPath = path.join(this.getSkillsPath(group.clients[0]), skillName);
             try {
                 await fs.access(skillPath);
             } catch {
                 continue;
             }
 
-            foundClients.push(client);
+            foundClients.push(...group.owners);
 
             if (!bestSource) {
                 const sourcePath = path.join(skillPath, '.source.json');

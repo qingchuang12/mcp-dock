@@ -546,7 +546,26 @@ const mockAPI: ElectronAPI = {
                 installed: false,
                 configPath: '~/.trae/mcp.json',
                 configExists: false,
-                supportsSkills: false
+                supportsSkills: true,
+                skillsPath: '~/.trae/skills'
+            },
+            {
+                id: 'trae-cn',
+                name: 'TRAE CN',
+                installed: false,
+                configPath: '~/AppData/Roaming/Trae CN/User/mcp.json',
+                configExists: false,
+                supportsSkills: true,
+                skillsPath: '~/.trae-cn/skills'
+            },
+            {
+                id: 'trae-solo-cn',
+                name: 'TRAE SOLO CN',
+                installed: false,
+                configPath: '~/AppData/Roaming/TRAE SOLO CN/User/mcp.json',
+                configExists: false,
+                supportsSkills: true,
+                skillsPath: '~/.trae-cn/skills'
             },
             {
                 id: 'marscode',
@@ -594,6 +613,15 @@ const mockAPI: ElectronAPI = {
                 skillsPath: '~/.qoder/skills'
             },
             {
+                id: 'zcode',
+                name: 'ZCode',
+                installed: false,
+                configPath: '~/.zcode/cli/config.json',
+                configExists: false,
+                supportsSkills: true,
+                skillsPath: '~/.zcode/skills'
+            },
+            {
                 id: 'cloud',
                 name: '云端存储',
                 installed: false,
@@ -634,6 +662,7 @@ const mockAPI: ElectronAPI = {
                 zed: {},
                 trae: {},
                 'trae-cn': {},
+                'trae-solo-cn': {},
                 marscode: {},
                 kiro: {},
                 opencode: {},
@@ -643,6 +672,7 @@ const mockAPI: ElectronAPI = {
                 codebuddy: {},
                 workbuddy: {},
                 qoder: {},
+                zcode: {},
                 cloud: {}
 
             }
@@ -706,7 +736,11 @@ const mockAPI: ElectronAPI = {
                 codebuddy: [],
                 workbuddy: [],
                 qoder: [],
+                zcode: [],
                 marscode: [],
+                trae: [],
+                'trae-cn': [],
+                'trae-solo-cn': [],
                 cloud: []
             }
         }),

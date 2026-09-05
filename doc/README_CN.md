@@ -106,7 +106,12 @@ brew upgrade --cask mcp-dock
 | CodeBuddy | 支持 |
 | WorkBuddy | 支持 |
 | Qoder | 支持 |
+| ZCode | 支持 |
+| TRAE | 支持 |
+| TRAE CN | 支持 |
+| TRAE SOLO CN (TraeWork) | 支持 |
 | TRAE 插件 (MarsCode) | 支持 |
+| 云端存储 (Cloud) | 支持 |
 | 云端存储 (Cloud) | 支持 |
 
 ## 数据源
