@@ -16,6 +16,7 @@ import type {
 // 客户端类型统一从主进程 config-manager 引入，避免多端重复定义导致类型不兼容
 import type {AnyClientId, ClientInfo, ClientType, CustomClientDef, SkillClientType} from '../main/config-manager';
 import type {CloudSyncConfig, CloudSyncConfigInput, CloudSyncResult} from '../shared/cloud-sync-constants';
+import type {ConsistencyReport} from '../main/cloud-consistency';
 import type {SyncTask, SyncTaskKind, SyncTaskScope} from '../shared/sync-task-types';
 
 // 类型定义
@@ -471,6 +472,12 @@ const api = {
             ipcRenderer.on('cloud-sync:pulled', listener);
             return () => ipcRenderer.removeListener('cloud-sync:pulled', listener);
         },
+        // 云端一致性主动检测（plan-3.0）：本地客户端 vs 云端暂存区的差异清单
+        checkConsistency: (): Promise<ConsistencyReport> =>
+            ipcRenderer.invoke('cloud-sync:check-consistency'),
+        // 对照查看：读取单个条目在本地端与云端端的内容文本
+        readEnds: (req: { kind: 'skill' | 'server'; name: string; localClient: string }): Promise<{ local: string | null; cloud: string | null }> =>
+            ipcRenderer.invoke('cloud-sync:read-ends', req),
     },
 
     // 同步任务：后台异步云同步队列，侧边栏「同步任务」面板使用

@@ -1,22 +1,5 @@
 # plan-1.9 · TRAE 系列支持 Skills 同步（接 plan-1.8）
 
-已完成 ClawHub 离线索引「去写死」改造，让离线索引由运行时累积生成，而非捆绑静态快照。
-
-改动内容：
-
-src/main/platforms/clawhub.ts
-新增运行时缓存机制：每次在线搜索成功，就把返回的原始条目按 slug/id 去重合并写入 offline-index.json（先写临时文件再 rename 原子替换）。
-联网失败时，离线回退改为读取运行时累积缓存，而不再读写死的 data/clawhub.json（该文件原本就是空的 []，实际毫无作用）。
-getFacets 的分类 tag 计数统计也改为读取运行时缓存。
-保留一个空的 seedFile() 作为可选 bootstrap 兜底，但缓存为权威源、优先级更高。
-src/__tests__/platform-adapters.test.ts
-新增 2 个用例：①在线成功累积缓存、断网后回退到累积索引；②重复累积按 id 去重、新条目覆盖旧条目。
-cacheDir 之前已通过 PlatformSearchParams 接口和 index.ts 的参数传递接通，本次让适配器真正消费它。
-
-验证结果：tsc -p tsconfig.main.json 类型检查通过；全量测试 190 个全部通过。
-
-如果需要，我可以进一步：①在
-
 ## 背景与根因
 
 用户在「我的库 → 技能同步」中发现 trae / trae-solo-cn 不在可选客户端列表中。

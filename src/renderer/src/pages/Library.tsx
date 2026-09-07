@@ -9,6 +9,8 @@ import {useTranslation} from 'react-i18next';
 import {
     type AnyClientId,
     type ClientInfo,
+    type ConsistencyItem,
+    type ConsistencyReport,
     getElectronAPI,
     type InstalledSkill,
     type McpServerConfig,
@@ -28,6 +30,8 @@ import LibrarySkillList from '../components/LibrarySkillList';
 import ClientPickerModal from '../components/ClientPickerModal';
 import UninstallModal from '../components/UninstallModal';
 import {useCloudUpload} from '../hooks/useCloudUpload';
+import ConsistencyBanner from '../components/ConsistencyBanner';
+import ConsistencyCompareModal from '../components/ConsistencyCompareModal';
 
 export interface InstalledServer {
     id: string;
@@ -227,14 +231,18 @@ export default function Library() {
     // 导致所有 server 的 isMcpDock 恒为 false、点击进不了详情页、徽章判错。
     useEffect(() => {
         loadData();
+        // 进入「我的库」即做一次云端一致性检测（未激活云同步时 main 端返回空报告，零开销）
+        refreshConsistency();
     }, [api, serverLists]);
 
-    // 应用启动时主进程已在后台以云端为准拉取，拉取完成通知渲染层刷新本地暂存区展示
+    // 应用启动时主进程已在后台以云端为准拉取，拉取完成通知渲染层刷新本地暂存区展示；
+    // pull 覆盖暂存区后本地与云端可能出现新的差异项，一并触发一致性检测（plan-3.0）
     useEffect(() => {
         const off = api.cloudSync.onPulled((result) => {
             if (result.ok) {
                 console.log('[Library] cloud pulled on startup, refreshing');
                 loadData();
+                refreshConsistency();
             } else {
                 console.warn('[Library] cloud pull on startup failed:', result.message);
             }
@@ -307,7 +315,112 @@ export default function Library() {
         doCloudUploadResolved,
         pushCloudAsync,
         autoPushIfCloud,
+        mcpOverwriteConfirm,
+        setMcpOverwriteConfirm,
+        confirmMcpOverwrite,
     } = cloud;
+
+    // ============ 云端一致性（plan-3.0）：主动检测 + banner + 对照查看 ============
+    const [consistency, setConsistency] = useState<ConsistencyReport | null>(null);
+    const [compareItem, setCompareItem] = useState<ConsistencyItem | null>(null);
+    const [resolvingKey, setResolvingKey] = useState<string | null>(null);
+
+    // 云端→本地的 Skill 同步防护：本地较新的组合由用户逐项决定覆盖 / 跳过
+    const [skillDownloadConflicts, setSkillDownloadConflicts] = useState<Array<{
+        name: string;
+        target: SkillClientType;
+        localUpdatedAt: string | null;
+        cloudUpdatedAt: string | null;
+    }>>([]);
+    const [skillDownloadResolutions, setSkillDownloadResolutions] = useState<Record<string, 'overwrite' | 'skip'>>({});
+
+    // 云端→本地的 MCP 同步防护：内容不同的目标客户端由用户确认是否用云端覆盖
+    const [mcpDownloadConfirm, setMcpDownloadConfirm] = useState<{
+        serverId: string;
+        targets: string[];
+    } | null>(null);
+
+    const refreshConsistency = () => {
+        api.cloudSync.checkConsistency()
+            .then(setConsistency)
+            .catch((e) => console.warn('[Library] consistency check failed:', e?.message || e));
+    };
+
+    /**
+     * 解决单个不一致项（用户在 banner 点击「覆盖云端 / 覆盖本地 / 统一同步」）：
+     * - upload（覆盖云端）：本地代表客户端 → 云端（写暂存区 + 后台推送远端）
+     * - download（覆盖本地）：云端 → 所有已安装的客户端全覆盖（用户拍板口径：
+     *   不只覆盖已持有该条目的客户端，未安装此项的客户端也会被写入/补齐）
+     * - unify（统一同步，本地互不一致）：以最新的本地客户端为源，覆盖其余所有已安装客户端
+     */
+    const resolveConsistency = async (item: ConsistencyItem, direction: 'upload' | 'download' | 'unify') => {
+        const key = `${item.kind}:${item.name}`;
+        setResolvingKey(key);
+        try {
+            if (item.kind === 'skill') {
+                if (direction === 'unify') {
+                    // 找 updatedAt 最新的本地客户端作源
+                    const source = [...(item.localDetails || [])]
+                        .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0]?.client
+                        || item.localClients[0];
+                    const targets = clients
+                        .filter(c => c.supportsSkills && c.installed && c.id !== 'cloud' && c.id !== source)
+                        .map(c => c.id as SkillClientType);
+                    if (!source || targets.length === 0) return;
+                    await api.skills.syncBatch([{name: item.name, sourceClient: source as SkillClientType}], targets);
+                } else if (direction === 'upload') {
+                    const source = item.localClients[0] as SkillClientType | undefined;
+                    if (!source) return;
+                    await api.skills.syncBatch([{name: item.name, sourceClient: source}], ['cloud']);
+                    pushCloudAsync('skills');
+                } else {
+                    // 覆盖本地 = 所有已安装的技能客户端全部覆盖
+                    const targets = clients
+                        .filter(c => c.supportsSkills && c.installed && c.id !== 'cloud')
+                        .map(c => c.id as SkillClientType);
+                    if (targets.length === 0) {
+                        toast.error(t('consistency.noSkillClient') || '没有已安装的技能客户端可接收下载');
+                        return;
+                    }
+                    await api.skills.syncBatch([{name: item.name, sourceClient: 'cloud'}], targets);
+                }
+            } else {
+                if (direction === 'unify') {
+                    const source = [...(item.localDetails || [])]
+                        .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0]?.client
+                        || item.localClients[0];
+                    const targets = clients
+                        .filter(c => c.supportsMcp && c.installed && c.id !== 'cloud' && c.id !== source)
+                        .map(c => c.id);
+                    if (!source || targets.length === 0) return;
+                    await api.config.syncServer(item.name, source, targets);
+                } else if (direction === 'upload') {
+                    const source = item.localClients[0];
+                    if (!source) return;
+                    await api.config.syncServer(item.name, source, ['cloud']);
+                    pushCloudAsync('mcp');
+                } else {
+                    // 覆盖本地 = 所有已安装的 MCP 客户端全部覆盖
+                    const targets = clients
+                        .filter(c => c.supportsMcp && c.installed && c.id !== 'cloud')
+                        .map(c => c.id);
+                    if (targets.length === 0) {
+                        toast.error(t('consistency.noMcpClient') || '没有已安装的 MCP 客户端可接收下载');
+                        return;
+                    }
+                    await api.config.syncServer(item.name, 'cloud', targets);
+                }
+            }
+            toast.success(t('consistency.resolved', {name: item.name}) || `「${item.name}」已同步`);
+            await loadData();
+            refreshConsistency();
+        } catch (error: any) {
+            console.error('Failed to resolve consistency item:', error);
+            toast.error(error?.message || t('consistency.resolveFailed') || '同步失败');
+        } finally {
+            setResolvingKey(null);
+        }
+    };
 
     // 刷新数据（带动效）
     const handleRefresh = async () => {
@@ -316,6 +429,7 @@ export default function Library() {
         const startTime = Date.now();
         try {
             await loadData();
+            refreshConsistency();
         } catch (error) {
             console.error('Failed to refresh library:', error);
         } finally {
@@ -580,6 +694,32 @@ export default function Library() {
                     sourceClient: (skillClients[name] || [])[0] as SkillClientType,
                 }))
                 .filter(i => i.sourceClient);
+
+            // 下载方向防护（plan-3.0）：源是云端时，检查各目标客户端的本地同名 Skill
+            // 是否比云端新——本地新的默认跳过，由用户在确认弹窗中逐项决定是否覆盖。
+            if (items.some(i => i.sourceClient === 'cloud')) {
+                const targets = selectedSyncClients.filter(c => c !== 'cloud') as SkillClientType[];
+                const risky: Array<{ name: string; target: SkillClientType; localUpdatedAt: string | null; cloudUpdatedAt: string | null }> = [];
+                for (const target of targets) {
+                    const conflicts = await api.skills.checkCloudConflicts(
+                        items.map(i => ({name: i.name, sourceClient: target}))
+                    );
+                    for (const c of conflicts) {
+                        if (c.resolution === 'local_newer') {
+                            risky.push({name: c.name, target, localUpdatedAt: c.localUpdatedAt, cloudUpdatedAt: c.cloudUpdatedAt});
+                        }
+                    }
+                }
+                if (risky.length > 0) {
+                    const defaults: Record<string, 'overwrite' | 'skip'> = {};
+                    for (const r of risky) defaults[`${r.name}::${r.target}`] = 'skip'; // 本地新：默认跳过
+                    setSkillDownloadConflicts(risky);
+                    setSkillDownloadResolutions(defaults);
+                    setIsSyncing(false);
+                    return; // 弹窗确认后由 doSkillDownloadResolved 继续执行
+                }
+            }
+
             const result = await api.skills.syncBatch(
                 items,
                 selectedSyncClients as SkillClientType[]
@@ -614,6 +754,60 @@ export default function Library() {
         }
     };
 
+    /**
+     * 云端→本地的 Skill 同步，经用户逐项确认后执行：
+     * 勾选 skip 的（name, target）组合不写入该目标，其余按原批量逻辑同步。
+     */
+    const doSkillDownloadResolved = async () => {
+        const skipSet = new Set(
+            Object.entries(skillDownloadResolutions)
+                .filter(([, v]) => v === 'skip')
+                .map(([k]) => k)
+        );
+        setSkillDownloadConflicts([]);
+        setIsSyncing(true);
+        const startTime = Date.now();
+        try {
+            const items = syncModalSkills
+                .map(name => ({name, sourceClient: (skillClients[name] || [])[0] as SkillClientType}))
+                .filter(i => i.sourceClient);
+            const targets = selectedSyncClients.filter(c => c !== 'cloud') as SkillClientType[];
+
+            // 按目标拆分同步，逐 (name, target) 组合剔除用户选择跳过的项
+            let synced = 0;
+            for (const target of targets) {
+                const itemsForTarget = items.filter(i => !skipSet.has(`${i.name}::${target}`));
+                if (itemsForTarget.length === 0) continue;
+                const result = await api.skills.syncBatch(itemsForTarget, [target]);
+                synced += result.synced;
+            }
+            if (selectedSyncClients.includes('cloud')) {
+                // 目标本身含云端（罕见：云端→云端无意义，但保持 autoPush 语义）
+                await autoPushIfCloud(['cloud'], 'skills');
+            }
+
+            const elapsed = Date.now() - startTime;
+            if (elapsed < 800) await new Promise(resolve => setTimeout(resolve, 800 - elapsed));
+
+            setSyncModalOpen(false);
+            setSelectMode(false);
+            setSelectedSkills([]);
+            loadData();
+            if (synced > 0) {
+                toast.success(t('library.skillsSynced', {count: synced}) || `已同步 ${synced} 个 Skill`);
+            }
+            const skipped = skipSet.size;
+            if (skipped > 0) {
+                toast.info(t('library.skillDownloadSkipped', {count: skipped}) || `已跳过 ${skipped} 项本地较新的 Skill`);
+            }
+        } catch (error) {
+            console.error('Failed to sync skills:', error);
+            toast.error(t('library.syncError') || '同步失败');
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     // 打开同步对话框
     const handleOpenSync = (server: InstalledServer) => {
         setSyncingServer(server);
@@ -625,6 +819,24 @@ export default function Library() {
         if (!syncingServer || selectedSyncClients.length === 0 || syncingServer.clients.length === 0) return;
         try {
             const sourceClient = syncingServer.clients[0];
+
+            // 下载方向防护（plan-3.0）：源是云端时，检查各目标客户端的本地配置
+            // 与云端内容是否不同——不同则弹确认，避免云端旧版无声覆盖本地调整。
+            if (sourceClient === 'cloud') {
+                const targets = selectedSyncClients.filter(c => c !== 'cloud');
+                const changed: string[] = [];
+                for (const target of targets) {
+                    const ends = await api.cloudSync.readEnds({
+                        kind: 'server', name: syncingServer.id, localClient: target,
+                    }).catch(() => ({local: null, cloud: null}));
+                    if (ends.local !== ends.cloud) changed.push(target);
+                }
+                if (changed.length > 0) {
+                    setMcpDownloadConfirm({serverId: syncingServer.id, targets: changed});
+                    return; // 确认后由 confirmMcpDownload 继续执行
+                }
+            }
+
             const result = await api.config.syncServer(syncingServer.id, sourceClient, selectedSyncClients);
             setSyncingServer(null);
             await autoPushIfCloud(selectedSyncClients, 'mcp');
@@ -638,6 +850,26 @@ export default function Library() {
             }
         } catch (error) {
             console.error('Failed to sync server:', error);
+            toast.error(t('installed.syncError') || '同步失败');
+        }
+    };
+
+    /** MCP 云端→本地下载：用户确认覆盖后执行（沿用 handleSync 主体） */
+    const confirmMcpDownload = async () => {
+        setMcpDownloadConfirm(null);
+        if (!syncingServer || selectedSyncClients.length === 0) return;
+        try {
+            const sourceClient = 'cloud';
+            const result = await api.config.syncServer(syncingServer.id, sourceClient, selectedSyncClients);
+            setSyncingServer(null);
+            await autoPushIfCloud(selectedSyncClients, 'mcp');
+            setSelectedSyncClients([]);
+            loadData();
+            if (result.success.length > 0) {
+                toast.success(t('installed.serversSynced', {count: 1}) || `已同步到 ${result.success.length} 个客户端`);
+            }
+        } catch (error) {
+            console.error('Failed to sync server from cloud:', error);
             toast.error(t('installed.syncError') || '同步失败');
         }
     };
@@ -985,6 +1217,24 @@ export default function Library() {
 
             {/* 内容区域 */}
             <div className="flex-1 overflow-y-auto">
+                {/* 云端一致性 banner：本地客户端与云端有差异项时显示（plan-3.0），一致时不渲染。
+                    按当前 Tab 过滤（用户反馈修正④）：MCP Servers tab 只显示 MCP 不一致，
+                    Skills tab 只显示 Skill 不一致，互不串扰。 */}
+                <div className="px-4 pt-3">
+                    <ConsistencyBanner
+                        report={consistency ? {
+                            ...consistency,
+                            items: consistency.items.filter(i =>
+                                activeTab === 'mcp' ? i.kind === 'server' : i.kind === 'skill'
+                            ),
+                        } : null}
+                        resolvingKey={resolvingKey}
+                        clientName={getDisplayName}
+                        onCompare={setCompareItem}
+                        onResolve={resolveConsistency}
+                        onRefresh={refreshConsistency}
+                    />
+                </div>
                 {activeTab === 'mcp' ? (
                     <LibraryMcpList
                         servers={servers}
@@ -1324,7 +1574,133 @@ export default function Library() {
                 onSelectAll={() => uninstallTarget && setSelectedUninstallClients([...uninstallTarget.clients])}
                 onClose={() => setUninstallTarget(null)}
                 onConfirm={confirmUninstall}
-            />
-        </div>
+            /><ConsistencyCompareModal
+                    item={compareItem}
+                    clientName={getDisplayName}
+                    onClose={() => setCompareItem(null)}
+                />
+
+                {/* 云端→本地 Skill 下载防护：本地较新的组合逐项确认（plan-3.0） */}
+                <Modal
+                    isOpen={skillDownloadConflicts.length > 0}
+                    onClose={() => setSkillDownloadConflicts([])}
+                    title={t('library.skillDownloadConflictTitle') || '本地版本较新，确认覆盖？'}
+                >
+                    <div className="space-y-4" style={{minWidth: 460}}>
+                        <p className="text-[12px] text-[var(--color-muted2)]">
+                            {t('library.skillDownloadConflictHint') || '以下目标客户端的本地 Skill 比云端新，默认跳过；勾选「覆盖」才会用云端版本替换本地。'}
+                        </p>
+                        <div className="max-h-[300px] overflow-y-auto space-y-1.5">
+                            {skillDownloadConflicts.map(c => {
+                                const key = `${c.name}::${c.target}`;
+                                const isOverwrite = skillDownloadResolutions[key] === 'overwrite';
+                                return (
+                                    <div key={key}
+                                         className={`flex items-center gap-2.5 px-2.5 py-2 rounded-md border transition-all ${
+                                             isOverwrite
+                                                 ? 'bg-[#ff9f0a]/8 border-[#ff9f0a]/30'
+                                                 : 'bg-[var(--color-surface-hover)]/30 border-[var(--color-border)]'
+                                         }`}>
+                                        <button
+                                            onClick={() => setSkillDownloadResolutions(prev => ({
+                                                ...prev,
+                                                [key]: prev[key] === 'overwrite' ? 'skip' : 'overwrite',
+                                            }))}
+                                            className={`flex-shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center text-[10px] transition-colors ${
+                                                isOverwrite
+                                                    ? 'bg-[#ff9f0a] border-[#ff9f0a] text-white'
+                                                    : 'border-[var(--color-border)]'
+                                            }`}
+                                        >
+                                            {isOverwrite ? '✓' : ''}
+                                        </button>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-[12px] text-[var(--color-text)] font-medium truncate">
+                                                {c.name}
+                                                <span className="text-[var(--color-muted)] font-normal ml-1.5">
+                                                    → {getDisplayName(c.target)}
+                                                </span>
+                                            </div>
+                                            <div className="text-[10.5px] text-[var(--color-muted2)]">
+                                                {t('consistency.localTime') || '本地'}：{c.localUpdatedAt ? new Date(c.localUpdatedAt).toLocaleString() : '—'}
+                                                {'  ·  '}
+                                                {t('consistency.cloudTime') || '云端'}：{c.cloudUpdatedAt ? new Date(c.cloudUpdatedAt).toLocaleString() : '—'}
+                                            </div>
+                                        </div>
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded text-green-500 bg-green-500/10 flex-shrink-0">
+                                            {t('consistency.localNewer') || '本地更新'}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <div className="flex justify-end gap-2 pt-1">
+                            <button onClick={() => setSkillDownloadConflicts([])}
+                                    className="btn btn-secondary">
+                                {t('common.cancel') || '取消'}
+                            </button>
+                            <button onClick={doSkillDownloadResolved} className="btn btn-primary">
+                                {t('common.confirm') || '确认同步'}
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+
+                {/* 云端→本地 MCP 下载防护：内容不同时确认覆盖（plan-3.0） */}
+                <Modal
+                    isOpen={!!mcpDownloadConfirm}
+                    onClose={() => setMcpDownloadConfirm(null)}
+                    title={t('library.mcpDownloadConflictTitle') || '本地配置与云端不同，确认覆盖？'}
+                >
+                    <div className="space-y-4" style={{minWidth: 420}}>
+                        <p className="text-[12px] text-[var(--color-muted2)]">
+                            {t('library.mcpDownloadConflictHint', {name: mcpDownloadConfirm?.serverId || ''})
+                                || `Server「${mcpDownloadConfirm?.serverId || ''}」在以下客户端的本地配置与云端版本内容不同，继续将用云端版本覆盖：`}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                            {(mcpDownloadConfirm?.targets || []).map(tgt => (
+                                <span key={tgt}
+                                      className="px-2 py-1 rounded-md bg-[var(--color-surface-hover)] text-[11px] text-[var(--color-text)]">
+                                    {getDisplayName(tgt)}
+                                </span>
+                            ))}
+                        </div>
+                        <div className="flex justify-end gap-2 pt-1">
+                            <button onClick={() => setMcpDownloadConfirm(null)}
+                                    className="btn btn-secondary">
+                                {t('common.cancel') || '取消'}
+                            </button>
+                            <button onClick={confirmMcpDownload} className="btn btn-primary">
+                                {t('library.overwriteWithCloud') || '用云端覆盖'}
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+
+                {/* MCP 上传「完整覆盖云端」确认（plan-3.0）：不比新旧，只问覆盖与否 */}
+                <Modal
+                    isOpen={!!mcpOverwriteConfirm}
+                    onClose={() => setMcpOverwriteConfirm(null)}
+                    title={t('library.mcpOverwriteTitle') || '完整覆盖云端配置？'}
+                >
+                    <div className="space-y-4" style={{minWidth: 400}}>
+                        <p className="text-[12px] text-[var(--color-muted2)]">
+                            {t('library.mcpOverwriteHint', {
+                                total: mcpOverwriteConfirm?.total ?? 0,
+                                existing: mcpOverwriteConfirm?.existing ?? 0,
+                            }) || `将上传 ${mcpOverwriteConfirm?.total ?? 0} 个 MCP Server 到云端，其中 ${mcpOverwriteConfirm?.existing ?? 0} 个与云端现有配置同名，同名配置将被本地版本覆盖。差异明细可先在顶部一致性提示中对照查看。`}
+                        </p>
+                        <div className="flex justify-end gap-2 pt-1">
+                            <button onClick={() => setMcpOverwriteConfirm(null)}
+                                    className="btn btn-secondary">
+                                {t('common.cancel') || '取消'}
+                            </button>
+                            <button onClick={confirmMcpOverwrite} className="btn btn-primary">
+                                {t('library.overwriteCloud') || '完整覆盖'}
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+            </div>
     );
 }

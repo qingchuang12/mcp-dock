@@ -32,6 +32,7 @@ import {ApiConnection, getConnectionsStore} from './connections-store';
 import {createMcpClient, disconnectAllClients, getMcpClient, removeMcpClient} from './mcp-client';
 import {getCloudSyncStore} from './cloud-sync-store';
 import {getCloudSyncService} from './cloud-sync-service';
+import {checkCloudConsistency, type ConsistencyReport, readCompareEnds} from './cloud-consistency';
 import {getSyncTaskManager, initSyncTaskManager} from './sync-task-manager';
 import type {SyncTask, SyncTaskKind, SyncTaskScope} from '../shared/sync-task-types';
 import type {CloudSyncConfig, CloudSyncConfigInput, CloudSyncResult} from '../shared/cloud-sync-constants';
@@ -1007,6 +1008,58 @@ ipcMain.handle('cloud-sync:push', async (): Promise<CloudSyncResult> => {
 
 ipcMain.handle('cloud-sync:pull', async (): Promise<CloudSyncResult> => {
     return enqueueCloudAndWait('cloud-pull', '从云端下载');
+});
+
+// ============ 云端一致性（plan-3.0） ============
+
+/**
+ * 主动检测本地客户端与云端（暂存区）的不一致项。
+ * 云同步未激活时返回空报告（cloud 未激活时暂存区内容无意义，不产生噪音）。
+ */
+ipcMain.handle('cloud-sync:check-consistency', async (): Promise<ConsistencyReport> => {
+    if (!getCloudSyncStore().isActive()) {
+        return {items: [], checkedAt: new Date().toISOString()};
+    }
+    const clients = await configManager.getAllClients();
+    const installed = clients.filter(c => c.installed && c.id !== 'cloud');
+    const skillClients = installed
+        .filter(c => c.supportsSkills)
+        .map(c => c.id as SkillClientType);
+    const mcpClients = installed
+        .filter(c => c.supportsMcp)
+        .map(c => c.id);
+
+    return checkCloudConsistency({
+        cloudSkillsPath: skillsManager.getSkillsPath('cloud'),
+        cloudMcpConfigPath: configManager.getConfigPath('cloud'),
+        localSkillDirs: skillClients.map(client => ({client, dir: skillsManager.getSkillsPath(client)})),
+        localMcpConfigs: mcpClients.map(client => ({
+            client,
+            configPath: configManager.getConfigPath(client),
+        })),
+        readClientServers: (client) => configManager.getInstalledServers(client),
+    });
+});
+
+/**
+ * 对照查看：读取单个条目（skill / server）在本地端与云端端的内容文本。
+ * renderer 只传 kind/name/localClient，路径解析收在 main，避免暴露暂存区结构。
+ */
+ipcMain.handle('cloud-sync:read-ends', async (_, req: {
+    kind: 'skill' | 'server';
+    name: string;
+    localClient: string;
+}): Promise<{ local: string | null; cloud: string | null }> => {
+    if (!getCloudSyncStore().isActive()) {
+        return {local: null, cloud: null};
+    }
+    const localPath = req.kind === 'skill'
+        ? skillsManager.getSkillsPath(req.localClient as SkillClientType)
+        : configManager.getConfigPath(req.localClient);
+    const cloudPath = req.kind === 'skill'
+        ? skillsManager.getSkillsPath('cloud')
+        : configManager.getConfigPath('cloud');
+    return readCompareEnds({kind: req.kind, name: req.name, localPath, cloudPath});
 });
 
 /**

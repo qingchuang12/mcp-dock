@@ -123,6 +123,8 @@ export function getClientDisplayName(client: AnyClientId): string {
         workbuddy: 'WorkBuddy',
         qoder: 'Qoder',
         zcode: 'ZCode',
+        // .agents 统一标准目录（skills.sh），虚拟客户端：无 MCP 配置、仅作 Skill 载体
+        'agent-skills': 'Agent Skills (.agents)',
         cloud: '云端存储',
     };
     return names[client] || (typeof client === 'string' ? client.replace(/^custom:/, '') : 'Unknown Client');
@@ -144,7 +146,6 @@ export function getClientAppPaths(client: AnyClientId, platform: NodeJS.Platform
             path.join(home, '.local', 'bin', 'codex'),
             '/opt/homebrew/bin/codex',
             path.join(home, '.npm', 'bin', 'codex'),
-            path.join(home, '.codex'),
         ],
         windsurf: ['/Applications/Windsurf.app', path.join(home, 'Applications', 'Windsurf.app')],
         zed: ['/Applications/Zed.app', path.join(home, 'Applications', 'Zed.app')],
@@ -198,12 +199,13 @@ export function getClientAppPaths(client: AnyClientId, platform: NodeJS.Platform
         'gemini-cli': [
             path.join(home, 'AppData', 'Local', 'Programs', 'gemini', 'gemini.exe'),
             path.join(home, '.gemini', 'gemini.exe'),
+            // npm 全局安装形态（与 claude-code / codex-cli 的 npm 探测对齐）
+            path.join(home, 'AppData', 'Roaming', 'npm', 'gemini.cmd'),
         ],
         'codex-cli': [
             path.join(home, 'AppData', 'Local', 'Programs', 'codex', 'codex.exe'),
             path.join(home, '.codex', 'codex.exe'),
             path.join(home, 'AppData', 'Roaming', 'npm', 'codex.cmd'),
-            path.join(home, '.codex'),
         ],
         windsurf: [
             path.join(home, 'AppData', 'Local', 'Programs', 'windsurf', 'Windsurf.exe'),
@@ -232,7 +234,6 @@ export function getClientAppPaths(client: AnyClientId, platform: NodeJS.Platform
         ],
         opencode: [
             path.join(home, 'AppData', 'Local', 'Programs', 'opencode', 'opencode.exe'),
-            path.join(home, '.config', 'opencode'),
         ],
         antigravity: [
             path.join(home, 'AppData', 'Local', 'Programs', 'Antigravity', 'Antigravity.exe'),
@@ -240,7 +241,6 @@ export function getClientAppPaths(client: AnyClientId, platform: NodeJS.Platform
         openclaw: [
             path.join(home, 'AppData', 'Roaming', 'npm', 'openclaw.cmd'),
             path.join(home, 'AppData', 'Local', 'Programs', 'openclaw', 'openclaw.exe'),
-            path.join(home, '.openclaw'),
         ],
         codebuddy: [
             path.join(home, 'AppData', 'Local', 'Programs', 'CodeBuddy', 'CodeBuddy.exe'),
@@ -298,7 +298,6 @@ export function getClientAppPaths(client: AnyClientId, platform: NodeJS.Platform
             '/usr/local/bin/codex',
             path.join(home, '.local', 'bin', 'codex'),
             path.join(home, '.npm', 'bin', 'codex'),
-            path.join(home, '.codex'),
         ],
         windsurf: [
             '/usr/bin/windsurf',
@@ -390,7 +389,17 @@ export function getClientAppPaths(client: AnyClientId, platform: NodeJS.Platform
 
 /**
  * 客户端「配置目录标记」：这些路径存在即视为客户端可用。
- * 适用于以 IDE 插件 / 无独立可执行文件形态分发的客户端。
+ * 仅适用于两类客户端：
+ * 1. 以 IDE 插件 / 无独立可执行文件形态分发的（如 CodeBuddy、MarsCode）；
+ * 2. 纯目录标准（agent-skills 的 ~/.agents，目录本身就是「在用」的全部证据）。
+ *
+ * 注意：有独立可执行文件的客户端（claude-code / gemini-cli / cursor 等）**不加**目录 marker——
+ * 它们的家目录（~/.claude 等）可能只是 mcp-dock 安装技能时 mkdir 出来的、或卸载残留，
+ * 并不代表客户端本体已安装；已安装判定只走 exe / npm / CLI where 探测
+ * （否则会出现「没装 Claude Code 却显示已安装」的反直觉结果，plan-2.0 执行修正）。
+ *
+ * trae-cn / trae-solo-cn 均无目录标记：二者共享 ~/.trae-cn 撞名，任一方加 marker
+ * 都会把对方误判为已安装（plan-1.8 决策），exe 探测已足够。
  */
 export function getClientConfigMarkers(client: AnyClientId): string[] {
     const home = os.homedir();
@@ -412,6 +421,9 @@ export function getClientConfigMarkers(client: AnyClientId): string[] {
         ],
         marscode: [
             path.join(home, '.marscode'),
+        ],
+        'agent-skills': [
+            path.join(home, '.agents'),
         ],
     };
     return markers[client] || [];

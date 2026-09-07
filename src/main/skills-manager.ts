@@ -89,6 +89,18 @@ export class SkillsManager {
     }
 
     /**
+     * 全量技能客户端：内置 SKILL_SUPPORTED_CLIENTS + 用户手动添加且声明支持 Skills 的自定义客户端。
+     * 自定义客户端此前不参与扫描，导致其装的技能在「我的库」不可见（与设置页/安装入口口径不一致）。
+     * 注意：键类型为 SkillClientType 联合 + custom:<slug> 字符串，故 byClient 等结构用 Record<string, ...>。
+     */
+    private getSkillClientIds(): SkillClientType[] {
+        const custom = (this.settings.customClients || [])
+            .filter(c => c.supportsSkills && c.skillsPath)
+            .map(c => c.id as SkillClientType);
+        return [...SKILL_SUPPORTED_CLIENTS, ...custom];
+    }
+
+    /**
      * 确保 Skills 目录存在
      */
     private async ensureSkillsDir(client: SkillClientType): Promise<void> {
@@ -187,7 +199,7 @@ export class SkillsManager {
     private resolveScanGroups(installedClients?: SkillClientType[]): { clients: SkillClientType[]; owners: SkillClientType[] }[] {
         const groups = new Map<string, SkillClientType[]>();
 
-        for (const client of SKILL_SUPPORTED_CLIENTS) {
+        for (const client of this.getSkillClientIds()) {
             const dir = this.getSkillsPath(client);
             if (!dir) continue;
             const key = this.normalizeDirKey(dir);
@@ -696,7 +708,7 @@ export class SkillsManager {
     async isSkillInstalled(skillId: string): Promise<boolean> {
         const skillName = skillId.split('/').pop() || skillId;
 
-        for (const client of SKILL_SUPPORTED_CLIENTS) {
+        for (const client of this.getSkillClientIds()) {
             const skills = await this.getInstalledSkills(client);
             if (skills.some(s => s.name === skillName)) {
                 return true;
@@ -1014,14 +1026,14 @@ export class SkillsManager {
      */
     async getAllInstalledSkills(installedClients?: SkillClientType[]): Promise<{
         skills: Record<string, { name: string; clients: SkillClientType[] }>;
-        byClient: Record<SkillClientType, InstalledSkill[]>;
+        byClient: Record<string, InstalledSkill[]>;
     }> {
         await this.loadSettings();
         const skills: Record<string, { name: string; clients: SkillClientType[] }> = {};
-        // 由 SKILL_SUPPORTED_CLIENTS 派生，键集合与 SKILL_SUPPORTED_CLIENTS 始终一致
+        // 由全量技能客户端（内置 + 自定义 supportsSkills）派生，键集合与扫描范围始终一致
         const byClient = Object.fromEntries(
-            SKILL_SUPPORTED_CLIENTS.map(c => [c, [] as InstalledSkill[]])
-        ) as Record<SkillClientType, InstalledSkill[]>;
+            this.getSkillClientIds().map(c => [c, [] as InstalledSkill[]])
+        ) as Record<string, InstalledSkill[]>;
 
         for (const group of this.resolveScanGroups(installedClients)) {
             // 同组共享同一物理目录：任取组内首个客户端的目录扫描一次

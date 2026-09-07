@@ -11,6 +11,26 @@ import type {SkillClientType} from '../config/types';
 import type {SkillCloudConflict, SkillSourceMeta} from './types';
 
 /**
+ * 读取单个 skill 目录的「修改时间」：优先 .source.json 的 updatedAt/installedAt，
+ * 无元数据（或解析失败）时回退 SKILL.md 的 mtime。本地端与云端暂存区通用。
+ * 供 detectCloudConflicts 与 cloud-consistency（一致性检测）共用，保证两处口径一致。
+ */
+export async function readSkillUpdatedAt(skillPath: string): Promise<string | null> {
+    try {
+        const content = await fs.readFile(path.join(skillPath, '.source.json'), 'utf-8');
+        const meta: SkillSourceMeta = JSON.parse(content);
+        return meta.updatedAt || meta.installedAt || null;
+    } catch {
+        try {
+            const stat = await fs.stat(path.join(skillPath, 'SKILL.md'));
+            return stat.mtime.toISOString();
+        } catch {
+            return null;
+        }
+    }
+}
+
+/**
  * 检查 Skill 同步到云端时的冲突。
  * 对比本地 skill 与云端 skill 的修改时间（.source.json 的 updatedAt 或 SKILL.md 的 mtime）
  * 仅返回云端已存在同名 skill 的条目（即存在冲突的）。
@@ -32,35 +52,8 @@ export async function detectCloudConflicts(
         const sourcePath = path.join(sourceSkillsPath, item.name);
         const cloudPath = path.join(cloudSkillsPath, item.name);
 
-        let localUpdatedAt: string | null = null;
-        let cloudUpdatedAt: string | null = null;
-
-        // 读取本地 skill 的修改时间
-        try {
-            const sourceJsonPath = path.join(sourcePath, '.source.json');
-            const sourceContent = await fs.readFile(sourceJsonPath, 'utf-8');
-            const sourceMeta: SkillSourceMeta = JSON.parse(sourceContent);
-            localUpdatedAt = sourceMeta.updatedAt || sourceMeta.installedAt;
-        } catch {
-            // 无 .source.json，使用 SKILL.md 的 mtime
-            try {
-                const stat = await fs.stat(path.join(sourcePath, 'SKILL.md'));
-                localUpdatedAt = stat.mtime.toISOString();
-            } catch { /* ignore */ }
-        }
-
-        // 读取云端 skill 的修改时间
-        try {
-            const cloudJsonPath = path.join(cloudPath, '.source.json');
-            const cloudContent = await fs.readFile(cloudJsonPath, 'utf-8');
-            const cloudMeta: SkillSourceMeta = JSON.parse(cloudContent);
-            cloudUpdatedAt = cloudMeta.updatedAt || cloudMeta.installedAt;
-        } catch {
-            try {
-                const stat = await fs.stat(path.join(cloudPath, 'SKILL.md'));
-                cloudUpdatedAt = stat.mtime.toISOString();
-            } catch { /* ignore */ }
-        }
+        const localUpdatedAt = await readSkillUpdatedAt(sourcePath);
+        const cloudUpdatedAt = await readSkillUpdatedAt(cloudPath);
 
         // 仅云端已存在同名 skill 时才报告冲突
         if (!cloudUpdatedAt) continue;

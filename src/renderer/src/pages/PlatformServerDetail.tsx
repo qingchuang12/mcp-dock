@@ -143,8 +143,9 @@ export default function PlatformServerDetail({connId, serverId, seedItem}: Props
 
     // 默认选中已安装客户端
     useEffect(() => {
-        // 排除云端存储：它不是真实客户端，安装目标默认不应落到云端
-        const installed = clients.filter(c => c.installed && c.id !== 'cloud').map(c => c.id);
+        // 仅限支持 MCP 配置写入的客户端：cloud（云同步暂存区）/ agent-skills（.agents 统一标准）
+        // 没有 MCP 配置文件，不能作为 MCP 安装目标
+        const installed = clients.filter(c => c.installed && c.supportsMcp).map(c => c.id);
         if (installed.length > 0 && selectedClients.length === 0) {
             if (installed.includes('cursor')) setSelectedClients(['cursor']);
             else if (installed.includes('claude-code')) setSelectedClients(['claude-code']);
@@ -596,7 +597,7 @@ export default function PlatformServerDetail({connId, serverId, seedItem}: Props
                         <label
                             className="block text-[12px] font-medium text-[var(--color-text)] mb-2">{t('detail.selectClients')}</label>
                         <ClientMultiSelect
-                            clients={clients.filter(c => c.installed)}
+                            clients={clients.filter(c => c.installed && c.supportsMcp)}
                             selected={selectedClients}
                             onToggle={toggleClient}
                             className="grid grid-cols-2 gap-2"
@@ -609,7 +610,7 @@ export default function PlatformServerDetail({connId, serverId, seedItem}: Props
                             sublabel={{installed: t('detail.alreadyInstalled'), available: t('detail.available')}}
                             unselectedClass="bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[#636366]"
                         />
-                        {clients.filter(c => c.installed).length === 0 && (
+                        {clients.filter(c => c.installed && c.supportsMcp).length === 0 && (
                             <p className="text-center text-[var(--color-muted)] text-[13px] py-4">
                                 {t('detail.noClientsInstalled') || 'No installed clients support MCP'}
                             </p>

@@ -14,6 +14,8 @@ import type {
 } from '../../../main/platforms/types';
 // 客户端类型统一从主进程 config-manager 引入，避免渲染端重复定义导致类型不兼容
 import type {AnyClientId, ClientInfo, ClientType, CustomClientDef, SkillClientType} from '../../../main/config-manager';
+// 云端一致性报告类型同样以主进程为单一来源（plan-3.0）
+import type {ConsistencyItem, ConsistencyReport} from '../../../main/cloud-consistency';
 import type {CloudSyncConfig, CloudSyncConfigInput, CloudSyncResult} from '../../../shared/cloud-sync-constants';
 import {defaultCloudSyncConfig} from '../../../shared/cloud-sync-constants';
 import type {SyncTask, SyncTaskKind, SyncTaskScope} from '../../../shared/sync-task-types';
@@ -97,7 +99,7 @@ export interface DiffResult {
     skillClientChanges?: { client: string; added: string[]; removed: string[]; modified: string[] }[];
 }
 
-export type {ClientType, SkillClientType, ClientInfo, AnyClientId, CustomClientDef};
+export type {ClientType, SkillClientType, ClientInfo, AnyClientId, CustomClientDef, ConsistencyItem, ConsistencyReport};
 
 // Skills 相关类型
 export interface SkillSourceMeta {
@@ -200,7 +202,8 @@ export interface ImportSkillFileResult {
 
 export interface AllSkillsResult {
     skills: Record<string, { name: string; clients: SkillClientType[] }>;
-    byClient: Record<SkillClientType, InstalledSkill[]>;
+    /** 键含内置 SkillClientType 与 custom:<slug>（用户自定义 supportsSkills 客户端），故用 string */
+    byClient: Record<string, InstalledSkill[]>;
 }
 
 export interface InstallResult {
@@ -414,6 +417,10 @@ interface ElectronAPI {
         push: () => Promise<CloudSyncResult>;
         pull: () => Promise<CloudSyncResult>;
         onPulled: (callback: (result: CloudSyncResult) => void) => () => void;
+        /** 主动检测本地客户端与云端的不一致项（云同步未激活返回空报告） */
+        checkConsistency: () => Promise<ConsistencyReport>;
+        /** 对照查看：读取单个条目在本地端与云端端的内容文本 */
+        readEnds: (req: { kind: 'skill' | 'server'; name: string; localClient: string }) => Promise<{ local: string | null; cloud: string | null }>;
     };
     // MCP Inspector
     mcp: McpApi;
@@ -495,6 +502,7 @@ const mockAPI: ElectronAPI = {
                 configPath: '~/.cursor/mcp.json',
                 configExists: true,
                 supportsSkills: true,
+                supportsMcp: true,
                 skillsPath: '~/.cursor/skills'
             },
             {
@@ -504,6 +512,7 @@ const mockAPI: ElectronAPI = {
                 configPath: '~/.claude/mcp.json',
                 configExists: true,
                 supportsSkills: true,
+                supportsMcp: true,
                 skillsPath: '~/.claude/skills'
             },
             {
@@ -513,6 +522,7 @@ const mockAPI: ElectronAPI = {
                 configPath: '~/.gemini/settings.json',
                 configExists: false,
                 supportsSkills: true,
+                supportsMcp: true,
                 skillsPath: '~/.gemini/skills'
             },
             {
@@ -522,6 +532,7 @@ const mockAPI: ElectronAPI = {
                 configPath: '~/.codex/config.json',
                 configExists: false,
                 supportsSkills: true,
+                supportsMcp: true,
                 skillsPath: '~/.codex/skills'
             },
             {
@@ -530,7 +541,8 @@ const mockAPI: ElectronAPI = {
                 installed: false,
                 configPath: '~/.windsurf/mcp.json',
                 configExists: false,
-                supportsSkills: false
+                supportsSkills: false,
+                supportsMcp: true
             },
             {
                 id: 'zed',
@@ -538,7 +550,8 @@ const mockAPI: ElectronAPI = {
                 installed: true,
                 configPath: '~/.config/zed/settings.json',
                 configExists: false,
-                supportsSkills: false
+                supportsSkills: false,
+                supportsMcp: true
             },
             {
                 id: 'trae',
@@ -547,6 +560,7 @@ const mockAPI: ElectronAPI = {
                 configPath: '~/.trae/mcp.json',
                 configExists: false,
                 supportsSkills: true,
+                supportsMcp: true,
                 skillsPath: '~/.trae/skills'
             },
             {
@@ -556,6 +570,7 @@ const mockAPI: ElectronAPI = {
                 configPath: '~/AppData/Roaming/Trae CN/User/mcp.json',
                 configExists: false,
                 supportsSkills: true,
+                supportsMcp: true,
                 skillsPath: '~/.trae-cn/skills'
             },
             {
@@ -565,6 +580,7 @@ const mockAPI: ElectronAPI = {
                 configPath: '~/AppData/Roaming/TRAE SOLO CN/User/mcp.json',
                 configExists: false,
                 supportsSkills: true,
+                supportsMcp: true,
                 skillsPath: '~/.trae-cn/skills'
             },
             {
@@ -574,6 +590,7 @@ const mockAPI: ElectronAPI = {
                 configPath: '~/.marscode/IDEA.mcp.config.json',
                 configExists: false,
                 supportsSkills: true,
+                supportsMcp: true,
                 skillsPath: '~/.marscode/skills'
             },
             {
@@ -583,6 +600,7 @@ const mockAPI: ElectronAPI = {
                 configPath: '~/.config/opencode/opencode.json',
                 configExists: false,
                 supportsSkills: true,
+                supportsMcp: true,
                 skillsPath: '~/.config/opencode/skills'
             },
             {
@@ -592,6 +610,7 @@ const mockAPI: ElectronAPI = {
                 configPath: '~/.codebuddy/mcp.json',
                 configExists: false,
                 supportsSkills: true,
+                supportsMcp: true,
                 skillsPath: '~/.codebuddy/skills'
             },
             {
@@ -601,6 +620,7 @@ const mockAPI: ElectronAPI = {
                 configPath: '~/.workbuddy/mcp.json',
                 configExists: false,
                 supportsSkills: true,
+                supportsMcp: true,
                 skillsPath: '~/.workbuddy/skills'
             },
             {
@@ -610,6 +630,7 @@ const mockAPI: ElectronAPI = {
                 configPath: '~/.qoder/mcp.json',
                 configExists: false,
                 supportsSkills: true,
+                supportsMcp: true,
                 skillsPath: '~/.qoder/skills'
             },
             {
@@ -619,7 +640,18 @@ const mockAPI: ElectronAPI = {
                 configPath: '~/.zcode/cli/config.json',
                 configExists: false,
                 supportsSkills: true,
+                supportsMcp: true,
                 skillsPath: '~/.zcode/skills'
+            },
+            {
+                id: 'agent-skills',
+                name: 'Agent Skills (.agents)',
+                installed: false,
+                configPath: '~/.agents',
+                configExists: false,
+                supportsSkills: true,
+                supportsMcp: false,
+                skillsPath: '~/.agents/skills'
             },
             {
                 id: 'cloud',
@@ -628,6 +660,7 @@ const mockAPI: ElectronAPI = {
                 configPath: '~/.ai-tools/cloud/ai-tools/mcp/mcp.json',
                 configExists: false,
                 supportsSkills: true,
+                supportsMcp: false,
                 skillsPath: '~/.ai-tools/cloud/ai-tools/skills'
             },
         ],
@@ -842,6 +875,8 @@ const mockAPI: ElectronAPI = {
         push: async () => ({ok: false, message: 'Not available in browser'}),
         pull: async () => ({ok: false, message: 'Not available in browser'}),
         onPulled: () => () => {},
+        checkConsistency: async () => ({items: [], checkedAt: new Date().toISOString()}),
+        readEnds: async () => ({local: null, cloud: null}),
     },
     mcp: {
         connect: async () => ({success: false, error: 'Not available in browser'}),

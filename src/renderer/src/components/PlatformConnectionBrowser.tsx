@@ -19,24 +19,6 @@ import {toast} from './Toast';
 /** 每页条数 */
 const PAGE_SIZE = 20;
 
-/** 支持接收 Skills 的客户端（须与主进程 SKILL_SUPPORTED_CLIENTS 保持一致） */
-const SKILL_CLIENTS = [
-    'cursor',
-    'claude-code',
-    'gemini-cli',
-    'codex-cli',
-    'opencode',
-    'agent-skills',
-    'codebuddy',
-    'workbuddy',
-    'qoder',
-    'zcode',
-    'marscode',
-    'trae',
-    'trae-cn',
-    'trae-solo-cn',
-];
-
 export default function PlatformConnectionBrowser({
                                                       connection,
                                                       query,
@@ -119,7 +101,10 @@ export default function PlatformConnectionBrowser({
                 return;
             }
             const clients = (await api.clients.getAll())
-                .filter(c => SKILL_CLIENTS.includes(c.id) && c.installed)
+                // 安装目标 = 已安装且支持 Skills 的客户端。supportsSkills 由主进程
+                // SKILL_SUPPORTED_CLIENTS 派生（单一真源），彻底取代此前的 renderer 硬编码列表，
+                // 杜绝主进程加新客户端后两处漂移。cloud 是云同步暂存区，不作为安装目标。
+                .filter(c => c.supportsSkills && c.id !== 'cloud' && c.installed)
                 .map(c => c.id as SkillClientType);
             if (clients.length === 0) {
                 toast.error('未检测到已安装的客户端，请先在设置中配置');

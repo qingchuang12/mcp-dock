@@ -86,6 +86,24 @@ export const ALL_BUILTIN_CLIENTS: ClientType[] = [
 // VS Code 使用 "servers" 键而非 "mcpServers"
 export const SERVERS_KEY_CLIENTS: ClientType[] = ['vscode'];
 
+/**
+ * 纯 CLI 分发形态的客户端（无 GUI 本体，只有命令行/可执行文件）。
+ * 它们的配置文件（~/.claude.json、~/.codex/config.toml 等）可能由第三方工具、
+ * 脚本或本应用写 MCP 配置时创建——配置文件存在不代表 CLI 本体已安装（用户报障：
+ * 未装 Claude Code 却因 ~/.claude.json 存在显示已安装）。
+ * 因此这些客户端的「已安装」判定只看本体探测（exe / npm / CLI where / 配置目录 marker），
+ * 忽略 configExists 兜底。GUI/IDE 形态客户端保留原口径（配置文件存在是强「在用」信号）。
+ */
+export const EXECUTABLE_ONLY_CLIENTS: ClientType[] = [
+    'claude-code',
+    'gemini-cli',
+    'codex-cli',
+    'opencode',
+    'openclaw',
+    'qoder',
+    'zcode',
+];
+
 export interface ClientInfo {
     id: ClientType | string;
     name: string;
@@ -93,6 +111,12 @@ export interface ClientInfo {
     configPath: string;
     configExists: boolean;
     supportsSkills: boolean;
+    /**
+     * 是否支持 MCP 配置写入。cloud（云同步暂存区）与 agent-skills（.agents 统一标准）
+     * 是「仅 Skill」的虚拟客户端，没有 MCP 配置文件——UI 的 MCP 安装目标应以此过滤，
+     * 不再用 id !== 'cloud' 之类的魔法字符串分散判断。
+     */
+    supportsMcp: boolean;
     skillsPath?: string;
     /** 是否为用户手动添加的客户端 */
     isCustom?: boolean;

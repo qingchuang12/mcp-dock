@@ -2,14 +2,14 @@
  * 模态框组件 - Surge 风格
  */
 
-import { ReactNode, useEffect } from 'react';
+import {ReactNode, useEffect} from 'react';
 
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
 }
 
 export default function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
@@ -36,6 +36,9 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' }:
     sm: 'max-w-sm',
     md: 'max-w-md',
     lg: 'max-w-lg',
+    // xl：宽幅弹窗（对照查看等双栏内容）；full：近全屏「全面显示」模式
+    xl: 'max-w-5xl',
+    full: 'max-w-[95vw]',
   };
 
   return (

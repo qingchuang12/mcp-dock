@@ -23,6 +23,7 @@ import {
     ClientInfo,
     ClientType,
     CustomClientDef,
+    EXECUTABLE_ONLY_CLIENTS,
     McpServerConfig,
     SKILL_SUPPORTED_CLIENTS,
     SkillClientType,
@@ -371,8 +372,9 @@ export class ConfigManager {
         }
 
         // 内置客户端清单统一取自 ALL_BUILTIN_CLIENTS，避免每加一个客户端就要同步多处字面量数组。
-        // 'cloud' 是虚拟客户端（云同步暂存区），不在 ALL_BUILTIN_CLIENTS 内，单独追加在末尾。
-        const clients: AnyClientId[] = [...ALL_BUILTIN_CLIENTS, 'cloud'];
+        // 'agent-skills'（.agents 统一标准）与 'cloud'（云同步暂存区）是「仅 Skill」的虚拟客户端，
+        // 不在 ALL_BUILTIN_CLIENTS 内（避免污染 MCP 备份/服务器扫描遍历），单独追加在末尾。
+        const clients: AnyClientId[] = [...ALL_BUILTIN_CLIENTS, 'agent-skills', 'cloud'];
 
         // 并行检测所有客户端：原先串行 await 每个客户端的 isClientInstalled（其中 CLI 客户端
         // 要走 where/which，最坏有 3s 超时），全部客户端串行累计可达 1~2s，导致「我的库」打开明显卡顿。
@@ -384,22 +386,33 @@ export class ConfigManager {
             ]);
 
             const supportsSkills = SKILL_SUPPORTED_CLIENTS.includes(client as SkillClientType);
+            const supportsMcp = client !== 'cloud' && client !== 'agent-skills';
 
-            // 已安装判定合并「客户端本体探测」与「配置文件存在」两个信号（通用口径，非特例）：
+            // 已安装判定合并「客户端本体探测」与「配置文件存在」两个信号：
             // - 客户端装了但没配过 MCP（isClientInstalled=true、configExists=false）→ 应判已安装，
             //   否则会出现「装了 ZCode 却显示未安装」这类反直觉结果；
-            // - 仅残留配置文件（isClientInstalled=false、configExists=true）→ 仍判已安装。
+            // - 仅残留配置文件（isClientInstalled=false、configExists=true）→ 仍判已安装（GUI/IDE 形态）。
+            // 例外（用户报障修正）：EXECUTABLE_ONLY_CLIENTS（纯 CLI 形态）忽略 configExists 兜底——
+            // ~/.claude.json 等配置可能由第三方脚本或本应用写 MCP 配置时创建，
+            // 文件存在不代表 CLI 本体已安装，误把未装的 Claude Code 显示为已安装。
             // UI 侧另有独立的 configExists 字段，可区分「已安装但未配置」。
             // cloud 是虚拟客户端，installed 由云同步是否激活决定，不并入上面的探测逻辑。
-            const isInstalled = client === 'cloud' ? installed : (installed || configExists);
+            const isInstalled = client === 'cloud' || EXECUTABLE_ONLY_CLIENTS.includes(client as ClientType)
+                ? installed
+                : (installed || configExists);
 
             return {
                 id: client,
                 name: this.getClientName(client),
                 installed: isInstalled,
-                configPath: this.getClientConfigPath(client),
+                // agent-skills 无 MCP 配置文件，configPath 指向其根目录仅作展示
+                //（设置页卡片显示目录名；configExists 对它恒为 false，无副作用）
+                configPath: client === 'agent-skills'
+                    ? path.join(os.homedir(), '.agents')
+                    : this.getClientConfigPath(client),
                 configExists,
                 supportsSkills,
+                supportsMcp,
                 skillsPath: supportsSkills ? this.getSkillsPath(client as SkillClientType) : undefined,
             };
         }));
@@ -421,6 +434,8 @@ export class ConfigManager {
                 configPath: def.configPath,
                 configExists,
                 supportsSkills: def.supportsSkills,
+                // 用户手动添加的客户端：本质就是指定 MCP 配置文件路径，天然支持 MCP 写入
+                supportsMcp: true,
                 skillsPath: def.supportsSkills ? def.skillsPath : undefined,
                 isCustom: true,
             };

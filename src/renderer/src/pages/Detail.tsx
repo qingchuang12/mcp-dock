@@ -5,18 +5,18 @@
  */
 
 import {useEffect, useState} from 'react';
-import {useNavigate, useParams, useSearchParams, useLocation} from 'react-router-dom';
+import {useLocation, useNavigate, useParams, useSearchParams} from 'react-router-dom';
 import {useQuery} from '@tanstack/react-query';
 import {useTranslation} from 'react-i18next';
 import {
     type DataSource,
-    type ServerListItem,
     fetchReadmeFromGitHub,
     fetchServerDetail,
     isOfficialDetail,
     isSmitheryDetail,
     type OfficialPackage,
     type OfficialRemote,
+    type ServerListItem,
     type SmitheryDetail,
 } from '../api/registry';
 import {type AnyClientId, type ClientInfo, type RuntimeInfo, useElectronAPI} from '../lib/electron';
@@ -29,14 +29,7 @@ import ClientIcon from '../components/ClientIcon';
 import ClientMultiSelect from '../components/ClientMultiSelect';
 import PlatformServerDetail from './PlatformServerDetail';
 import WindowControls from '../components/WindowControls';
-import {
-    BackIcon,
-    ClockIcon,
-    DownloadIcon,
-    ExternalLinkIcon,
-    GitHubIcon,
-    VerifiedIcon
-} from '../components/Icons';
+import {BackIcon, ClockIcon, DownloadIcon, ExternalLinkIcon, GitHubIcon, VerifiedIcon} from '../components/Icons';
 
 // 从仓库 URL 提取 GitHub 用户名
 function extractGitHubUsername(repoUrl: string | null | undefined): string | null {
@@ -210,8 +203,9 @@ export default function Detail() {
 
     // 默认选择已安装的客户端
     useEffect(() => {
-        // 排除云端存储：它不是真实客户端，安装目标默认不应落到云端
-        const installedClientIds = clients.filter(c => c.installed && c.id !== 'cloud').map(c => c.id);
+        // 仅限支持 MCP 配置写入的客户端：cloud（云同步暂存区）/ agent-skills（.agents 统一标准）
+        // 没有 MCP 配置文件，不能作为 MCP 安装目标
+        const installedClientIds = clients.filter(c => c.installed && c.supportsMcp).map(c => c.id);
         if (installedClientIds.length > 0 && selectedClients.length === 0) {
             if (installedClientIds.includes('cursor')) {
                 setSelectedClients(['cursor']);
@@ -1048,7 +1042,7 @@ export default function Detail() {
                             {t('detail.selectClients')}
                         </label>
                         <ClientMultiSelect
-                            clients={clients.filter(client => client.installed)}
+                            clients={clients.filter(client => client.installed && client.supportsMcp)}
                             selected={selectedClients}
                             onToggle={toggleClient}
                             className="grid grid-cols-2 gap-2"
@@ -1062,7 +1056,7 @@ export default function Detail() {
                             unselectedClass="bg-[var(--color-surface-hover)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[#636366]"
                         />
 
-                        {clients.filter(c => c.installed).length === 0 && (
+                        {clients.filter(c => c.installed && c.supportsMcp).length === 0 && (
                             <p className="text-center text-[var(--color-muted)] text-[13px] py-4">
                                 {t('detail.noClientsInstalled') || 'No installed clients support MCP'}
                             </p>

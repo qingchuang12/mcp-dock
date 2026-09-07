@@ -16,11 +16,42 @@ import {
     getClientDisplayName,
     getDefaultClientPaths
 } from '../main/config/client-probe';
-import {ALL_BUILTIN_CLIENTS, SKILL_SUPPORTED_CLIENTS} from '../main/config/types';
+import {ALL_BUILTIN_CLIENTS, EXECUTABLE_ONLY_CLIENTS, SKILL_SUPPORTED_CLIENTS} from '../main/config/types';
 import {computeDefaultSkillsPaths} from '../main/client-paths';
 
 const HOME = '/home/testuser';
 const PLATFORMS: NodeJS.Platform[] = ['darwin', 'win32', 'linux'];
+
+describe('EXECUTABLE_ONLY_CLIENTS（用户报障防回归：配置文件存在≠CLI 本体已安装）', () => {
+    it('纯 CLI 形态客户端在列，GUI/IDE 形态客户端不在列', () => {
+        for (const c of ['claude-code', 'gemini-cli', 'codex-cli', 'opencode', 'openclaw', 'qoder', 'zcode']) {
+            expect(EXECUTABLE_ONLY_CLIENTS, c).toContain(c);
+        }
+        for (const c of ['cursor', 'vscode', 'windsurf', 'zed', 'trae', 'trae-cn', 'trae-solo-cn', 'marscode', 'kiro', 'jetbrains', 'antigravity', 'codebuddy', 'workbuddy']) {
+            expect(EXECUTABLE_ONLY_CLIENTS, c).not.toContain(c);
+        }
+    });
+});
+
+describe('安装探测路径为文件级（用户报障防回归：裸目录存在≠本体已安装）', () => {
+    it('codex-cli 三平台的探测路径均不含裸目录 ~/.codex', () => {
+        for (const platform of PLATFORMS) {
+            const paths = getClientAppPaths('codex-cli', platform);
+            const bare = path.join(os.homedir(), '.codex');
+            expect(paths, `codex-cli @ ${platform}`).not.toContain(bare);
+        }
+    });
+
+    it('opencode win32 探测路径不含裸目录 ~/.config/opencode', () => {
+        const paths = getClientAppPaths('opencode', 'win32');
+        expect(paths).not.toContain(path.join(os.homedir(), '.config', 'opencode'));
+    });
+
+    it('openclaw win32 探测路径不含裸目录 ~/.openclaw', () => {
+        const paths = getClientAppPaths('openclaw', 'win32');
+        expect(paths).not.toContain(path.join(os.homedir(), '.openclaw'));
+    });
+});
 
 describe('getDefaultClientPaths', () => {
     it.each(PLATFORMS)('%s 下每个内置客户端都有配置路径（jetbrains 动态扫描除外）', (platform: NodeJS.Platform) => {
@@ -57,11 +88,24 @@ describe('computeDefaultSkillsPaths', () => {
     });
 });
 
+describe('agent-skills 虚拟客户端建模（plan-2.0）', () => {
+    it('agent-skills 不在 ALL_BUILTIN_CLIENTS 内（防回归：避免污染 MCP 备份/服务器扫描遍历）', () => {
+        expect(ALL_BUILTIN_CLIENTS).not.toContain('agent-skills');
+        // 但必须是合法的 Skill 客户端（技能能装、库能扫）
+        expect(SKILL_SUPPORTED_CLIENTS).toContain('agent-skills');
+    });
+});
+
 describe('getClientDisplayName', () => {
     it('每个内置客户端都有显式显示名（而非回退成原始 id）', () => {
         for (const client of ALL_BUILTIN_CLIENTS) {
             expect(getClientDisplayName(client), client).not.toBe(client);
         }
+    });
+
+    it('每个「仅 Skill」虚拟客户端（agent-skills / cloud）也有显式显示名', () => {
+        expect(getClientDisplayName('agent-skills')).toBe('Agent Skills (.agents)');
+        expect(getClientDisplayName('cloud')).toBe('云端存储');
     });
 
     it('ZCode 显示名为 ZCode', () => {
@@ -70,6 +114,33 @@ describe('getClientDisplayName', () => {
 
     it('TRAE SOLO CN 显示名为 TRAE SOLO CN', () => {
         expect(getClientDisplayName('trae-solo-cn')).toBe('TRAE SOLO CN');
+    });
+});
+
+describe('getClientConfigMarkers', () => {
+    it('有独立可执行文件的客户端无目录 marker（目录可能只是装技能 mkdir 出来的，不代表本体安装）', () => {
+        // plan-2.0 执行修正：曾误给 ~/.claude 等加 marker，导致未装 Claude Code 的机器显示「已安装」。
+        // 已安装判定只走 exe / npm / CLI where；目录 marker 仅限插件形态与纯目录标准（.agents）。
+        const exeBackedClients = ['cursor', 'claude-code', 'gemini-cli', 'codex-cli', 'trae', 'trae-cn', 'trae-solo-cn', 'opencode'];
+        for (const client of exeBackedClients) {
+            expect(getClientConfigMarkers(client), `${client} 不应有目录 marker`).toEqual([]);
+        }
+    });
+
+    it('agent-skills 的 marker 指向 ~/.agents（纯目录标准，目录即「在用」）', () => {
+        expect(getClientConfigMarkers('agent-skills')).toEqual([path.join(os.homedir(), '.agents')]);
+    });
+
+    it('插件形态客户端保留目录 marker', () => {
+        expect(getClientConfigMarkers('codebuddy').length).toBeGreaterThan(0);
+        expect(getClientConfigMarkers('marscode').length).toBeGreaterThan(0);
+    });
+});
+
+describe('gemini-cli win32 探测', () => {
+    it('包含 npm 全局安装路径（与 claude-code / codex-cli 对齐）', () => {
+        const paths = getClientAppPaths('gemini-cli', 'win32');
+        expect(paths).toContain(path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'gemini.cmd'));
     });
 });
 

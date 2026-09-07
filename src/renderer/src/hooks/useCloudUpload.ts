@@ -1,7 +1,7 @@
 import {useState} from 'react';
 import {useTranslation} from 'react-i18next';
-import {useElectronAPI} from '../lib/electron';
 import type {InstalledSkill, SkillClientType, SkillCloudConflict} from '../lib/electron';
+import {useElectronAPI} from '../lib/electron';
 import type {InstalledServer} from '../pages/Library';
 import {toast} from '../components/Toast';
 
@@ -11,15 +11,19 @@ export interface CloudUploadController {
     cloudConflictOpen: boolean;
     cloudConflicts: SkillCloudConflict[];
     conflictResolutions: Record<string, 'overwrite' | 'skip'>;
+    /** MCP 上传前的「完整覆盖云端」确认（plan-3.0）：云端已有同名 server 时提示 */
+    mcpOverwriteConfirm: { total: number; existing: number } | null;
     setCloudUploadConfirmOpen: (v: boolean) => void;
     setCloudConflictOpen: (v: boolean) => void;
     setConflictResolutions: (v: Record<string, 'overwrite' | 'skip'>) => void;
+    setMcpOverwriteConfirm: (v: { total: number; existing: number } | null) => void;
     pushCloudAsync: (scope: 'mcp' | 'skills') => void;
     autoPushIfCloud: (targets: string[], scope: 'mcp' | 'skills') => Promise<void>;
     handleCloudUpload: () => void;
     confirmCloudUpload: () => void;
     toggleConflictResolution: (skillName: string) => void;
     doCloudUploadResolved: () => Promise<void>;
+    confirmMcpOverwrite: () => void;
 }
 
 /**
@@ -43,6 +47,7 @@ export function useCloudUpload(params: {
     const [cloudConflictOpen, setCloudConflictOpen] = useState(false);
     const [cloudConflicts, setCloudConflicts] = useState<SkillCloudConflict[]>([]);
     const [conflictResolutions, setConflictResolutions] = useState<Record<string, 'overwrite' | 'skip'>>({});
+    const [mcpOverwriteConfirm, setMcpOverwriteConfirm] = useState<{ total: number; existing: number } | null>(null);
 
     /**
      * 后台异步把暂存区推到云端（不阻塞当前操作界面）。
@@ -81,16 +86,20 @@ export function useCloudUpload(params: {
         setCloudBusy('push');
         try {
             if (activeTab === 'mcp') {
+                // 上传方向防护（plan-3.0）：云端已有 server 配置时弹「完整覆盖」确认。
+                // MCP 无可靠的 per-server 时间戳，按用户语义不比新旧、只问覆盖与否
+                //（差异明细可先在「我的库」顶部一致性 banner 中对照查看）。
                 if (servers.length > 0) {
-                    await api.config.syncServersBatch(
-                        servers.map(s => ({serverId: s.id, config: s.config})),
-                        ['cloud']
-                    );
+                    const cloudServers = await api.config.getServers('cloud').catch(() => ({} as Record<string, unknown>));
+                    const cloudNames = new Set(Object.keys(cloudServers || {}));
+                    if (cloudNames.size > 0) {
+                        const existing = servers.filter(s => cloudNames.has(s.id)).length;
+                        setMcpOverwriteConfirm({total: servers.length, existing});
+                        setCloudBusy(null);
+                        return; // 确认后由 confirmMcpOverwrite 继续
+                    }
                 }
-                // 本地暂存区已就绪，立即刷新界面，远端推送在后台异步完成
-                await loadData();
-                toast.success(t('library.cloudUploadStarted') || '云端上传中…');
-                pushCloudAsync('mcp');
+                await doMcpUpload();
             } else {
                 const skillItems = skills
                     .map(s => ({
@@ -129,6 +138,30 @@ export function useCloudUpload(params: {
         } finally {
             setCloudBusy(null);
         }
+    };
+
+    /** MCP 实际写入云端暂存区 + 后台推送（与「完整覆盖」确认解耦后的执行体） */
+    const doMcpUpload = async () => {
+        if (servers.length > 0) {
+            await api.config.syncServersBatch(
+                servers.map(s => ({serverId: s.id, config: s.config})),
+                ['cloud']
+            );
+        }
+        // 本地暂存区已就绪，立即刷新界面，远端推送在后台异步完成
+        await loadData();
+        toast.success(t('library.cloudUploadStarted') || '云端上传中…');
+        pushCloudAsync('mcp');
+    };
+
+    /** MCP「完整覆盖云端」确认：继续执行上传 */
+    const confirmMcpOverwrite = () => {
+        setMcpOverwriteConfirm(null);
+        setCloudBusy('push');
+        doMcpUpload().catch((error: any) => {
+            console.error('Cloud upload failed:', error);
+            toast.error(error?.message || '上传失败');
+        }).finally(() => setCloudBusy(null));
     };
 
     // 按用户确认结果同步 Skill 到云端
@@ -180,14 +213,17 @@ export function useCloudUpload(params: {
         cloudConflictOpen,
         cloudConflicts,
         conflictResolutions,
+        mcpOverwriteConfirm,
         setCloudUploadConfirmOpen,
         setCloudConflictOpen,
         setConflictResolutions,
+        setMcpOverwriteConfirm,
         pushCloudAsync,
         autoPushIfCloud,
         handleCloudUpload,
         confirmCloudUpload,
         toggleConflictResolution,
         doCloudUploadResolved,
+        confirmMcpOverwrite,
     };
 }

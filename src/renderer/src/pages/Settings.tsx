@@ -62,8 +62,10 @@ export default function Settings() {
                 api.system.getVersion(),
             ]);
             setRuntimes(runtimeInfo);
-            // 显示所有受支持的客户端（含未安装的）。云端存储在「云同步」卡片单独配置，不混入。
-            setClients(clientList.filter(c => c.id !== 'cloud'));
+            // 显示所有受支持的客户端（含未安装的）。cloud / agent-skills 是「仅 Skill」的虚拟客户端：
+            // 云端存储在「云同步」卡片单独配置；agent-skills（.agents 统一标准）没有 MCP 配置文件，
+            // 但作为技能载体需要在设置页可见、可配 Skills 路径。
+            setClients(clientList.filter(c => c.supportsMcp || c.id === 'agent-skills'));
             setVersion(appVersion);
         } catch (error) {
             console.error('Failed to load settings data:', error);
@@ -93,8 +95,10 @@ export default function Settings() {
             }
 
             setRuntimes(runtimeInfo);
-            // 显示所有受支持的客户端（含未安装的）。云端存储在「云同步」卡片单独配置，不混入。
-            setClients(clientList.filter(c => c.id !== 'cloud'));
+            // 显示所有受支持的客户端（含未安装的）。cloud / agent-skills 是「仅 Skill」的虚拟客户端：
+            // 云端存储在「云同步」卡片单独配置；agent-skills（.agents 统一标准）没有 MCP 配置文件，
+            // 但作为技能载体需要在设置页可见、可配 Skills 路径。
+            setClients(clientList.filter(c => c.supportsMcp || c.id === 'agent-skills'));
             setVersion(appVersion);
             toast.success(t('settings.refreshed') || 'Settings refreshed');
         } catch (error) {
@@ -130,8 +134,8 @@ export default function Settings() {
         if (!editingClient) return;
 
         try {
-            // 保存 MCP Config 路径
-            if (editMcpPath !== editingClient.configPath) {
+            // 保存 MCP Config 路径（「仅 Skill」虚拟客户端如 agent-skills 无 MCP 配置，不写）
+            if (editingClient.supportsMcp && editMcpPath !== editingClient.configPath) {
                 await api.clients.setCustomPath(editingClient.id, editMcpPath || null);
             }
 
@@ -170,6 +174,7 @@ export default function Settings() {
                     configPath: def.configPath,
                     configExists: false,
                     supportsSkills: def.supportsSkills,
+                    supportsMcp: true,
                     skillsPath: def.supportsSkills ? def.skillsPath : undefined,
                     isCustom: true,
                 },
@@ -364,6 +369,12 @@ export default function Settings() {
                                                         <div className="flex items-center gap-1.5">
                                                             <span
                                                                 className="text-[12px] font-medium text-[var(--color-text)] truncate">{client.name}</span>
+                                                            {client.supportsSkills && (
+                                                                <span
+                                                                    title={t('settings.skillCapable') || 'Supports Skills'}
+                                                                    className="flex-shrink-0 px-1 py-0.5 rounded bg-[var(--color-accent)]/12 text-[var(--color-accent)] text-[9px] font-semibold leading-none"
+                                                                >✦</span>
+                                                            )}
                                                         </div>
                                                         <code
                                                             className="text-[9px] text-[var(--color-muted)] font-mono truncate block">
@@ -550,19 +561,21 @@ export default function Settings() {
                         {t('settings.editPathHint') || 'Customize the configuration paths for this client.'}
                     </p>
 
-                    {/* MCP Config 路径 */}
-                    <div>
-                        <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">
-                            {t('settings.mcpConfigPath')}
-                        </label>
-                        <input
-                            type="text"
-                            value={editMcpPath}
-                            onChange={(e) => setEditMcpPath(e.target.value)}
-                            className="w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] font-mono text-[12px] focus:border-[var(--color-accent)] transition-colors"
-                            placeholder={t('settings.enterCustomPath') || 'Enter custom config path...'}
-                        />
-                    </div>
+                    {/* MCP Config 路径（仅支持 MCP 的客户端显示；agent-skills 等「仅 Skill」虚拟客户端无此概念） */}
+                    {editingClient?.supportsMcp && (
+                        <div>
+                            <label className="block text-[12px] text-[var(--color-muted2)] mb-1.5">
+                                {t('settings.mcpConfigPath')}
+                            </label>
+                            <input
+                                type="text"
+                                value={editMcpPath}
+                                onChange={(e) => setEditMcpPath(e.target.value)}
+                                className="w-full px-3 py-2 rounded-md bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] font-mono text-[12px] focus:border-[var(--color-accent)] transition-colors"
+                                placeholder={t('settings.enterCustomPath') || 'Enter custom config path...'}
+                            />
+                        </div>
+                    )}
 
                     {/* Skills 目录（仅支持 Skills 的客户端显示） */}
                     {editingClient?.supportsSkills && (
