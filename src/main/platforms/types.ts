@@ -164,6 +164,8 @@ export interface PlatformSearchParams {
     baseUrl: string;
     /** 可选 Bearer 令牌。 */
     secret?: string | null;
+    /** 可选的运行时缓存目录：adapter 用它累积在线结果作为离线索引（避免写死静态索引）。 */
+    cacheDir?: string;
 }
 
 /**

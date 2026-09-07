@@ -41,7 +41,7 @@ const BAILIAN_SOURCES: SourceFilter[] = [
     {id: 'PARTNER', name: '三方伙伴'},
     {id: 'OPEN_SOURCE_COMMUNITY', name: '开源社区'},
     {id: 'ALIYUN_MARKET', name: '云市场'},
-    {id: 'ONEKEY', name: '云市场'},
+    {id: 'ONEKEY', name: '一键接入'},
     {id: 'OFFICIAL', name: '官方'},
 ];
 
@@ -83,8 +83,9 @@ function loadIndex(): RawBailian[] {
     return [];
 }
 
-export function mapServer(raw: RawBailian, idx: number): PlatformServerListItem {
-    const id = `${raw.source || 'bailian'}-${raw.serverName}-${idx}`;
+export function mapServer(raw: RawBailian, _idx?: number): PlatformServerListItem {
+    // id 用稳定编码（source + serverName），不依赖切片下标，保证翻页/排序/过滤后详情仍能回查
+    const id = `bailian:${raw.source || 'unknown'}:${encodeURIComponent(raw.serverName)}`;
     return {
         id,
         name: raw.serverName,
@@ -187,12 +188,14 @@ export const bailianAdapter: PlatformAdapter = {
         serverId: string
     ): Promise<PlatformServerDetail> {
         const all = loadIndex();
-        const idx = Number(serverId.split('-').pop()) || 0;
-        const raw = all[idx] || all.find((_, i) => mapServer(_, i).id === serverId);
+        const m = serverId.match(/^bailian:([^:]+):(.+)$/);
+        const raw = m
+            ? all.find(r => (r.source || 'unknown') === decodeURIComponent(m[1]) && r.serverName === decodeURIComponent(m[2]))
+            : undefined;
         if (!raw) {
             throw new Error('未找到该百炼服务（离线索引中不存在）');
         }
-        const item = mapServer(raw, idx);
+        const item = mapServer(raw);
         return {
             ...item,
             readme: raw.description,

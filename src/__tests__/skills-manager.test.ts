@@ -719,3 +719,140 @@ describe('共享 Skills 目录去重（resolveScanGroups / getAllInstalledSkills
     expect(detail?.clients).toEqual(['claude-code']);
   });
 });
+
+// ===================== P0-1 / P0-2 自定义 Skill 保存 =====================
+
+describe('createCustomSkill（P0-1 预检 / P0-2 去重）', () => {
+  it('应在任一客户端已有同名 skill 时预检失败，且不写入尚未处理的客户端', async () => {
+    const dirCursor = path.join(testDir, 'cursor');
+    await fs.mkdir(path.join(dirCursor, 'dup'), {recursive: true});
+    await fs.writeFile(path.join(dirCursor, 'dup', 'SKILL.md'), '# exists', 'utf-8');
+
+    (manager as any).getSkillsPath = (c: string) => path.join(testDir, c);
+
+    const res = await manager.createCustomSkill(
+      {name: 'DUP', description: 'd', body: 'b'},
+      ['cursor', 'claude-code']
+    );
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('已存在');
+    const writtenToOther = await fs.access(
+      path.join(path.join(testDir, 'claude-code'), 'dup', 'SKILL.md')
+    ).then(() => true).catch(() => false);
+    expect(writtenToOther).toBe(false);
+  });
+
+  it('应在共享目录客户端下去重后创建成功（不误报已存在）', async () => {
+    const shared = path.join(testDir, 'shared');
+    (manager as any).getSkillsPath = (c: string) =>
+      (c === 'trae-cn' || c === 'trae-solo-cn') ? shared : path.join(testDir, c);
+
+    const res = await manager.createCustomSkill(
+      {name: 'demo', description: 'd', body: 'b'},
+      ['trae-cn', 'trae-solo-cn']
+    );
+    expect(res.success).toBe(true);
+    const exists = await fs.access(path.join(shared, 'demo', 'SKILL.md')).then(() => true).catch(() => false);
+    expect(exists).toBe(true);
+  });
+});
+
+describe('updateCustomSkill（P0-2 去重 / P2-4 改名接管）', () => {
+  it('应在共享目录客户端下重命名成功（不重复 rename 导致 ENOENT）', async () => {
+    const shared = path.join(testDir, 'shared');
+    await fs.mkdir(path.join(shared, 'old-name'), {recursive: true});
+    await fs.writeFile(
+      path.join(shared, 'old-name', 'SKILL.md'),
+      '---\nname: old-name\ndescription: d\n---\n# old'
+    );
+
+    (manager as any).getSkillsPath = (c: string) =>
+      (c === 'trae-cn' || c === 'trae-solo-cn') ? shared : path.join(testDir, c);
+
+    const res = await manager.updateCustomSkill(
+      'old-name',
+      {name: 'new-name', description: 'd', body: '# new'},
+      ['trae-cn', 'trae-solo-cn']
+    );
+    expect(res.success).toBe(true);
+    const newExists = await fs.access(path.join(shared, 'new-name', 'SKILL.md')).then(() => true).catch(() => false);
+    expect(newExists).toBe(true);
+    const oldExists = await fs.access(path.join(shared, 'old-name')).then(() => true).catch(() => false);
+    expect(oldExists).toBe(false);
+  });
+
+  it('应仅在改名（正文未变）时也删除 .source.json 转为手动安装', async () => {
+    const dir = path.join(testDir, 'cursor');
+    await fs.mkdir(path.join(dir, 'ren-skill'), {recursive: true});
+    await fs.writeFile(
+      path.join(dir, 'ren-skill', 'SKILL.md'),
+      '---\nname: ren-skill\ndescription: d\n---\n# body'
+    );
+    await fs.writeFile(path.join(dir, 'ren-skill', '.source.json'), '{}', 'utf-8');
+
+    (manager as any).getSkillsPath = (c: string) => path.join(testDir, c);
+
+    const res = await manager.updateCustomSkill(
+      'ren-skill',
+      {name: 'renamed-skill', description: 'd', body: '# body'},
+      ['cursor']
+    );
+    expect(res.success).toBe(true);
+    const srcExists = await fs.access(path.join(dir, 'renamed-skill', '.source.json')).then(() => true).catch(() => false);
+    expect(srcExists).toBe(false);
+  });
+
+  it('应在同名且正文未变时保留 .source.json', async () => {
+    const dir = path.join(testDir, 'cursor');
+    await fs.mkdir(path.join(dir, 'keep-src'), {recursive: true});
+    await fs.writeFile(path.join(dir, 'keep-src', 'SKILL.md'), '---\nname: keep-src\ndescription: d\n---\n# body');
+    await fs.writeFile(path.join(dir, 'keep-src', '.source.json'), '{}', 'utf-8');
+
+    (manager as any).getSkillsPath = (c: string) => path.join(testDir, c);
+
+    const res = await manager.updateCustomSkill(
+      'keep-src',
+      {name: 'keep-src', description: 'd', body: '# body'},
+      ['cursor']
+    );
+    expect(res.success).toBe(true);
+    const srcExists = await fs.access(path.join(dir, 'keep-src', '.source.json')).then(() => true).catch(() => false);
+    expect(srcExists).toBe(true);
+  });
+});
+
+// ===================== P2-6 syncSkillToClients =====================
+
+describe('syncSkillToClients（P2-6 原子拷贝 / 同目录自删保护）', () => {
+  it('应在目标与源同物理目录时跳过，不删除源数据', async () => {
+    const shared = path.join(testDir, 'shared');
+    await fs.mkdir(path.join(shared, 'skill-a'), {recursive: true});
+    await fs.writeFile(path.join(shared, 'skill-a', 'SKILL.md'), '# a', 'utf-8');
+
+    (manager as any).getSkillsPath = (c: string) =>
+      (c === 'trae-cn' || c === 'trae-solo-cn') ? shared : path.join(testDir, c);
+
+    const res = await manager.syncSkillToClients('skill-a', 'trae-cn', ['trae-solo-cn']);
+    expect(res.success).toEqual([]);
+    expect(res.failed).toEqual([]);
+    const exists = await fs.access(path.join(shared, 'skill-a', 'SKILL.md')).then(() => true).catch(() => false);
+    expect(exists).toBe(true);
+  });
+
+  it('应拷贝到目标客户端（同目录临时名 + 重命名）', async () => {
+    const srcDir = path.join(testDir, 'cursor');
+    await fs.mkdir(path.join(srcDir, 'skill-b'), {recursive: true});
+    await fs.writeFile(path.join(srcDir, 'skill-b', 'SKILL.md'), '# b', 'utf-8');
+
+    (manager as any).getSkillsPath = (c: string) => path.join(testDir, c);
+
+    const res = await manager.syncSkillToClients('skill-b', 'cursor', ['claude-code']);
+    expect(res.success).toEqual(['claude-code']);
+    const copied = await fs.readFile(path.join(testDir, 'claude-code', 'skill-b', 'SKILL.md'), 'utf-8');
+    expect(copied).toBe('# b');
+
+    // 无残留临时目录
+    const entries = await fs.readdir(path.join(testDir, 'claude-code'));
+    expect(entries.filter(e => e.startsWith('.skill-b.tmp-'))).toEqual([]);
+  });
+});

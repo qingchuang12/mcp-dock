@@ -366,6 +366,8 @@
     "openDirectory": "在文件管理器中打开",
     "editPath": "编辑配置路径",
     "editPathHint": "自定义该客户端的配置路径。",
+    "configured": "已配置 MCP",
+    "notConfigured": "已安装，尚未配置 MCP",
     "mcpConfigPath": "MCP 配置路径",
     "skillsDirectory": "Skills 目录",
     "uninstalledClients": "更多未安装的客户端",

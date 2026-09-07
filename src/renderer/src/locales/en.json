@@ -366,6 +366,8 @@
     "openDirectory": "Open in file manager",
     "editPath": "Edit config path",
     "editPathHint": "Customize the configuration paths for this client.",
+    "configured": "MCP configured",
+    "notConfigured": "Installed, MCP not configured yet",
     "mcpConfigPath": "MCP Config Path",
     "skillsDirectory": "Skills Directory",
     "uninstalledClients": "More clients not installed",

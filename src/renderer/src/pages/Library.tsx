@@ -481,7 +481,7 @@ export default function Library() {
         setSyncModalOpen(true);
     };
 
-    // 编辑自定义 Skill：从首个已安装客户端读回 SKILL.md 回填
+    // 编辑自定义 Skill：从首个已安装客户端读回 SKILL.md 回填；多客户端内容不一致时提示
     const handleEditSkill = async (skillName: string) => {
         const installed = skillClients[skillName] || [];
         const client = installed[0];
@@ -498,6 +498,24 @@ export default function Library() {
                             body: parsed.body,
                             clients: installed as SkillClientType[]
                         };
+                    }
+                    // P1-3：读取所有已安装客户端，检测内容分歧，避免保存时静默覆盖差异版本
+                    if (installed.length > 1) {
+                        const versions = await Promise.all(
+                            installed.map(c => api.skills.readSkillMd(skillName, c).catch(() => null))
+                        );
+                        const base = versions[0];
+                        const diverged = versions.some(v => {
+                            if (!v || !base) return v !== base;
+                            return (v.body ?? '').trim() !== (base.body ?? '').trim()
+                                || (v.description ?? '').trim() !== (base.description ?? '').trim();
+                        });
+                        if (diverged) {
+                            toast.warning(
+                                t('library.skillDiverged') ||
+                                '该 Skill 在多个客户端内容不一致，保存将以当前回填内容覆盖所有已选客户端'
+                            );
+                        }
                     }
                 }
             } catch (e) {

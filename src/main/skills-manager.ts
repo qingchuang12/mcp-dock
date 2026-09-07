@@ -158,6 +158,26 @@ export class SkillsManager {
     }
 
     /**
+     * 按物理 Skills 目录对客户端去重（P0-2）。
+     * 多个客户端 id 可能解析到同一物理目录（如 trae-cn 与 trae-solo-cn 共用 ~/.trae-cn/skills），
+     * 写入/重命名若按“两个客户端”各做一次会导致第二次 ENOENT 或误报重名。
+     * 保留首次出现的客户端，归属展示不变，仅保证每物理目录只操作一次。
+     */
+    private dedupeClientsByPath(clients: SkillClientType[]): SkillClientType[] {
+        const seen = new Set<string>();
+        const result: SkillClientType[] = [];
+        for (const client of clients) {
+            const dir = this.getSkillsPath(client);
+            if (!dir) continue;
+            const key = this.normalizeDirKey(dir);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            result.push(client);
+        }
+        return result;
+    }
+
+    /**
      * 共享目录归属分组：多个客户端 id 可能解析到同一物理 Skills 目录
      * （如 trae-cn 与 trae-solo-cn 共用 ~/.trae-cn/skills，由产品 dataFolderName 决定）。
      * 同一物理目录只扫描一次；归属（owners）取组内「已安装」的客户端——
@@ -432,33 +452,64 @@ export class SkillsManager {
     async createCustomSkill(
         input: { name: string; description: string; body: string },
         clients: SkillClientType[]
-    ): Promise<{ success: boolean; error?: string; skillName?: string }> {
+    ): Promise<{ success: boolean; error?: string; skillName?: string; results?: Array<{ client: SkillClientType; ok: boolean; error?: string }> }> {
         const skillName = sanitizeSkillName(input.name);
         if (!skillName) {
             return {success: false, error: 'Skill 名称无效（仅允许字母、数字、点、中划线、下划线）'};
         }
 
         const content = buildSkillMd(skillName, input.description, input.body);
+        // P0-2：按物理目录去重，避免共享目录客户端（trae-cn/trae-solo-cn）重复写入
+        const targets = this.dedupeClientsByPath(clients);
+        if (targets.length === 0) {
+            return {success: false, error: '未选择有效的目标客户端'};
+        }
 
-        for (const client of clients) {
+        const results: Array<{ client: SkillClientType; ok: boolean; error?: string }> = [];
+
+        // P0-1：全量预检（重名冲突），全部通过后再落盘，避免写了一半再报冲突
+        for (const client of targets) {
+            const skillPath = path.join(this.getSkillsPath(client), skillName);
+            try {
+                await fs.access(path.join(skillPath, 'SKILL.md'));
+                results.push({client, ok: false, error: `Skill "${skillName}" 已存在于 ${client}`});
+            } catch { /* 不存在，可创建 */ 
+                results.push({client, ok: true});
+            }
+        }
+        if (results.some(r => !r.ok)) {
+            return {
+                success: false,
+                error: results.filter(r => !r.ok).map(r => r.error).join('；'),
+                skillName,
+                results,
+            };
+        }
+
+        // 执行落盘，逐客户端记录结果
+        for (let i = 0; i < targets.length; i++) {
+            const client = targets[i];
             try {
                 const skillPath = path.join(this.getSkillsPath(client), skillName);
-                // 目录已存在且含 SKILL.md 视为重名冲突（仅对创建场景）
-                try {
-                    await fs.access(path.join(skillPath, 'SKILL.md'));
-                    return {success: false, error: `Skill "${skillName}" 已存在于 ${client}`};
-                } catch { /* 不存在，继续 */ }
-
                 await this.ensureSkillsDir(client);
                 await fs.mkdir(skillPath, {recursive: true});
                 await fs.writeFile(path.join(skillPath, 'SKILL.md'), content, 'utf-8');
+                results[i] = {client, ok: true};
                 console.log(`[SkillsManager] Created custom skill ${skillName} to ${client}`);
             } catch (error) {
-                return {success: false, error: (error as Error).message};
+                results[i] = {client, ok: false, error: (error as Error).message};
             }
         }
 
-        return {success: true, skillName};
+        const okCount = results.filter(r => r.ok).length;
+        if (okCount === 0) {
+            return {success: false, error: results.map(r => r.error).join('；'), skillName, results};
+        }
+        if (okCount < targets.length) {
+            const failed = results.filter(r => !r.ok).map(r => `${r.client}: ${r.error}`).join('；');
+            return {success: false, error: `部分客户端保存失败（${okCount}/${targets.length}）：${failed}`, skillName, results};
+        }
+        return {success: true, skillName, results};
     }
 
     /**
@@ -468,28 +519,60 @@ export class SkillsManager {
         originalName: string,
         input: { name: string; description: string; body: string },
         clients: SkillClientType[]
-    ): Promise<{ success: boolean; error?: string; skillName?: string }> {
+    ): Promise<{ success: boolean; error?: string; skillName?: string; results?: Array<{ client: SkillClientType; ok: boolean; error?: string }> }> {
         const newName = sanitizeSkillName(input.name) || originalName;
+        const nameChanged = newName !== originalName;
         const content = buildSkillMd(newName, input.description, input.body);
+        // P0-2：按物理目录去重，避免共享目录客户端重复 rename 导致 ENOENT
+        const targets = this.dedupeClientsByPath(clients);
+        if (targets.length === 0) {
+            return {success: false, error: '未选择有效的目标客户端'};
+        }
 
-        for (const client of clients) {
+        const results: Array<{ client: SkillClientType; ok: boolean; error?: string }> = [];
+
+        // P0-1：全量预检（源存在 / 目标重名冲突），全部通过后再落盘
+        for (const client of targets) {
+            const base = this.getSkillsPath(client);
+            const oldPath = path.join(base, originalName);
+            const newPath = path.join(base, newName);
+            try {
+                await fs.access(oldPath);
+            } catch {
+                results.push({client, ok: false, error: `Skill "${originalName}" 在 ${client} 中不存在`});
+                continue;
+            }
+            if (nameChanged) {
+                try {
+                    await fs.access(newPath);
+                    if (path.resolve(newPath) !== path.resolve(oldPath)) {
+                        results.push({client, ok: false, error: `Skill "${newName}" 已存在，无法重命名`});
+                        continue;
+                    }
+                } catch { /* 目标不存在，可移动 */ }
+            }
+            results.push({client, ok: true});
+        }
+        if (results.some(r => !r.ok)) {
+            return {
+                success: false,
+                error: results.filter(r => !r.ok).map(r => r.error).join('；'),
+                skillName: newName,
+                results,
+            };
+        }
+
+        // 执行落盘，逐客户端记录结果
+        for (let i = 0; i < targets.length; i++) {
+            const client = targets[i];
             try {
                 const base = this.getSkillsPath(client);
                 const oldPath = path.join(base, originalName);
                 const newPath = path.join(base, newName);
 
-                await fs.access(oldPath);
                 await this.ensureSkillsDir(client);
 
-                if (newName !== originalName) {
-                    // 目标已存在且与源不是同一路径则报错，避免覆盖（P1-7 修正大小写冲突保护）
-                    try {
-                        await fs.access(newPath);
-                        if (path.resolve(newPath) !== path.resolve(oldPath)) {
-                            return {success: false, error: `Skill "${newName}" 已存在，无法重命名`};
-                        }
-                    } catch { /* 目标不存在，可移动 */ }
-
+                if (nameChanged) {
                     // 同盘优先 fs.rename（原子、可中断）；跨盘才 cp，且校验目标完整后再删源，
                     // 避免 cp 中途失败仍执行 rm 造成源数据丢失（P1-7）。
                     const sameVolume = path.parse(oldPath).root === path.parse(newPath).root;
@@ -518,18 +601,27 @@ export class SkillsManager {
                 }
 
                 await fs.writeFile(path.join(newPath, 'SKILL.md'), content, 'utf-8');
-                // 仅当正文有变化时才视为用户接管该 Skill：删除来源标记，转为手动安装，
+                // 用户接管：正文变化或改名都视为脱离线上源，删除来源标记转为手动安装，
                 // 不再参与「全部更新 / 单个更新」从线上源覆盖；无修改则保留来源标记。
-                if (bodyChanged) {
+                if (bodyChanged || nameChanged) {
                     await fs.rm(path.join(newPath, '.source.json'), {force: true});
                 }
+                results[i] = {client, ok: true};
                 console.log(`[SkillsManager] Updated custom skill ${originalName} -> ${newName} on ${client}`);
             } catch (error) {
-                return {success: false, error: (error as Error).message};
+                results[i] = {client, ok: false, error: (error as Error).message};
             }
         }
 
-        return {success: true, skillName: newName};
+        const okCount = results.filter(r => r.ok).length;
+        if (okCount === 0) {
+            return {success: false, error: results.map(r => r.error).join('；'), skillName: newName, results};
+        }
+        if (okCount < targets.length) {
+            const failed = results.filter(r => !r.ok).map(r => `${r.client}: ${r.error}`).join('；');
+            return {success: false, error: `部分客户端保存失败（${okCount}/${targets.length}）：${failed}`, skillName: newName, results};
+        }
+        return {success: true, skillName: newName, results};
     }
 
     /**
@@ -1057,12 +1149,18 @@ export class SkillsManager {
                 continue;
             }
             const targetPath = path.join(targetSkillsPath, skillName);
+            // 目标与源同一物理目录时跳过（如 trae-cn / trae-solo-cn 共用目录），避免自删源数据
+            if (path.resolve(targetPath) === path.resolve(sourcePath)) continue;
+            // P2-6：先拷到同目录临时名，再删旧目标 + 原子重命名，避免先删后拷中途失败丢失目标数据
+            const tmpPath = path.join(targetSkillsPath, `.${skillName}.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`);
             try {
                 await this.ensureSkillsDir(client);
+                await copyDir(sourcePath, tmpPath);
                 await fs.rm(targetPath, {recursive: true, force: true});
-                await copyDir(sourcePath, targetPath);
+                await fs.rename(tmpPath, targetPath);
                 success.push(client);
             } catch (err) {
+                await fs.rm(tmpPath, {recursive: true, force: true}).catch(() => {});
                 failed.push(client);
                 errors[client] = (err as Error).message || '复制失败';
             }

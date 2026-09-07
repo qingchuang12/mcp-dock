@@ -648,11 +648,13 @@ ipcMain.handle('skills:save-with-cloud-sync', async (_,
             cloud.skipped = true;
             cloud.message = '云端未配置，已跳过';
         } else {
-            // 来源客户端不含 cloud 时，从首个来源客户端复制到云端暂存区（本地操作，快）
-            const sourceClient = clients.find(c => c !== 'cloud')
-                || (clients.includes('cloud') ? 'cloud' : clients[0]);
-            if (sourceClient && sourceClient !== 'cloud') {
-                await skillsManager.syncSkillToClients(finalName, sourceClient, ['cloud']);
+            // 来源客户端不含 cloud 时，从首个来源客户端复制到云端暂存区（本地操作，快）。
+            // cloud 已在本次写入的客户端中时无需再显式拷贝，避免先写后删再拷的冗余（P2-5）。
+            if (!clients.includes('cloud')) {
+                const sourceClient = clients.find(c => c !== 'cloud') || clients[0];
+                if (sourceClient) {
+                    await skillsManager.syncSkillToClients(finalName, sourceClient, ['cloud']);
+                }
             }
             // 后台异步 push，不阻塞保存 UI；任务进入侧边栏「同步任务」面板跟踪状态
             getSyncTaskManager().enqueue('cloud-push', `上传到云端 · ${finalName}`, 'skills');
@@ -910,7 +912,17 @@ ipcMain.handle('platforms:search-skills', async (_, platformType: string, query:
     const conn = (connectionId && connectionsStore.get(connectionId)) || connectionsStore.list().find(c => c.platformType === platformType);
     const baseUrl = conn?.baseUrl || '';
     const secret = conn?.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
-    return adapter.searchSkills({query, page, pageSize: pageSize || 20, category, sort, baseUrl, secret});
+    return adapter.searchSkills({
+        query,
+        page,
+        pageSize: pageSize || 20,
+        category,
+        sort,
+        baseUrl,
+        secret,
+        // 运行时离线缓存目录（ClawHub 累积在线结果作为离线索引，避免写死静态索引）
+        cacheDir: path.join(app.getPath('home'), '.ai-tools', 'cache', 'platforms'),
+    });
 });
 
 ipcMain.handle('platforms:search-servers', async (_, platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string, source?: string, connectionId?: string): Promise<PlatformServerSearchPage> => {

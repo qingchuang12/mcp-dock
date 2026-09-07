@@ -17,7 +17,7 @@ import ConnectionManager from '../components/ConnectionManager';
 import McpSourceManager from '../components/McpSourceManager';
 import CloudSyncManager from '../components/CloudSyncManager';
 import WindowControls from '../components/WindowControls';
-import {useStore, type ThemeMode} from '../store/useStore';
+import {type ThemeMode, useStore} from '../store/useStore';
 import {ensureLanguageLoaded} from '../i18n';
 
 export default function Settings() {
@@ -348,9 +348,16 @@ export default function Settings() {
                                                 >
                                                     <div className="relative flex-shrink-0">
                                                         <ClientIcon clientId={client.id} size={28}/>
-                                                        {client.configExists && (
+                                                        {client.configExists ? (
                                                             <span
-                                                                className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#34c759] border-2 border-[var(--color-surface)]"/>
+                                                                title={t('settings.configured') || '已配置 MCP'}
+                                                                className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#34c759] border-2 border-[var(--color-surface)]"
+                                                            />
+                                                        ) : (
+                                                            <span
+                                                                title={t('settings.notConfigured') || '已安装，尚未配置 MCP'}
+                                                                className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[var(--color-border)] border-2 border-[var(--color-surface)]"
+                                                            />
                                                         )}
                                                     </div>
                                                     <div className="flex-1 min-w-0">
