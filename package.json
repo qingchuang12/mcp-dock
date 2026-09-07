@@ -68,7 +68,7 @@
   },
   "build": {
     "appId": "com.ai-tools.app",
-    "pnpmRebuild": false,
+    "npmRebuild": false,
     "productName": "AI-Tools",
     "publish": null,
     "directories": {
