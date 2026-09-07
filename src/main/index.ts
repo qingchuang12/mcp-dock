@@ -8,6 +8,7 @@ import {ClientType, ConfigManager, SkillClientType} from './config-manager';
 import {EnvManager} from './env-manager';
 import {HistoryManager} from './history-manager';
 import {DiscoveredSkill, SkillCloudConflict, SkillsManager, SkillSourceMeta} from './skills-manager';
+import {exportSkillsToZip, type SkillsExportResult} from './skills-export';
 import type {
     PlatformFacets,
     PlatformSearchPage,
@@ -558,6 +559,14 @@ ipcMain.handle('skills:update', async (_, skillName: string, client: SkillClient
     return skillsManager.updateSkill(skillName, client);
 });
 
+// 导出选中 Skill 为 zip 包（plan-3.0 后续增强）：选中多个打成一个 zip，每个 skill 一个目录
+ipcMain.handle('skills:export-zip', async (_, names: string[]): Promise<SkillsExportResult> => {
+    if (!Array.isArray(names) || names.length === 0) {
+        return {ok: false, error: '没有可导出的 Skill'};
+    }
+    return exportSkillsToZip(names, () => skillsManager.getAllInstalledSkills());
+});
+
 // 批量更新所有 Skills
 ipcMain.handle('skills:update-all', async (_, client: SkillClientType) => {
     return skillsManager.updateAllSkills(client);
@@ -585,22 +594,25 @@ ipcMain.handle('skills:install-from-discovered', async (_, skill: DiscoveredSkil
     return result;
 });
 
-// 创建自定义 Skill（本地，无网络）
+// 创建自定义 Skill（本地，无网络；zip 导入时 input.files 携带附属文件一并落盘）
 ipcMain.handle('skills:create-custom', async (_, input: {
     name: string;
     description: string;
-    body: string
+    body: string;
+    files?: Array<{ path: string; data: Uint8Array }>;
 }, clients: SkillClientType[]) => {
     const result = await skillsManager.createCustomSkill(input, clients);
     await historyManager.backup();
     return result;
 });
 
-// 更新自定义 Skill（改写 SKILL.md，可重命名）
+// 更新自定义 Skill（改写 SKILL.md，可重命名；files/removedFiles 为附属文件变更）
 ipcMain.handle('skills:update-custom', async (_, originalName: string, input: {
     name: string;
     description: string;
-    body: string
+    body: string;
+    files?: Array<{ path: string; data: Uint8Array }>;
+    removedFiles?: string[];
 }, clients: SkillClientType[]) => {
     const result = await skillsManager.updateCustomSkill(originalName, input, clients);
     await historyManager.backup();
@@ -608,17 +620,18 @@ ipcMain.handle('skills:update-custom', async (_, originalName: string, input: {
 });
 
 /**
- * 保存自定义 Skill 并自动同步到云端（暂存区 + 自动 push）。
- * 对应需求：在「我的库」编辑/创建 skill 后，自动同步更新到「当前来源客户端 + 云端」。
+ * 保存自定义 Skill 并同步云端。
+ * 对应需求：在「我的库」编辑/创建 skill 后，同步更新到所选目标客户端。
+ * 云同步规则（用户拍板：未选择云端存储时，不默认加入云端）：
  *   - 先按原逻辑写入 selectedClients（update-custom / create-custom）；
- *   - 若来源客户端不含 cloud，则把 skill 复制到 cloud 暂存区（以我的库为准，覆盖同名）；
- *   - 若云端已配置，自动 push 到远端（git/sftp）；未配置则跳过（不影响本地保存）。
+ *   - 仅当用户显式勾选了 cloud 客户端时才入队后台 push（cloud 暂存区已随 create/update 写入）；
+ *   - 未勾选 cloud 或云端未配置 → 跳过云端同步，不影响本地保存。
  * 返回本地保存结果与云端同步状态，供 UI 提示。
  */
 ipcMain.handle('skills:save-with-cloud-sync', async (_,
     isEdit: boolean,
     originalName: string | undefined,
-    input: { name: string; description: string; body: string },
+    input: { name: string; description: string; body: string; files?: Array<{ path: string; data: Uint8Array }>; removedFiles?: string[] },
     clients: SkillClientType[]
 ): Promise<{
     success: boolean;
@@ -648,16 +661,13 @@ ipcMain.handle('skills:save-with-cloud-sync', async (_,
         if (!cloudSyncStore.isActive()) {
             cloud.skipped = true;
             cloud.message = '云端未配置，已跳过';
+        } else if (!clients.includes('cloud')) {
+            // 未显式选择云端存储：不同步云端（P：不默认加入云端）
+            cloud.skipped = true;
+            cloud.message = '未选择云端存储，已跳过云端同步';
         } else {
-            // 来源客户端不含 cloud 时，从首个来源客户端复制到云端暂存区（本地操作，快）。
-            // cloud 已在本次写入的客户端中时无需再显式拷贝，避免先写后删再拷的冗余（P2-5）。
-            if (!clients.includes('cloud')) {
-                const sourceClient = clients.find(c => c !== 'cloud') || clients[0];
-                if (sourceClient) {
-                    await skillsManager.syncSkillToClients(finalName, sourceClient, ['cloud']);
-                }
-            }
-            // 后台异步 push，不阻塞保存 UI；任务进入侧边栏「同步任务」面板跟踪状态
+            // cloud 已在写入目标中（暂存区由 create/update 直接写入），仅做后台 push，
+            // 任务进入侧边栏「同步任务」面板跟踪状态
             getSyncTaskManager().enqueue('cloud-push', `上传到云端 · ${finalName}`, 'skills');
             cloud.enqueued = true;
             cloud.message = '已加入后台同步队列';
@@ -698,9 +708,28 @@ ipcMain.handle('skills:read-skill-md', async (_, skillName: string, client: Skil
     return skillsManager.readSkillMd(skillName, client);
 });
 
+// 列出 Skill 目录内附属文件（编辑模式「附属文件」面板；排除 .source.json，SKILL.md 标受保护）
+ipcMain.handle('skills:list-skill-files', async (_, skillName: string, client: SkillClientType) => {
+    return skillsManager.listSkillFiles(skillName, client);
+});
+
+// 读取 Skill 附属文件内容（UTF-8 校验；二进制 / 超大返回只读）
+ipcMain.handle('skills:read-skill-file', async (_, skillName: string, client: SkillClientType, relPath: string) => {
+    return skillsManager.readSkillFile(skillName, client, relPath);
+});
+
 // 从本地 .zip / .skill 文件解析 Skill（解包后读取 SKILL.md），用于「我的库」上传创建
 ipcMain.handle('skills:import-file', async (_, filePath: string) => {
     return skillsManager.importFromFile(filePath);
+});
+
+// 从 ZIP/.skill 二进制（拖拽/选择文件读成 ArrayBuffer 传入）解析 Skill——不依赖 File.path，
+// 沙箱/新版 Electron 下拖拽即用（plan-3.0 后续增强）
+ipcMain.handle('skills:import-zip-buffer', async (_, data: Uint8Array) => {
+    if (!data || data.byteLength === 0) {
+        return {success: false, error: '未接收到文件内容'};
+    }
+    return skillsManager.importFromZipBuffer(data);
 });
 
 // 打开系统对话框选择一个已解压的 skill 文件夹，用于「我的库」上传创建

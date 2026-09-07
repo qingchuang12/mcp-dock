@@ -50,6 +50,33 @@ export {extractZipEntries} from './archive';
 export * from './github';
 export * from './skills/types';
 
+/** 附属文件列表项（skill 目录内相对路径） */
+export interface SkillFileItem {
+    /** 相对 skill 目录的路径，/ 分隔 */
+    path: string;
+    size: number;
+    /** protected = SKILL.md（正文区编辑，面板内禁止改删）；file = 普通附属文件 */
+    kind: 'protected' | 'file';
+}
+
+/** 附属文件读取结果（编辑模式「附属文件」面板用） */
+export type ReadSkillFileResult =
+    | { success: true; mode: 'editable'; content: string }
+    | { success: true; mode: 'readonly'; reason: 'binary' | 'too_large' }
+    | { success: false; error: string };
+
+/** 单文件在线编辑上限：超过返回只读，避免大文件拖垮编辑 UI */
+const SKILL_FILE_READ_LIMIT = 512 * 1024;
+
+/** 规范化 skill 附属文件相对路径：/ 分隔、去 ./，拒绝空/尾斜杠/绝对路径/.. 段 */
+function normalizeSkillRelPath(relPath: string): string {
+    const rel = (relPath || '').replace(/\\/g, '/').replace(/^\.\//, '');
+    if (!rel || rel.endsWith('/') || rel.startsWith('/') || rel.split('/').some(s => s === '' || s === '..')) {
+        throw new Error(`非法附件路径：${relPath}`);
+    }
+    return rel;
+}
+
 export class SkillsManager {
     private settingsPath: string;
     private settings: SkillsSettings = {};
@@ -397,6 +424,117 @@ export class SkillsManager {
         }
     }
 
+    // ==================== 附属文件（编辑模式） ====================
+
+    /**
+     * 列出 skill 目录内的附属文件（编辑模式「附属文件」面板用）。
+     * 规则：
+     *  - 递归收集全部文件，目录条目不下发；
+     *  - 排除 `.source.json`（来源元数据，既有约定隐藏，不随导入/编辑）；
+     *  - `SKILL.md` 标记受保护（正文区域编辑，面板内禁止改删）。
+     */
+    async listSkillFiles(skillName: string, client: SkillClientType): Promise<SkillFileItem[] | null> {
+        await this.loadSettings();
+        const skillPath = path.join(this.getSkillsPath(client), skillName);
+        const items: SkillFileItem[] = [];
+        try {
+            await this.walkSkillDir(skillPath, '', items);
+        } catch {
+            return null; // 目录不存在或不可读
+        }
+        // SKILL.md 置顶，其余按路径字典序（目录自然的斜杠排序）
+        items.sort((a, b) => {
+            if (a.path === 'SKILL.md') return -1;
+            if (b.path === 'SKILL.md') return 1;
+            return a.path.localeCompare(b.path);
+        });
+        return items;
+    }
+
+    /** 递归收集 skill 目录下全部文件（相对路径，/ 分隔） */
+    private async walkSkillDir(dir: string, rel: string, out: SkillFileItem[]): Promise<void> {
+        const entries = await fs.readdir(dir, {withFileTypes: true});
+        for (const entry of entries) {
+            if (entry.name === '.source.json') continue;
+            const r = rel ? `${rel}/${entry.name}` : entry.name;
+            const abs = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                await this.walkSkillDir(abs, r, out);
+            } else {
+                let size = 0;
+                try {
+                    size = (await fs.stat(abs)).size;
+                } catch { /* 无法访问的文件按 0 字节展示 */ }
+                out.push({path: r, size, kind: r === 'SKILL.md' ? 'protected' : 'file'});
+            }
+        }
+    }
+
+    /** 递归收集目录内的附属文件（不含 SKILL.md 与 .source.json；path 相对 skill 根，供文件夹导入落盘） */
+    private async collectSkillDirFiles(skillRoot: string): Promise<Array<{ path: string; data: Uint8Array }>> {
+        const files: Array<{ path: string; data: Uint8Array }> = [];
+        const walk = async (dir: string, rel: string): Promise<void> => {
+            const entries = await fs.readdir(dir, {withFileTypes: true});
+            for (const entry of entries) {
+                if (entry.name === '.source.json') continue; // 本地导入 = 自定义语义，跳过来源元数据
+                const r = rel ? `${rel}/${entry.name}` : entry.name;
+                const abs = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    await walk(abs, r);
+                } else {
+                    if (r === 'SKILL.md') continue;
+                    files.push({path: r, data: await fs.readFile(abs)});
+                }
+            }
+        };
+        await walk(skillRoot, '');
+        return files;
+    }
+
+    /**
+     * 读取 skill 附属文件内容（编辑模式「附属文件」面板用）。
+     * 规则：
+     *  - 路径规范化 + `assertWithin` 双保险，拒绝穿越；
+     *  - `SKILL.md` / `.source.json` 受保护，拒绝读取（SKILL.md 走正文编辑）；
+     *  - 二进制（含 NUL 或严格 UTF-8 解码失败）与 >512KB 文件返回只读，不回灌内容。
+     */
+    async readSkillFile(skillName: string, client: SkillClientType, relPath: string): Promise<ReadSkillFileResult> {
+        await this.loadSettings();
+        let rel: string;
+        try {
+            rel = normalizeSkillRelPath(relPath);
+        } catch (error) {
+            return {success: false, error: (error as Error).message};
+        }
+        if (rel === 'SKILL.md' || rel.endsWith('.source.json')) {
+            return {success: false, error: `受保护文件，请在对应区域编辑：${rel}`};
+        }
+        const skillPath = path.join(this.getSkillsPath(client), skillName);
+        const abs = path.join(skillPath, rel);
+        assertWithin(skillPath, abs);
+
+        let stat;
+        try {
+            stat = await fs.stat(abs);
+        } catch {
+            return {success: false, error: `文件不存在：${rel}`};
+        }
+        if (stat.size > SKILL_FILE_READ_LIMIT) {
+            return {success: true, mode: 'readonly', reason: 'too_large'};
+        }
+        const buf = await fs.readFile(abs);
+        if (buf.includes(0)) { // 含 NUL 字节 → 二进制
+            return {success: true, mode: 'readonly', reason: 'binary'};
+        }
+        try {
+            // 严格 UTF-8 解码：失败即二进制（Buffer.toString 不抛错，无法兜底编码合法性）
+            const text = new TextDecoder('utf-8', {fatal: true}).decode(buf);
+            return {success: true, mode: 'editable', content: text};
+        } catch {
+            return {success: true, mode: 'readonly', reason: 'binary'};
+        }
+    }
+
     /**
      * 从本地文件或目录解析 Skill，用于「我的库」快速创建。
      * 支持三种来源：
@@ -409,60 +547,128 @@ export class SkillsManager {
         name?: string;
         description?: string;
         body?: string;
+        /** 目录导入收集的附属文件（不含 SKILL.md 与 .source.json），创建时随 input.files 一并落盘 */
+        files?: Array<{ path: string; data: Uint8Array }>;
         error?: string;
     }> {
         try {
             const stat = await fs.stat(filePath);
             let skillMdText: string | undefined;
             let fallbackName: string | undefined;
+            let dirFiles: Array<{ path: string; data: Uint8Array }> | undefined;
 
             if (stat.isDirectory()) {
-                // 目录：递归查找首个 SKILL.md（优先根目录，其次子目录）
+                // 目录：递归查找首个 SKILL.md（优先根目录，其次子目录），并收集其所在目录的全部附属文件
                 const found = await findSkillMdInDir(filePath);
                 if (!found) {
                     return {success: false, error: '所选目录内未找到 SKILL.md'};
                 }
                 skillMdText = await fs.readFile(path.join(found.dir, 'SKILL.md'), 'utf-8');
                 fallbackName = found.dir === filePath ? path.basename(filePath) : path.basename(found.dir);
+                dirFiles = await this.collectSkillDirFiles(found.dir);
             } else if (filePath.toLowerCase().endsWith('.md')) {
                 // 单文件 .md：整份作为 SKILL.md
                 skillMdText = await fs.readFile(filePath, 'utf-8');
                 fallbackName = path.basename(filePath, '.md');
             } else {
                 // .zip / .skill：解包后读取 SKILL.md
-                const buffer = await fs.readFile(filePath);
-                const entries = extractZipEntries(buffer);
-                let skillMdKey: string | undefined;
-                let bestDepth = Infinity;
-                for (const key of entries.keys()) {
-                    if (/SKILL\.md$/i.test(key)) {
-                        const depth = key.split(/[\\/]/).length;
-                        if (depth < bestDepth) {
-                            bestDepth = depth;
-                            skillMdKey = key;
-                        }
-                    }
-                }
-                if (!skillMdKey) {
-                    return {success: false, error: '压缩包内未找到 SKILL.md'};
-                }
-                skillMdText = entries.get(skillMdKey)!.toString('utf-8');
-                const parts = skillMdKey.split(/[\\/]/);
-                parts.pop();
-                fallbackName = parts[parts.length - 1] || undefined;
+                return this.importFromZipBuffer(await fs.readFile(filePath));
             }
 
-            return parseSkillMd(skillMdText!, fallbackName);
+            const parsed = parseSkillMd(skillMdText!, fallbackName);
+            if (!parsed.success) return parsed;
+            return {...parsed, files: dirFiles};
         } catch (error) {
             return {success: false, error: (error as Error).message || '无法解析文件'};
         }
     }
 
     /**
-     * 创建自定义 Skill：在目标客户端的 skills/<name>/ 下写入 SKILL.md（不依赖网络，无 .source.json）
+     * 从 ZIP/.skill 二进制（内存）解析 Skill：解包 → 取最浅深度的 SKILL.md → 解析 frontmatter，
+     * 并返回完整附属文件（scripts/、references/ 等），供创建时一并落盘。
+     * 供「创建 Skill → 拖入 / 选择 zip」使用——renderer 端 File 直接读成 ArrayBuffer 传入，
+     * 不依赖 Electron 已弃用的 File.path（沙箱/新版本下 path 可能为 undefined，导致拖拽报错）。
+     * 安全：解压总量与条目数上限（防 zip 炸弹）；路径规范化为「/」并拒绝 .. 段/绝对路径（防穿越）。
+     */
+    async importFromZipBuffer(buffer: Buffer | Uint8Array): Promise<{
+        success: boolean;
+        name?: string;
+        description?: string;
+        body?: string;
+        /** zip 内附属文件（不含 SKILL.md 与 .source.json；path 为 skill 目录内相对路径） */
+        files?: Array<{ path: string; data: Uint8Array }>;
+        error?: string;
+    }> {
+        const MAX_TOTAL_BYTES = 100 * 1024 * 1024; // 解压总量上限 100MB
+        const MAX_ENTRIES = 2000;                   // 条目数上限，防 zip 炸弹
+        try {
+            const entries = extractZipEntries(Buffer.from(buffer));
+
+            // 取最浅深度 SKILL.md
+            let skillMdKey: string | undefined;
+            let bestDepth = Infinity;
+            for (const key of entries.keys()) {
+                if (/SKILL\.md$/i.test(key)) {
+                    const depth = key.split(/[\\/]/).length;
+                    if (depth < bestDepth) {
+                        bestDepth = depth;
+                        skillMdKey = key;
+                    }
+                }
+            }
+            if (!skillMdKey) {
+                return {success: false, error: '压缩包内未找到 SKILL.md'};
+            }
+
+            // 以 SKILL.md 所在目录为 skill 根（如 'camp-info/'；根目录 SKILL.md → ''）。
+            // files.path 相对该目录：剥离顶层包裹目录，避免落盘时在 skills/<name>/ 下再套一层。
+            const skillMdKeyNorm = skillMdKey.replace(/\\/g, '/');
+            const skillDir = skillMdKeyNorm.split('/').slice(0, -1).join('/');
+            const prefix = skillDir ? `${skillDir}/` : '';
+
+            const files: Array<{ path: string; data: Uint8Array }> = [];
+            let totalBytes = 0;
+            for (const [key, data] of entries) {
+                if (key === skillMdKey) continue;
+                const norm = key.replace(/\\/g, '/').replace(/^\.\//, '');
+                if (!norm || norm.endsWith('/')) continue; // 目录条目
+                if (norm.startsWith('/') || norm.split('/').some(s => s === '..')) {
+                    return {success: false, error: `压缩包内存在非法路径：${key}`};
+                }
+                if (norm.split('/').pop() === '.source.json') continue; // 本地导入 = 自定义语义，跳过来源元数据
+                // 仅收取 SKILL.md 所在目录（skill 根）内的文件；多 skill 归档中其他 skill 的文件不并入
+                if (prefix && !norm.startsWith(prefix)) continue;
+                const rel = prefix ? norm.slice(prefix.length) : norm;
+                if (!rel || rel.split('/').some(s => s === '' || s === '..')) {
+                    return {success: false, error: `压缩包内存在非法路径：${key}`};
+                }
+                if (/SKILL\.md$/i.test(rel)) continue; // 深层 SKILL.md（其他 skill 入口）不作为附件
+                totalBytes += data.length;
+                if (totalBytes > MAX_TOTAL_BYTES || entries.size > MAX_ENTRIES) {
+                    return {success: false, error: '压缩包内容过大，已拒绝解析（上限 100MB / 2000 个文件）'};
+                }
+                files.push({path: rel, data});
+            }
+
+            const skillMdText = entries.get(skillMdKey)!.toString('utf-8');
+            const parts = skillMdKey.split(/[\\/]/);
+            parts.pop();
+            const fallbackName = parts[parts.length - 1] || undefined;
+            const parsed = parseSkillMd(skillMdText, fallbackName);
+            if (!parsed.success) return parsed;
+            return {...parsed, files};
+        } catch (error) {
+            return {success: false, error: (error as Error).message || '无法解析压缩包'};
+        }
+    }
+
+    /**
+     * 创建自定义 Skill：在目标客户端的 skills/<name>/ 下写入 SKILL.md（不依赖网络，无 .source.json）。
+     * zip 导入时 input.files 携带附属文件（scripts/、references/ 等），一并落盘；
+     * 每条路径再次经 assertWithin 校验，防止 zip 内的穿越路径逃出 skill 目录。
      */
     async createCustomSkill(
-        input: { name: string; description: string; body: string },
+        input: { name: string; description: string; body: string; files?: Array<{ path: string; data: Uint8Array }> },
         clients: SkillClientType[]
     ): Promise<{ success: boolean; error?: string; skillName?: string; results?: Array<{ client: SkillClientType; ok: boolean; error?: string }> }> {
         const skillName = sanitizeSkillName(input.name);
@@ -478,6 +684,19 @@ export class SkillsManager {
         }
 
         const results: Array<{ client: SkillClientType; ok: boolean; error?: string }> = [];
+
+        // 附件路径全量预检：任一非法（穿越/绝对路径）立即拒绝，避免「SKILL.md 先写、附件失败」的半成品残留
+        for (const f of input.files || []) {
+            const rel = f.path.replace(/\\/g, '/').replace(/^\.\//, '');
+            if (!rel || rel.split('/').some(s => s === '..') || rel.startsWith('/')) {
+                return {success: false, error: `非法附件路径：${f.path}`};
+            }
+            // 对每个目标客户端校验落盘位置仍在 skill 目录内（路径真实拼接后校验）
+            for (const client of targets) {
+                const skillPath = path.join(this.getSkillsPath(client), skillName);
+                assertWithin(skillPath, path.join(skillPath, rel));
+            }
+        }
 
         // P0-1：全量预检（重名冲突），全部通过后再落盘，避免写了一半再报冲突
         for (const client of targets) {
@@ -506,8 +725,21 @@ export class SkillsManager {
                 await this.ensureSkillsDir(client);
                 await fs.mkdir(skillPath, {recursive: true});
                 await fs.writeFile(path.join(skillPath, 'SKILL.md'), content, 'utf-8');
+
+                // zip 导入的附属文件：逐条写入（双重防护：解析层已滤除非法路径，此处再 assertWithin）
+                for (const f of input.files || []) {
+                    const rel = f.path.replace(/\\/g, '/').replace(/^\.\//, '');
+                    if (!rel || rel.split('/').some(s => s === '..') || rel.startsWith('/')) {
+                        throw new Error(`非法文件路径：${f.path}`);
+                    }
+                    const dest = path.join(skillPath, rel);
+                    assertWithin(skillPath, dest);
+                    await fs.mkdir(path.dirname(dest), {recursive: true});
+                    await fs.writeFile(dest, Buffer.from(f.data));
+                }
+
                 results[i] = {client, ok: true};
-                console.log(`[SkillsManager] Created custom skill ${skillName} to ${client}`);
+                console.log(`[SkillsManager] Created custom skill ${skillName} to ${client}${input.files?.length ? ` (${input.files.length} 个附属文件)` : ''}`);
             } catch (error) {
                 results[i] = {client, ok: false, error: (error as Error).message};
             }
@@ -529,7 +761,15 @@ export class SkillsManager {
      */
     async updateCustomSkill(
         originalName: string,
-        input: { name: string; description: string; body: string },
+        input: {
+            name: string;
+            description: string;
+            body: string;
+            /** 新建 / 覆盖的附属文件（编辑面板提交；路径为 skill 目录内相对路径） */
+            files?: Array<{ path: string; data: Uint8Array }>;
+            /** 删除的附属文件（编辑面板提交；相对路径列表） */
+            removedFiles?: string[];
+        },
         clients: SkillClientType[]
     ): Promise<{ success: boolean; error?: string; skillName?: string; results?: Array<{ client: SkillClientType; ok: boolean; error?: string }> }> {
         const newName = sanitizeSkillName(input.name) || originalName;
@@ -539,6 +779,47 @@ export class SkillsManager {
         const targets = this.dedupeClientsByPath(clients);
         if (targets.length === 0) {
             return {success: false, error: '未选择有效的目标客户端'};
+        }
+
+        // 附属文件变更预检：路径规范化 + 受保护拦截；任一非法整体拒绝（避免半成品残留，同 createCustomSkill）
+        const filesNorm: Array<{ rel: string; data: Uint8Array }> = [];
+        try {
+            for (const f of input.files || []) {
+                const rel = normalizeSkillRelPath(f.path);
+                if (rel === 'SKILL.md' || rel.endsWith('.source.json')) {
+                    return {success: false, error: `受保护文件不可修改：${f.path}`};
+                }
+                filesNorm.push({rel, data: f.data});
+            }
+        } catch (error) {
+            return {success: false, error: (error as Error).message};
+        }
+        const removedNorm: string[] = [];
+        try {
+            for (const p of input.removedFiles || []) {
+                const rel = normalizeSkillRelPath(p);
+                if (rel === 'SKILL.md' || rel.endsWith('.source.json')) {
+                    return {success: false, error: `受保护文件不可删除：${p}`};
+                }
+                // 与「新建/覆盖」同一路径时以写入为准，剔除删除（防御 UI 同时提交同路径）
+                if (filesNorm.some(f => f.rel === rel)) continue;
+                removedNorm.push(rel);
+            }
+        } catch (error) {
+            return {success: false, error: (error as Error).message};
+        }
+        const filesActive = filesNorm.length > 0;
+        const removedActive = removedNorm.length > 0;
+        if (filesActive || removedActive) {
+            for (const client of targets) {
+                const skillPath = path.join(this.getSkillsPath(client), newName);
+                for (const f of filesNorm) {
+                    assertWithin(skillPath, path.join(skillPath, f.rel));
+                }
+                for (const rel of removedNorm) {
+                    assertWithin(skillPath, path.join(skillPath, rel));
+                }
+            }
         }
 
         const results: Array<{ client: SkillClientType; ok: boolean; error?: string }> = [];
@@ -613,6 +894,25 @@ export class SkillsManager {
                 }
 
                 await fs.writeFile(path.join(newPath, 'SKILL.md'), content, 'utf-8');
+
+                // 附属文件：先删后写（删除列表已剔除同名写入项，顺序安全；逐条 assertWithin 双保险）
+                for (const rel of removedNorm) {
+                    const abs = path.join(newPath, rel);
+                    assertWithin(newPath, abs);
+                    try {
+                        const st = await fs.stat(abs);
+                        if (st.isFile()) {
+                            await fs.rm(abs, {force: true});
+                        }
+                    } catch { /* 目标不存在，忽略（多客户端文件差异） */ }
+                }
+                for (const f of filesNorm) {
+                    const dest = path.join(newPath, f.rel);
+                    assertWithin(newPath, dest);
+                    await fs.mkdir(path.dirname(dest), {recursive: true});
+                    await fs.writeFile(dest, Buffer.from(f.data));
+                }
+
                 // 用户接管：正文变化或改名都视为脱离线上源，删除来源标记转为手动安装，
                 // 不再参与「全部更新 / 单个更新」从线上源覆盖；无修改则保留来源标记。
                 if (bodyChanged || nameChanged) {

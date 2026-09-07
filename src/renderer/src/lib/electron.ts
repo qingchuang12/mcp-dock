@@ -19,6 +19,15 @@ import type {ConsistencyItem, ConsistencyReport} from '../../../main/cloud-consi
 import type {CloudSyncConfig, CloudSyncConfigInput, CloudSyncResult} from '../../../shared/cloud-sync-constants';
 import {defaultCloudSyncConfig} from '../../../shared/cloud-sync-constants';
 import type {SyncTask, SyncTaskKind, SyncTaskScope} from '../../../shared/sync-task-types';
+// Skill 导出结果：与本文件共用（data 声明为 Uint8Array 而非 main 侧的 Node Buffer，
+// 避免 renderer 类型图引入 node Buffer 导致 Blob 构造参数类型冲突）
+export interface SkillsExportResult {
+    ok: boolean;
+    error?: string;
+    fileName?: string;
+    /** zip 二进制（主进程 IPC 传来时为 Uint8Array） */
+    data?: Uint8Array;
+}
 
 export {defaultCloudSyncConfig};
 
@@ -131,7 +140,25 @@ export interface CustomSkillInput {
     name: string;
     description: string;
     body: string;
+    /** zip 导入的附属文件（scripts/、references/ 等），创建时一并落盘 */
+    files?: Array<{ path: string; data: Uint8Array }>;
+    /** 编辑模式要删除的附属文件（相对路径列表；编辑面板提交） */
+    removedFiles?: string[];
 }
+
+/** 附属文件列表项（skill 目录内相对路径；与 main 的 SkillFileItem 一致） */
+export interface SkillFileItem {
+    path: string;
+    size: number;
+    /** protected = SKILL.md（正文区编辑，面板禁止改删）；file = 普通附属文件 */
+    kind: 'protected' | 'file';
+}
+
+/** 附属文件读取结果 */
+export type ReadSkillFileResult =
+    | { success: true; mode: 'editable'; content: string }
+    | { success: true; mode: 'readonly'; reason: 'binary' | 'too_large' }
+    | { success: false; error: string };
 
 export interface CreateCustomSkillResult {
     success: boolean;
@@ -197,6 +224,8 @@ export interface ImportSkillFileResult {
     name?: string;
     description?: string;
     body?: string;
+    /** zip 解包的附属文件（不含 SKILL.md 与 .source.json），创建时随 input.files 一并落盘 */
+    files?: Array<{ path: string; data: Uint8Array }>;
     error?: string;
 }
 
@@ -336,8 +365,14 @@ interface ElectronAPI {
             description: string;
             body: string
         } | null>;
+        /** 列出 Skill 目录内附属文件（编辑模式「附属文件」面板；排除 .source.json，SKILL.md 标受保护） */
+        listSkillFiles: (skillName: string, client: SkillClientType) => Promise<SkillFileItem[] | null>;
+        /** 读取 Skill 附属文件内容（UTF-8 校验；二进制 / >512KB 返回只读） */
+        readSkillFile: (skillName: string, client: SkillClientType, relPath: string) => Promise<ReadSkillFileResult>;
         /** 从本地 .zip / .skill 文件或目录解析 Skill（用于「我的库」上传创建） */
         importFromFile: (filePath: string) => Promise<ImportSkillFileResult>;
+        /** 从 ZIP/.skill 二进制解析 Skill（拖拽/选择文件直接传 bytes，不依赖 File.path） */
+        importFromZipBuffer: (data: Uint8Array) => Promise<ImportSkillFileResult>;
         /** 打开系统对话框选择一个已解压的 skill 文件夹 */
         pickFolder: () => Promise<{ canceled: boolean; path?: string }>;
         /** 远程 GitHub Registry skill 详情：解析仓库并取回首个 Skill 的源 / SKILL.md（替代渲染端抛错的 fetchSkillDetail 桩） */
@@ -361,6 +396,8 @@ interface ElectronAPI {
             name: string;
             sourceClient: SkillClientType
         }>, resolutions: Record<string, 'overwrite' | 'skip'>) => Promise<SkillBatchSyncResult>;
+        /** 导出选中 Skill 为 zip 包（每个 skill 一个目录，可直接解压复用） */
+        exportZip: (names: string[]) => Promise<SkillsExportResult>;
     };
     // API 令牌管理
     apiTokens: {
@@ -790,7 +827,10 @@ const mockAPI: ElectronAPI = {
         updateCustom: async (originalName) => ({success: true, skillName: originalName}),
         saveWithCloudSync: async () => ({success: false, error: 'Not available in browser'}),
         readSkillMd: async (skillName) => ({name: skillName, description: '', body: ''}),
+        listSkillFiles: async () => [],
+        readSkillFile: async () => ({success: false, error: 'Not available in browser'}),
         importFromFile: async () => ({success: false, error: 'Not available in browser'}),
+        importFromZipBuffer: async () => ({success: false, error: 'Not available in browser'}),
         pickFolder: async () => ({canceled: true}),
         getLocalDetail: async () => null,
         getRemoteDetail: async () => ({success: false, skill: null, error: 'Not available in browser'}),
@@ -798,6 +838,7 @@ const mockAPI: ElectronAPI = {
         syncBatch: async () => ({synced: 0, failed: 0, details: []}),
         checkCloudConflicts: async () => [],
         syncToCloudResolved: async () => ({synced: 0, failed: 0, details: []}),
+        exportZip: async () => ({ok: false, error: 'Not available in browser'}),
     },
     apiTokens: {
         list: async () => [],

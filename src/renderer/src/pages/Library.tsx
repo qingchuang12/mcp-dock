@@ -642,7 +642,7 @@ export default function Library() {
     // 创建 / 编辑自定义 Skill 提交
     const handleCreateSkillSubmit = async (
         originalName: string | undefined,
-        input: { name: string; description: string; body: string },
+        input: { name: string; description: string; body: string; files?: Array<{ path: string; data: Uint8Array }> },
         selected: SkillClientType[]
     ): Promise<{ success: boolean; error?: string }> => {
         const api = getElectronAPI();
@@ -885,14 +885,36 @@ export default function Library() {
         downloadJSON({ mcpServers: exported }, 'mcp-servers.json');
     };
 
-    // 导出 Skills
-    const handleExportSkills = () => {
+    // 导出 Skills → zip 包（选中多个打成一个 zip，每个 skill 一个目录，可直接解压复用）
+    const handleExportSkills = async () => {
         const list = (selectMode && selectedSkills.length > 0)
             ? skills.filter(s => selectedSkills.includes(s.name))
             : skills;
         if (list.length === 0) return;
-        const exported = list.map(s => ({ name: s.name, path: s.path, source: s.source }));
-        downloadJSON(exported, 'skills.json');
+        try {
+            const result = await api.skills.exportZip(list.map(s => s.name));
+            if (!result.ok || !result.data || !result.fileName) {
+                toast.error(result?.error || (t('library.exportSkillsFailed') || '导出失败'));
+                return;
+            }
+            // main 打包好的 zip 二进制 → Blob 浏览器下载（与 MCP JSON 导出同一交互）
+            // 拷贝为独立 Uint8Array：IPC 传来的类型为 Uint8Array<ArrayBufferLike>，需收敛为
+            // Uint8Array<ArrayBuffer> 才能作为 BlobPart 构造参数（TS 5.x 类型约束）
+            const bytes = new Uint8Array(result.data);
+            const blob = new Blob([bytes], {type: 'application/zip'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = result.fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            toast.success(t('library.exportSkillsOk') || `已导出 ${list.length} 个 Skill 的 zip 包`);
+        } catch (error: any) {
+            console.error('Failed to export skills zip:', error);
+            toast.error(error?.message || (t('library.exportSkillsFailed') || '导出失败'));
+        }
     };
 
     // 触发 JSON 文件下载
@@ -1543,7 +1565,6 @@ export default function Library() {
                 <CreateSkillModal
                     onClose={() => setShowCreateSkill(false)}
                     clients={clients}
-                    defaultClients={['cursor']}
                     onSubmit={handleCreateSkillSubmit}
                 />
             )}

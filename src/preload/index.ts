@@ -17,6 +17,7 @@ import type {
 import type {AnyClientId, ClientInfo, ClientType, CustomClientDef, SkillClientType} from '../main/config-manager';
 import type {CloudSyncConfig, CloudSyncConfigInput, CloudSyncResult} from '../shared/cloud-sync-constants';
 import type {ConsistencyReport} from '../main/cloud-consistency';
+import type {SkillsExportResult} from '../main/skills-export';
 import type {SyncTask, SyncTaskKind, SyncTaskScope} from '../shared/sync-task-types';
 
 // 类型定义
@@ -96,6 +97,8 @@ export interface CustomSkillInput {
     name: string;
     description: string;
     body: string;
+    /** zip 导入的附属文件（scripts/、references/ 等），创建时一并落盘 */
+    files?: Array<{ path: string; data: Uint8Array }>;
 }
 
 export interface CreateCustomSkillResult {
@@ -331,6 +334,8 @@ const api = {
             ipcRenderer.invoke('skills:resolve-platform-url', url),
         installFromDiscovered: (skill: DiscoveredSkill, clients: SkillClientType[]): Promise<SkillInstallResult> =>
             ipcRenderer.invoke('skills:install-from-discovered', skill, clients),
+        exportZip: (names: string[]): Promise<SkillsExportResult> =>
+            ipcRenderer.invoke('skills:export-zip', names),
         createCustom: (input: CustomSkillInput, clients: SkillClientType[]): Promise<CreateCustomSkillResult> =>
             ipcRenderer.invoke('skills:create-custom', input, clients),
         updateCustom: (originalName: string, input: CustomSkillInput, clients: SkillClientType[]): Promise<CreateCustomSkillResult> =>
@@ -352,8 +357,14 @@ const api = {
             body: string
         } | null> =>
             ipcRenderer.invoke('skills:read-skill-md', skillName, client),
-        importFromFile: (filePath: string): Promise<ImportSkillFileResult> =>
+        listSkillFiles: (skillName: string, client: SkillClientType): Promise<import('../renderer/src/lib/electron').SkillFileItem[] | null> =>
+            ipcRenderer.invoke('skills:list-skill-files', skillName, client),
+        readSkillFile: (skillName: string, client: SkillClientType, relPath: string): Promise<import('../renderer/src/lib/electron').ReadSkillFileResult> =>
+            ipcRenderer.invoke('skills:read-skill-file', skillName, client, relPath),
+        importFromFile: (filePath: string): Promise<ImportParseResult> =>
             ipcRenderer.invoke('skills:import-file', filePath),
+        importFromZipBuffer: (data: Uint8Array): Promise<ImportParseResult> =>
+            ipcRenderer.invoke('skills:import-zip-buffer', data),
         /** 打开系统对话框选择一个已解压的 skill 文件夹 */
         pickFolder: (): Promise<{ canceled: boolean; path?: string }> =>
             ipcRenderer.invoke('skills:pick-folder'),
