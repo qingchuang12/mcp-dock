@@ -1,7 +1,7 @@
 /**
  * ClawHub 平台适配器。
  * 接口形态：Convex RPC，POST https://wry-manatee-359.convex.cloud/api/action。
- * 离线回退：若联网失败，尝试读取内置离线索引（data/clawhub.json）。
+ * 离线回退：若联网失败，读取运行时累积的离线索引（在线结果动态累积，非写死静态索引）。
  */
 import type {
     CategoryNode,
@@ -94,17 +94,85 @@ export function mapEntry(raw: RawClawhub): PlatformSkillListItem {
     };
 }
 
-async function loadOffline(): Promise<RawClawhub[]> {
+// ---------------------------------------------------------------------------
+//  运行时离线索引：累积在线结果作为离线缓存，替代写死的静态索引 (data/clawhub.json)
+// ---------------------------------------------------------------------------
+
+/** 最近一次搜索注入的运行时缓存目录（getFacets 无参数，用模块级变量回读）。 */
+let runtimeCacheDir: string | undefined;
+
+/** 运行时缓存文件路径：<cacheDir>/clawhub/offline-index.json（未提供 cacheDir 时返回 null）。 */
+function cacheFile(cacheDir?: string): string | null {
+    const dir = cacheDir || runtimeCacheDir;
+    if (!dir) return null;
+    return path.join(dir, 'clawhub', 'offline-index.json');
+}
+
+/** 从缓存文件中读出已累积的原始条目（兼容数组与 {skills:[...]} 两种结构）。 */
+function readCache(file: string): RawClawhub[] {
     try {
-        const p = path.join(__dirname, 'clawhub', 'data', 'clawhub.json');
-        if (fs.existsSync(p)) {
-            const json = JSON.parse(fs.readFileSync(p, 'utf8'));
-            return Array.isArray(json) ? json : json?.skills || [];
+        if (fs.existsSync(file)) {
+            const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+            if (Array.isArray(json)) return json;
+            if (Array.isArray(json?.skills)) return json.skills;
         }
     } catch {
         /* ignore */
     }
     return [];
+}
+
+/** 原始条目稳定 id（与 mapEntry 的 id 选择一致，用于去重）。 */
+function rawId(raw: RawClawhub): string {
+    return raw.slug || raw.id || raw._id || raw.name || '';
+}
+
+/** 合并累积条目：incoming 覆盖 base 中同 id 的旧条目。 */
+function mergeRaw(base: RawClawhub[], incoming: RawClawhub[]): RawClawhub[] {
+    const map = new Map<string, RawClawhub>();
+    for (const r of base) {
+        const id = rawId(r);
+        if (id) map.set(id, r);
+    }
+    for (const r of incoming) {
+        const id = rawId(r);
+        if (id) map.set(id, r);
+    }
+    return [...map.values()];
+}
+
+/** 将在线结果累积写入运行时缓存（原子替换：先写临时文件再 rename）。 */
+function saveCache(cacheDir: string, incoming: RawClawhub[]): void {
+    const file = cacheFile(cacheDir);
+    if (!file) return;
+    try {
+        const merged = mergeRaw(readCache(file), incoming);
+        fs.mkdirSync(path.dirname(file), {recursive: true});
+        const tmp = `${file}.tmp`;
+        fs.writeFileSync(
+            tmp,
+            JSON.stringify({version: 1, updatedAt: new Date().toISOString(), skills: merged}, null, 2),
+            'utf8'
+        );
+        fs.renameSync(tmp, file);
+    } catch (e) {
+        console.warn('[clawhub] 运行时离线缓存写入失败：', (e as Error).message);
+    }
+}
+
+/** 内置种子索引路径（可选 bootstrap，目前为空集；运行时缓存为权威源）。 */
+function seedFile(): string {
+    return path.join(__dirname, 'clawhub', 'data', 'clawhub.json');
+}
+
+/**
+ * 离线回退：优先读取运行时累积缓存，其次合并内置种子索引（按 id 去重，缓存优先）。
+ * 离线索引不再写死为静态快照，而是随在线搜索不断累积更新。
+ */
+async function loadOffline(cacheDir?: string): Promise<RawClawhub[]> {
+    const file = cacheFile(cacheDir);
+    const cached = file ? readCache(file) : [];
+    return mergeRaw(readCache(seedFile()), cached);
 }
 
 /** Convex RPC 调用：POST /api/action，body 含 path/format/args。 */
@@ -149,7 +217,8 @@ export const clawhubAdapter: PlatformAdapter = {
     name: 'ClawHub',
 
     async searchSkills(params: PlatformSearchParams): Promise<PlatformSearchPage> {
-        const {query, page, pageSize, baseUrl, category, sort} = params;
+        const {query, page, pageSize, baseUrl, category, sort, cacheDir} = params;
+        if (cacheDir) runtimeCacheDir = cacheDir;
         const safePage = Math.max(1, page);
         // 单一真实 RPC 地址（不走 probeEndpoints，不依赖 baseUrl）
         const base = baseUrl ? baseUrl.replace(/\/+$/, '') : CLAWHUB_BASE;
@@ -183,6 +252,8 @@ export const clawhubAdapter: PlatformAdapter = {
 
         if (r.ok && Array.isArray(r.json)) {
             let items = r.json.map(mapEntry);
+            // 在线成功：将本次结果累积进运行时缓存，作为后续离线回退索引
+            if (cacheDir) saveCache(cacheDir, r.json);
             // 客户端分类过滤（categorySlug 已带，兜底再筛一遍）
             if (category && category !== 'all') {
                 items = items.filter(i => {
@@ -225,8 +296,8 @@ export const clawhubAdapter: PlatformAdapter = {
             return {items, pageInfo, pagingMode: 'client', complete: false};
         }
 
-        // 联网失败：回退离线索引
-        const offline = await loadOffline();
+        // 联网失败：回退运行时累积的离线索引
+        const offline = await loadOffline(cacheDir);
         if (offline.length > 0) {
             const ql = q.toLowerCase();
             const filtered = ql === 'a'
@@ -297,25 +368,22 @@ export const clawhubAdapter: PlatformAdapter = {
     },
 
     getFacets() {
-        // 以文档 14 类为准；若离线索引存在，将其 tags 作为补充合并（避免分类过滤与列表结果不一致）
+        // 以文档 14 类为准；若运行时累积的离线索引存在，将其 tags 作为补充合并（避免分类过滤与列表结果不一致）
         try {
-            const p = path.join(__dirname, 'clawhub', 'data', 'clawhub.json');
-            if (fs.existsSync(p)) {
-                const json = JSON.parse(fs.readFileSync(p, 'utf8'));
-                const raw: RawClawhub[] = Array.isArray(json) ? json : json?.skills || [];
-                const tagCount = new Map<string, number>();
-                for (const r of raw) {
-                    for (const t of r.tags || []) tagCount.set(t, (tagCount.get(t) || 0) + 1);
-                }
-                if (tagCount.size > 0) {
-                    const baseMap = new Map(CLAWHUB_CATEGORIES.map(c => [c.id, c]));
-                    for (const [id, count] of tagCount) {
-                        if (baseMap.has(id)) {
-                            baseMap.get(id)!.count = (baseMap.get(id)!.count || 0) + count;
-                        }
+            const file = cacheFile();
+            const raw = mergeRaw(readCache(seedFile()), file ? readCache(file) : []);
+            const tagCount = new Map<string, number>();
+            for (const r of raw) {
+                for (const t of r.tags || []) tagCount.set(t, (tagCount.get(t) || 0) + 1);
+            }
+            if (tagCount.size > 0) {
+                const baseMap = new Map(CLAWHUB_CATEGORIES.map(c => [c.id, c]));
+                for (const [id, count] of tagCount) {
+                    if (baseMap.has(id)) {
+                        baseMap.get(id)!.count = (baseMap.get(id)!.count || 0) + count;
                     }
-                    return {categories: [...baseMap.values()], sortOptions: CLAWHUB_SORTS, supportsSubcategories: false};
                 }
+                return {categories: [...baseMap.values()], sortOptions: CLAWHUB_SORTS, supportsSubcategories: false};
             }
         } catch {
             /* ignore */
