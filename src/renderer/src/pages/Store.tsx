@@ -280,6 +280,7 @@ export default function StorePage() {
               endIndex={data.endIndex}
               onPageChange={setCurrentPage}
               canJump={data.total !== null}
+              hasMore={data.hasMore}
             />
           </div>
         </div>

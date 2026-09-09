@@ -75,50 +75,41 @@ describe('npmAdapter', () => {
         expect(page.pageInfo.hasMore).toBe(false);
     });
 
-    it('searchServers 带分类筛选时按英文判别词并行扇出（中文词不进查询），合并去重且 total 置 null', async () => {
+    it('searchServers 分类+相关度走服务端真实分页：只发一次带代表词的查询，total 透传 npm', async () => {
         const params = {query: '', page: 1, pageSize: 2, baseUrl: '', secret: null, category: 'database'};
-        const mk = (name: string, keywords: string[], score: number) => ({
+        const mk = (name: string, keywords: string[]) => ({
             package: {name, version: '1.0.0', description: name, keywords},
-            score: {final: score},
+            score: {final: 0.5},
         });
         const urls: string[] = [];
         vi.stubGlobal('fetch', vi.fn(async (url: string) => {
             // URLSearchParams 把空格编码为 '+'，decodeURIComponent 不会还原，需手动归一
             const decoded = decodeURIComponent(url).replace(/\+/g, ' ');
             urls.push(decoded);
-            // 每个判别词请求返回同批对象，用于验证跨请求按包名去重
             return {
                 ok: true,
                 status: 200,
                 json: async () => ({
                     objects: [
-                        mk('mcp-server-postgres', ['mcp', 'postgres'], 0.9),
-                        mk('mcp-server-mysql', ['mcp', 'mysql'], 0.8),
+                        mk('mcp-server-postgres', ['mcp', 'postgres']),
+                        mk('mcp-server-mysql', ['mcp', 'mysql']),
                     ],
                     total: 99999,
                 }),
             };
         }));
         const page = await npmAdapter.searchServers!(params);
-        // 一条请求对应一个英文单词判别词（database 规则共 8 个英文词），查询含 keywords:<kw>
-        const dbEnKeywords = ['database', 'db', 'sql', 'postgres', 'postgresql', 'sqlite', 'mysql', 'mongodb'];
-        expect(urls).toHaveLength(dbEnKeywords.length);
-        for (const kw of dbEnKeywords) {
-            expect(urls.some(u => u.includes(`keywords:mcp keywords:${kw}`))).toBe(true);
-        }
-        // 每条请求仍是服务端池（from=0, size=100）
-        expect(urls.every(u => u.includes('from=0') && u.includes('size=100'))).toBe(true);
-        // 中文判别词绝不进入查询
-        for (const u of urls) {
-            expect(u).not.toContain('数据库');
-            expect(u).not.toContain('数据');
-        }
-        // 跨判别词响应按包名去重（保首次出现），合并集按 score 降序确定性排序
-        expect(page.items.map(i => i.name)).toEqual(['mcp-server-postgres', 'mcp-server-mysql']);
-        // 各判别词命中数相互重叠：未知总量约定，total/totalPages 置 null
-        expect(page.pageInfo.total).toBeNull();
-        expect(page.pageInfo.totalPages).toBeNull();
-        expect(page.pageInfo.hasMore).toBe(false);
+        // 真实分页只发一次请求，query 为 mcp AND 分类代表词（NPM_FACET_TERM.database）
+        expect(urls).toHaveLength(1);
+        expect(urls[0]).toContain('keywords:mcp keywords:database');
+        // 走服务端分页：按 pageSize 取、按页 offset，不再抓 top-100 候选池
+        expect(urls[0]).toContain('from=0');
+        expect(urls[0]).toContain('size=2');
+        expect(urls[0]).not.toContain('size=100');
+        // total/totalPages/hasMore 全部透传服务端计数（真实分页的关键）
+        expect(page.pageInfo.total).toBe(99999);
+        expect(page.pageInfo.totalPages).toBe(Math.ceil(99999 / 2));
+        expect(page.pageInfo.hasMore).toBe(true);
     });
 
     it('searchServers 分类扇出全部失败时返回 __FETCH_FAILED__ 哨兵', async () => {
@@ -133,7 +124,7 @@ describe('npmAdapter', () => {
         expect(page.pageInfo.hasMore).toBe(false);
     });
 
-    it('searchServers 分类筛选下 hasMore 由扇出合并命中数是否越界决定（total 仍为 null）', async () => {
+    it('searchServers 分类分页的 total/totalPages/hasMore 由服务端 total 推导', async () => {
         const params = {query: '', page: 1, pageSize: 1, baseUrl: '', secret: null, category: 'database'};
         const mk = (name: string, keywords: string[]) => ({
             package: {name, version: '1.0.0', description: name, keywords},
@@ -148,9 +139,10 @@ describe('npmAdapter', () => {
         };
         vi.stubGlobal('fetch', vi.fn(async () => ({ok: true, status: 200, json: async () => fakeResponse})));
         const page = await npmAdapter.searchServers!(params);
-        expect(page.items).toHaveLength(1);
-        expect(page.pageInfo.total).toBeNull();
-        expect(page.pageInfo.totalPages).toBeNull();
+        // 无论本页 mock 返回多少条，分页边界一律由服务端 total 决定
+        expect(page.items).toHaveLength(2);
+        expect(page.pageInfo.total).toBe(71219);
+        expect(page.pageInfo.totalPages).toBe(71219);
         expect(page.pageInfo.hasMore).toBe(true);
     });
 

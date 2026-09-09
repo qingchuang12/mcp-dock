@@ -92,22 +92,35 @@ export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> 
     if (mcpConnId) {
         const res = platform.data ?? null;
         const items = (res?.items ?? []).map(mapPlatformServer);
-        const total = res ? (res.pageInfo.total ?? res.items.length) : 0;
-        const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 0;
+        // npm 平台分类/下载排序走候选池模式，返回 total=null（候选池之外还有海量命中，
+        // 服务端无全库计数）。必须原样透传 null，绝不能退化为当前页条数——否则 totalPages=1、
+        // 分页器误判「仅一页」而整块隐藏，表现为分类切换后分页消失。
+        const total = res && res.pageInfo && res.pageInfo.total != null ? res.pageInfo.total : null;
+        // total 未知时退化为当前页条数（仅用于计数展示，canJump 由 total 判定关闭跳页）。
+        const totalItems = total ?? items.length;
+        const hasMore = res?.pageInfo?.hasMore ?? false;
+        let totalPages: number;
+        if (total != null) {
+            totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 0;
+        } else {
+            // 总量未知：hasMore 时至少还能翻到 currentPage+1（供页码越界防御），
+            // 否则视为当前页即末页；分页器在 canJump=false 下只据此显示上/下一页。
+            totalPages = hasMore ? page + 1 : page;
+        }
         // 页码越界时 (page-1)*pageSize 会超过 total，导致分页器显示「101-100」这类反向区间，
-        // 故把起始下标收敛到 total 以内。
+        // 故把起始下标收敛到 total 以内（仅 total 已知时执行）。
         const rawStart = (page - 1) * pageSize;
-        const startIndex = total > 0 ? Math.min(rawStart, Math.max(0, total - 1)) : 0;
-        const endIndex = Math.min(rawStart + items.length, total);
+        const startIndex = total != null && total > 0 ? Math.min(rawStart, Math.max(0, total - 1)) : rawStart;
+        const endIndex = total != null ? Math.min(rawStart + items.length, total) : rawStart + items.length;
         return {
             items,
             total,
-            totalItems: total,
+            totalItems,
             totalPages,
             startIndex,
             endIndex,
             pagingMode: 'server',
-            hasMore: false,
+            hasMore,
             isUnsupported: false,
             isLoading: platform.isLoading,
             isFetching: platform.isFetching,

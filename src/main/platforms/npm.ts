@@ -179,6 +179,21 @@ export const NPM_CATEGORY_LABELS: Record<string, string> = {
 };
 
 /**
+ * 分类 id → 服务端可直接检索的代表词（npm keywords 过滤词）。
+ * npm 搜索单 query 只支持关键词 AND，无法表达「分类 = 多个判别词 OR」，故每个分类
+ * 挑选一个语义最贴、实测可召回的代表词，走服务端真实分页（total 可信、能翻页）。
+ * 实测 total：devtools=596 / database=1053 / search=1056 / system=13 / office=42。
+ * `mcp` 兜底类是「不属于任何规则」的补集，无代表词、无法用关键词表达，保持候选池逻辑。
+ */
+const NPM_FACET_TERM: Record<string, string> = {
+    devtools: 'devtools',
+    database: 'database',
+    'web-search': 'search',
+    system: 'system',
+    office: 'office',
+};
+
+/**
  * 归一化：小写 + 按非字母数字/非 CJK 切词（`@scope/pkg-name` → ['scope','pkg','name']；
  * 中文串保持连续，如 `搜索引擎` → ['搜索引擎']——因此中文判别词用子串匹配而非词元相等）。
  */
@@ -499,20 +514,16 @@ export const npmAdapter: PlatformAdapter = {
      * 分页搜索 MCP server 列表（默认拼 keywords:mcp 降噪）。
      * 映射每个 object → PlatformServerListItem；分页 total 取自响应 total 字段。
      *
-     * 分类筛选为「按判别词扇出 + 内存过滤」：npm 搜索只支持 keywords:<term> 且多项为 AND，
-     * 无法表达「属于某分类」。因此带具体分类时（category 非 all）：
-     * 取该分类规则的英文单词判别词（跳过中文/含连字符者，上限 MAX_CATEGORY_TERMS 个），
-     * 并行发起 keywords:<kw> 的服务端过滤请求（每条 CATEGORY_POOL_SIZE）→ 合并去重
-     * （按包名保首次出现）→ 分类过滤 → 本地切片分页。召回来自服务端按判别词过滤，
-     * 分类页不再只有一小撮结果；但各判别词命中数相互重叠，分类计数 npm 不提供，
-     * total / totalPages 仍置 null（未知总量，与 failedPageInfo 同一约定，UI 已能处理）。
-     * 特例：mcp 兜底类（无判别词）退回单池模式（取一批候选再过滤）。
+     * 分类口径（npm 无原生分类、只有 keywords 过滤）分两种：
+     *  - 分类 + 相关度（有代表词，见 NPM_FACET_TERM）：走服务端真实分页——
+     *    query 拼 ` keywords:<代表词>`（mcp AND term），total / totalPages / hasMore 全取自
+     *    npm 响应，总数可信、翻页正常。
+     *  - downloads 排序 或 mcp 兜底类（无代表词）：维持「候选池」逻辑——
+     *    下载排序需对全量候选本地重排（服务端无 sort），兜底类无法用关键词表达，
+     *    二者都只能取候选池快照本地过滤，total 仍 null（未知总量，UI 显示「仅上/下一页」）。
      *
-     * 排序：npm 搜索无服务端 sort。分类扇出合并后的集合按 extra.score 降序重排
-     * （npm 相关度信号，缺失按 0），使结果确定、不随请求完成顺序漂移；
-     * sort==='downloads' 时对候选集按月下载量降序重排——候选集为 CATEGORY_POOL_SIZE
-     * 条相关度头部候选（无分类时同样走池，而非只排当前页 20 条），
-     * 诚实说明：它排序的是相关度 top-100 候选，并非全库按下载量重排。
+     * 旧分类扇出（判别词并行召回 + 本地弱分类过滤）的 total 永远无法合并出可信计数，
+     * 新版已弃用；候选池大小见 CATEGORY_POOL_SIZE。
      */
     async searchServers(params: PlatformSearchParams): Promise<PlatformServerSearchPage> {
         const {query, page, pageSize, category, sort} = params;
@@ -521,11 +532,33 @@ export const npmAdapter: PlatformAdapter = {
         // Q2 决策：默认拼接 keywords:mcp（用户输入为空/有输入均拼接，覆盖全场景降噪）
         const text = query ? `keywords:mcp ${query}` : 'keywords:mcp';
         const hasCategory = !!category && category !== 'all';
-        // 池模式统一入口：有分类（扇出）或按下载量排序（只看相关度头部候选）都走池，
-        // 其余（无分类 + relevance）走正常服务端分页。
-        const usePool = hasCategory || sort === 'downloads';
+        const isDownloads = sort === 'downloads';
+        // 分类是否有服务端代表词；仅当「有代表词且未要求下载排序」才可走真实分页。
+        const facetTerm = hasCategory ? (NPM_FACET_TERM[category] || '') : '';
+        const useServerCategorized = hasCategory && !!facetTerm && !isDownloads;
+        // 候选池统一入口：下载排序、mcp 兜底类（无代表词）才需要；真实分页分类不在此。
+        const usePool = !useServerCategorized && (hasCategory || isDownloads);
 
         try {
+            if (useServerCategorized) {
+                // 分类 + 相关度：服务端真实分页，total/hasMore 可信
+                const url = buildSearchUrl(`${text} keywords:${facetTerm}`, safeSize, (safePage - 1) * safeSize);
+                const json = (await fetchNpmJson(url)) as NpmSearchResponse | null;
+                if (!json || !Array.isArray(json.objects)) {
+                    return {items: [], pageInfo: failedPageInfo(safePage, safeSize), message: FETCH_FAILED};
+                }
+                const items = json.objects.map(mapListItem);
+                const total: number | null = typeof json.total === 'number' ? json.total : items.length;
+                const pageInfo: PlatformPageInfo = {
+                    page: safePage,
+                    pageSize: safeSize,
+                    total,
+                    totalPages: safeSize > 0 ? Math.ceil(total / safeSize) : null,
+                    hasMore: safeSize > 0 && safePage * safeSize < total,
+                };
+                return {items, pageInfo};
+            }
+
             if (usePool) {
                 let pool: NpmSearchObject[];
                 // 扇出合并集为 true：需按 score 确定性排序；单池路径保持 npm 原生顺序
