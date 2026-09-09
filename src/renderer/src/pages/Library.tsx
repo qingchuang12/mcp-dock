@@ -44,44 +44,18 @@ export interface InstalledServer {
 }
 
 // 检查是否是 AI-Tools 安装的服务器
-function isMcpDockInstalled(config: McpServerConfig, serverId: string, serverLists: Record<DataSource, ServerListItem[]>): {
+// Official 源已移除：仅保留 smithery CLI 特征识别；旧官方安装项与未匹配项统一按通用显示处理。
+function isMcpDockInstalled(config: McpServerConfig): {
     isMcpDock: boolean;
     source: DataSource
 } {
-    const args = config.args || [];
-    const argsStr = args.join(' ');
-    const command = config.command || '';
-
-    const configAny = config as Record<string, unknown>;
-    const isRemote = 'url' in configAny && typeof configAny.url === 'string';
-
-    const isNpx = command.endsWith('npx') || command.includes('/npx');
-    const isUvx = command.endsWith('uvx') || command.includes('/uvx');
-    const isDocker = command === 'docker' || command.endsWith('/docker');
+    const argsStr = (config.args || []).join(' ');
 
     if (argsStr.includes('@smithery/cli') || argsStr.includes('smithery-cli')) {
         return {isMcpDock: true, source: 'smithery'};
     }
 
-    const officialList = serverLists.official || [];
-    const smitheryList = serverLists.smithery || [];
-
-    const isInOfficial = officialList.some(s => s.id === serverId);
-    const isInSmithery = smitheryList.some(s => s.id === serverId);
-
-    if (isInOfficial) {
-        if (isRemote) return {isMcpDock: true, source: 'official'};
-        if (isNpx && args.includes('-y')) return {isMcpDock: true, source: 'official'};
-        if (isUvx) return {isMcpDock: true, source: 'official'};
-        if (isDocker) return {isMcpDock: true, source: 'official'};
-        return {isMcpDock: false, source: 'official'};
-    }
-
-    if (isInSmithery) {
-        return {isMcpDock: false, source: 'smithery'};
-    }
-
-    return {isMcpDock: false, source: 'official'};
+    return {isMcpDock: false, source: 'smithery'};
 }
 
 // 服务器 / Skill 图标组件已抽到 components/ServerIcon.tsx 与 components/SkillIcon.tsx
@@ -205,14 +179,6 @@ export default function Library() {
     // 加载服务器列表
     useEffect(() => {
         const loadServerLists = async () => {
-            if (serverLists.official.length === 0) {
-                try {
-                    const officialList = await fetchServerList('official');
-                    setServerList('official', officialList);
-                } catch (e) {
-                    console.error('Failed to load official server list:', e);
-                }
-            }
             if (serverLists.smithery.length === 0) {
                 try {
                     const smitheryList = await fetchServerList('smithery');
@@ -223,7 +189,7 @@ export default function Library() {
             }
         };
         loadServerLists();
-    }, [serverLists.official.length, serverLists.smithery.length, setServerList]);
+    }, [serverLists.smithery.length, setServerList]);
 
     // 加载数据
     // 关键修复（P0-10）：serverLists 由另一个 effect 异步拉取，且首屏为空，
@@ -264,7 +230,7 @@ export default function Library() {
             // 处理 MCP Servers
             const manualSet = new Set(manualServers);
             const serverList = Object.entries(serverMap).map(([id, {config, clients}]) => {
-                const {isMcpDock, source} = isMcpDockInstalled(config, id, serverLists);
+                const {isMcpDock, source} = isMcpDockInstalled(config);
                 return {id, config, clients, isMcpDock, source, manual: manualSet.has(id)};
             });
             setServers(serverList);

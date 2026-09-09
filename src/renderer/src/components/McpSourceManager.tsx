@@ -16,7 +16,7 @@ export default function McpSourceManager({onChanged}: Props) {
             namespace="mcpSource"
             kind="mcp"
             platformTypes={MCP_PLATFORM_TYPES}
-            builtinIds={[BUILTIN_MCP_SOURCE_IDS.official, BUILTIN_MCP_SOURCE_IDS.smithery]}
+            builtinIds={[BUILTIN_MCP_SOURCE_IDS.smithery]}
             createDefaults={{platformType: 'custom', baseUrl: ''}}
             exportNames={{single: 'mcp-source.json', multi: 'mcp-sources.json'}}
             showPlatformHint

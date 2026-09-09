@@ -19,6 +19,15 @@ export interface McpServerConfig {
      * 读写均原样透传——若读写时丢弃该字段，客户端内已停用的 Server 会被静默重新启用。
      */
     enable?: boolean;
+    /**
+     * 第三方 MCP server 的许可证标识（如 MIT / Apache-2.0），由 npm 适配器在详情里给出。
+     * 安装时透传到 ConfigManager，用于运行时自动汇总（Phase 6 合规）。modelscope 等不传则跳过汇总。
+     */
+    license?: string;
+    /** 来源平台标识（如 'npm'），用于许可证汇总时标注出处。 */
+    source?: string;
+    /** 来源主页 URL，用于许可证汇总时附链接。 */
+    homepage?: string;
 }
 
 export interface ClientConfig {

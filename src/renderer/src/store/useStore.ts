@@ -116,7 +116,7 @@ interface StoreState {
 export type ThemeMode = 'light' | 'dark' | 'auto';
 
 // 有效的数据源值
-const VALID_DATA_SOURCES = ['official', 'smithery'] as const;
+const VALID_DATA_SOURCES = ['smithery'] as const;
 const VALID_RESOURCE_TYPES = ['mcp', 'skills'] as const;
 const VALID_THEMES = ['light', 'dark', 'auto'] as const;
 
@@ -131,8 +131,8 @@ export const useStore = create<StoreState>()(
                 searchQuery: ''
             }),
 
-            // 数据源 - 默认使用 Official
-            dataSource: 'official',
+            // 数据源 - 默认使用 Smithery（Official 源已移除）
+            dataSource: 'smithery',
             setDataSource: (source) => set({
                 dataSource: source,
                 currentPage: 1,
@@ -151,7 +151,6 @@ export const useStore = create<StoreState>()(
 
             // 服务器列表 (按数据源分开)
             serverLists: {
-                official: [],
                 smithery: [],
             },
             setServerList: (source, list) => set((state) => ({
@@ -278,10 +277,10 @@ export const useStore = create<StoreState>()(
                 const persisted = persistedState as Partial<StoreState> | undefined;
                 return {
                     ...currentState,
-                    // 验证 dataSource，无效则使用默认值
+                    // 验证 dataSource，无效则使用默认值（含旧版本持久化的 official）
                     dataSource: persisted?.dataSource && VALID_DATA_SOURCES.includes(persisted.dataSource as any)
                         ? persisted.dataSource
-                        : 'official',
+                        : 'smithery',
                     // 验证 resourceType，无效则使用默认值
                     resourceType: persisted?.resourceType && VALID_RESOURCE_TYPES.includes(persisted.resourceType as any)
                         ? persisted.resourceType

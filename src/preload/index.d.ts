@@ -6,6 +6,12 @@ export interface McpServerConfig {
     command: string;
     args?: string[];
     env?: Record<string, string>;
+    /** 第三方 server 许可证标识（npm 来源）。Phase 6 合规汇总用。 */
+    license?: string;
+    /** 来源平台标识（如 'npm'）。 */
+    source?: string;
+    /** 来源主页 URL。 */
+    homepage?: string;
 }
 
 export interface RuntimeInfo {
@@ -192,6 +198,7 @@ declare const api: {
         getPlatform: () => Promise<string>;
         getVersion: () => Promise<string>;
         openExternal: (url: string) => Promise<void>;
+        openThirdPartyLicense: () => Promise<string>;
         getConfigPath: (client?: ClientType) => Promise<string>;
         openConfigDirectory: (client: ClientType) => Promise<string>;
         openSkillsDirectory: (client: SkillClientType) => Promise<string>;

@@ -63,6 +63,12 @@ export interface McpServerConfig {
     url?: string;
     type?: 'stdio' | 'http' | 'streamable-http' | 'sse';
     headers?: Record<string, string>;
+    /** 第三方 server 许可证标识（npm 来源）。Phase 6 合规汇总用。 */
+    license?: string;
+    /** 来源平台标识（如 'npm'）。 */
+    source?: string;
+    /** 来源主页 URL。 */
+    homepage?: string;
 }
 
 export interface RuntimeInfo {
@@ -320,6 +326,7 @@ interface ElectronAPI {
         getPlatform: () => Promise<string>;
         getVersion: () => Promise<string>;
         openExternal: (url: string) => Promise<void>;
+        openThirdPartyLicense: () => Promise<string>;
         getConfigPath: (client?: AnyClientId) => Promise<string>;
         openConfigDirectory: (client: AnyClientId) => Promise<string>;
         openSkillsDirectory: (client: SkillClientType) => Promise<string>;
@@ -432,7 +439,7 @@ interface ElectronAPI {
         setDefault: (id: string) => Promise<ApiConnection>;
         /** 启用 / 禁用某连接 */
         setEnabled: (id: string, enabled: boolean) => Promise<ApiConnection>;
-        /** 恢复被删除的内置 MCP 源（official / smithery） */
+        /** 恢复被删除的内置 MCP 源（smithery） */
         restoreBuiltinMcp: () => Promise<ApiConnection[]>;
         /** 恢复被删除的内置 Skill 源（GitHub Registry） */
         restoreBuiltinSkill: () => Promise<ApiConnection[]>;
@@ -476,7 +483,7 @@ interface ElectronAPI {
         has: (key: string) => Promise<boolean>;
         delete: (key: string) => Promise<void>;
         clear: () => Promise<void>;
-        clearByPrefix: (prefix: 'official' | 'smithery' | 'skills') => Promise<void>;
+        clearByPrefix: (prefix: 'smithery' | 'skills') => Promise<void>;
         getStats: () => Promise<{
             totalFiles: number;
             totalSize: number;
@@ -785,6 +792,7 @@ const mockAPI: ElectronAPI = {
         openExternal: async (url) => {
             window.open(url, '_blank');
         },
+        openThirdPartyLicense: async () => '',
         getConfigPath: async () => '~/Library/Application Support/Claude/claude_desktop_config.json',
         openConfigDirectory: async () => '',
         openSkillsDirectory: async () => '',

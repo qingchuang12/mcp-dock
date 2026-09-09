@@ -46,14 +46,14 @@ export interface UseStoreFacetsParams {
     mcpPlatformType?: string | null;
     selectedConn: ApiConnection | null;
     isDirectSkillSource: boolean;
-    /** 当前内置数据源（official/smithery）；smithery 不支持前端分类/排序，抑制 facets 以免误导 */
+    /** 当前内置数据源（smithery）；smithery 不支持前端分类/排序，抑制 facets 以免误导 */
     dataSource?: DataSource;
 }
 
 /**
  * 拉取当前数据源的分类/排序/来源面元数据。
  * - 平台直连源：调用 platforms.facets（adapter 提供真实分类树 + 排序 + 来源）
- * - 内置源（GitHub/official/smithery）：返回 9 类本地推断分类 + 通用排序
+ * - 内置源（GitHub/smithery）：返回 9 类本地推断分类 + 通用排序
  *
  * 返回 null 表示当前数据源无分类（如未选择连接）。
  */

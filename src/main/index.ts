@@ -4,6 +4,7 @@
 
 import {app, BrowserWindow, dialog, ipcMain, nativeTheme, session, shell} from 'electron';
 import path from 'path';
+import {existsSync} from 'fs';
 import {ClientType, ConfigManager, SkillClientType} from './config-manager';
 import {EnvManager} from './env-manager';
 import {HistoryManager} from './history-manager';
@@ -372,6 +373,25 @@ ipcMain.handle('system:open-external', async (_, url: string) => {
         throw new Error('仅允许打开 http/https 链接');
     }
     return shell.openExternal(url);
+});
+
+ipcMain.handle('system:open-third-party-license', async () => {
+    const candidates = [
+        path.join(process.resourcesPath || '', 'THIRD_PARTY_LICENSES.md'),
+        path.join(app.getAppPath(), 'THIRD_PARTY_LICENSES.md'),
+        path.join(__dirname, '..', '..', 'THIRD_PARTY_LICENSES.md'),
+        path.join(__dirname, '..', 'THIRD_PARTY_LICENSES.md'),
+    ];
+    for (const candidate of candidates) {
+        try {
+            if (existsSync(candidate)) {
+                return shell.openPath(candidate);
+            }
+        } catch {
+            // 忽略不可访问的路径
+        }
+    }
+    throw new Error('未找到第三方开源许可声明文件');
 });
 
 // 自定义标题栏：窗口控制（Windows / Linux 无边框窗口）
@@ -1117,10 +1137,8 @@ async function enqueueCloudAndWait(kind: SyncTaskKind, title: string): Promise<C
 
 // 缓存键类型
 type CacheKey =
-    | 'official-index'
     | 'smithery-index'
     | 'skills-index'
-    | `official-detail-${string}`
     | `smithery-detail-${string}`
     | `skills-detail-${string}`;
 
@@ -1160,7 +1178,7 @@ ipcMain.handle('cache:clear', async () => {
 });
 
 // 按前缀清除缓存
-ipcMain.handle('cache:clear-by-prefix', async (_, prefix: 'official' | 'smithery' | 'skills') => {
+ipcMain.handle('cache:clear-by-prefix', async (_, prefix: 'smithery' | 'skills') => {
     return cacheManager.clearByPrefix(prefix);
 });
 

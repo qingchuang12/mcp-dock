@@ -1,26 +1,21 @@
-MIT License
+AI-Tools 软件许可协议（专有）
+AI-Tools Software License Agreement (Proprietary)
 
-This software is a commercial derivative of the open-source project
-"mcp-dock" (https://github.com/OldJii/mcp-dock), which is licensed under
-the MIT License.
+版权所有 (c) 2026 AI-Tools Team。保留一切权利。
+Copyright (c) 2026 AI-Tools Team. All rights reserved.
 
-Copyright (c) 2024-2026 MCP Dock Contributors (original open-source project)
-Copyright (c) 2026 AI-Tools Team
+本软件（AI-Tools）是一款用于管理 MCP 服务器与 AI 代理技能的桌面应用软件，基于开源项目 mcp-dock（https://github.com/OldJii/mcp-dock）进行二次开发。
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. 第三方开源组件
+   本软件中源自 mcp-dock 的部分仍受原项目 MIT License 约束。原项目 MIT License 全文及版权声明收录于随本软件分发的《第三方开源许可声明》（THIRD_PARTY_LICENSES.md）中，我们尊重并完整保留其版权声明与许可条款。
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+2. 专有权利
+   除前款所指 mcp-dock 原项目部分外，本软件的全部新增与修改内容（包括但不限于源代码、界面、功能、架构、文档及衍生作品）均归本软件权利方（AI-Tools Team）所有，受著作权法及国际条约保护。
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+3. 授权范围
+   本软件仅授予最终用户为个人或非商业内部用途而安装与使用的非独占、不可转让的有限许可。未经权利方书面许可，任何人不得对本软件进行复制、修改、反编译、反向工程、再分发、出租、转授权（sublicense）或用于任何商业目的。
+
+4. 免责声明
+   本软件按"原样"（AS IS）提供，不提供任何明示或暗示的担保。在任何情况下，权利方均不对因使用或无法使用本软件而产生的任何直接或间接损失承担责任。
+
+《第三方开源许可声明》中收录的 mcp-dock 部分，遵循其原 MIT License 条款，按"原样"提供，相关担保与责任限制以该 MIT License 原文为准。

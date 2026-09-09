@@ -1,0 +1,39 @@
+# 第三方开源许可声明 / Third-Party Open-Source License Notice
+
+本软件（AI-Tools）基于开源项目 **mcp-dock** 进行二次开发。mcp-dock 原项目采用 MIT License，其相关源代码与文档的版权与许可条款如下，我们尊重并完整保留。
+
+- 原始项目：mcp-dock
+- 项目地址：https://github.com/OldJii/mcp-dock
+- 原许可协议：MIT License
+
+---
+
+以下为 mcp-dock 原项目 MIT License 全文（逐字收录）：
+
+```
+MIT License
+
+Copyright (c) 2024-2026 MCP Dock Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+除上述 mcp-dock 原项目部分外，本软件（AI-Tools）的所有新增与修改内容（包括但不限于界面、功能、架构、文档及衍生代码）均归本软件权利方（AI-Tools Team）所有，采用专有授权，保留一切权利，不向任何第三方授予开源许可。

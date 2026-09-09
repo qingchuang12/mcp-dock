@@ -8,7 +8,7 @@ interface UseStoreDataParams {
     resourceType: StoreResourceType;
     /** 选中的 MCP 平台连接 ID；为 null 时走内置源 */
     mcpConnId: string | null;
-    /** 内置 MCP 源类型（official/smithery） */
+    /** 内置 MCP 源类型（smithery） */
     dataSource: DataSource;
     /**
      * 当前选中的 MCP 平台连接的 platformType。
@@ -44,7 +44,6 @@ export function useStoreData(params: UseStoreDataParams): StoreData<ServerListIt
         resourceType: params.resourceType,
         mcpConnId: params.mcpConnId,
         platformType: params.mcpPlatformType ?? params.selectedConn?.platformType,
-        dataSource: params.dataSource,
         page: params.page,
         pageSize: params.pageSize,
         debouncedSearch: params.debouncedSearch,

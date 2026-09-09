@@ -230,7 +230,7 @@ To get the full version with registry browsing, [download the latest release](ht
 
 ## License
 
-MIT License - See [LICENSE](./LICENSE) for details.
+This software is a proprietary derivative of the open-source project mcp-dock (MIT License). See [LICENSE](./LICENSE) and the [Third-Party Open-Source License Notice](./THIRD_PARTY_LICENSES.md).
 
 ## Credits
 

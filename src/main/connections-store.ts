@@ -86,9 +86,10 @@ export class ConnectionsStore {
     /**
      * 存量数据迁移 + 内置源 seed。
      *
-     * - 老数据没有 kind 字段：按 platformType 推断（official/smithery 归 mcp，其余归 skill）。
+     * - 老数据没有 kind 字段：按 platformType 推断（smithery/npm 归 mcp，其余归 skill）。
      * - 老数据没有 enabled 字段：一律补 true，保证升级后不会突然全部消失。
-     * - 内置 official / smithery（MCP）与 github（Skill / GitHub Registry）源以固定 id 落库，
+     * - Official 源已移除：存量 connections.json 中的 official 内置连接直接清除。
+     * - 内置 smithery（MCP）与 github（Skill / GitHub Registry）源以固定 id 落库，
      *   用户可编辑/禁用，删除后可通过各自的「恢复内置源」重新 seed。
      */
     private migrate(): void {
@@ -96,7 +97,7 @@ export class ConnectionsStore {
 
         for (const c of this.connections) {
             if (c.kind === undefined) {
-                c.kind = c.platformType === 'official' || c.platformType === 'smithery' ? 'mcp' : 'skill';
+                c.kind = c.platformType === 'smithery' || c.platformType === 'npm' ? 'mcp' : 'skill';
                 changed = true;
             }
             if (c.enabled === undefined) {
@@ -104,6 +105,12 @@ export class ConnectionsStore {
                 changed = true;
             }
         }
+
+        // Official 源已移除：清除存量 connections.json 中残留的 official 内置连接，
+        // 避免商店下拉与源管理页出现指向已删除功能的死条目。
+        const before = this.connections.length;
+        this.connections = this.connections.filter(c => c.id !== 'mcpsrc_official');
+        if (this.connections.length !== before) changed = true;
 
         // MCP 内置源与 Skill 内置源各自独立 seed：用各自的标记文件，互不耦合。
         // 一次标记保证用户删除后不会每次启动又被写回，但两类源互相独立触发。
@@ -145,19 +152,6 @@ export class ConnectionsStore {
         const now = Date.now();
         return [
             {
-                id: BUILTIN_MCP_SOURCE_IDS.official,
-                name: 'Official Registry',
-                platformType: 'official',
-                baseUrl: PLATFORM_META.official.defaultBaseUrl,
-                customHeaders: {},
-                status: 'unverified',
-                detail: 'modelcontextprotocol/servers 官方仓库',
-                lastCheckedAt: null,
-                createdAt: now,
-                kind: 'mcp',
-                enabled: true,
-            },
-            {
                 id: BUILTIN_MCP_SOURCE_IDS.smithery,
                 name: 'Smithery',
                 platformType: 'smithery',
@@ -167,6 +161,19 @@ export class ConnectionsStore {
                 detail: 'Smithery MCP 注册中心',
                 lastCheckedAt: null,
                 createdAt: now - 1,
+                kind: 'mcp',
+                enabled: true,
+            },
+            {
+                id: BUILTIN_MCP_SOURCE_IDS.npm,
+                name: 'npm Registry',
+                platformType: 'npm',
+                baseUrl: PLATFORM_META.npm.defaultBaseUrl,
+                customHeaders: {},
+                status: 'unverified',
+                detail: 'npm Registry 上的 MCP 服务器（关键词 keywords:mcp）',
+                lastCheckedAt: null,
+                createdAt: now - 2,
                 kind: 'mcp',
                 enabled: true,
             },

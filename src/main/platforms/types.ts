@@ -16,6 +16,7 @@ export type SupportedPlatform =
     | 'skillsmp'
     | 'clawhub'
     | 'bailian'
+    | 'npm'
     | 'unknown';
 
 /** 归一化后的 skill 列表项（渲染层直接使用）。 */
@@ -251,7 +252,7 @@ export interface PlatformAdapter {
 
 /**
  * 把连接配置层的 PlatformType 映射到平台搜索层的 SupportedPlatform。
- * 仅保留「平台直连类」映射；official/smithery/github/custom 等非直连类型返回 null
+ * 仅保留「平台直连类」映射；smithery/github/custom 等非直连类型返回 null
  * （这些由内置抓取通道处理，不走平台适配器）。
  */
 export function platformTypeToSupported(pt: string): SupportedPlatform | null {
@@ -269,6 +270,9 @@ export function platformTypeToSupported(pt: string): SupportedPlatform | null {
         // 百炼作为新平台，连接类型为 'bailian'（连接配置层扩展）
         case 'bailian':
             return 'bailian';
+        // npm Registry：匿名公开，无 baseUrl 限制，走统一平台适配器通道
+        case 'npm':
+            return 'npm';
         default:
             return null;
     }

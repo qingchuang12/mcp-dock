@@ -46,6 +46,68 @@ import {assertSafeConfigPath, loadUserSettingsFile, UserSettings, writeFileAtomi
 
 export * from './config/types';
 
+// ---------------------------------------------------------------------------
+//  Phase 6：安装第三方 MCP server 时，自动将其许可证汇总进运行时文件，避免 GPL/MIT 等义务被遗漏。
+//  仅当 serverConfig.license 存在才写入（modelscope 等不传则跳过，保持隔离）。
+// ---------------------------------------------------------------------------
+const LICENSE_INDEX_PATH = path.join(os.homedir(), '.ai-tools', 'installed-mcp-licenses.json');
+const LICENSE_INDEX_VERSION = 1;
+
+interface LicenseIndexEntry {
+    serverId: string;
+    license: string;
+    source?: string;
+    homepage?: string;
+    installedAt: string;
+    clients: string[];
+}
+interface LicenseIndexFile {
+    version: number;
+    updatedAt: string;
+    servers: Record<string, LicenseIndexEntry>;
+}
+
+async function readLicenseIndex(): Promise<LicenseIndexFile> {
+    try {
+        const raw = await fs.readFile(LICENSE_INDEX_PATH, 'utf-8');
+        const parsed = JSON.parse(raw) as Partial<LicenseIndexFile>;
+        return {
+            version: LICENSE_INDEX_VERSION,
+            updatedAt: parsed.updatedAt || new Date().toISOString(),
+            servers: parsed.servers || {},
+        };
+    } catch {
+        return {version: LICENSE_INDEX_VERSION, updatedAt: new Date().toISOString(), servers: {}};
+    }
+}
+
+async function writeLicenseIndex(index: LicenseIndexFile): Promise<void> {
+    index.updatedAt = new Date().toISOString();
+    await fs.writeFile(LICENSE_INDEX_PATH, JSON.stringify(index, null, 2), 'utf-8');
+}
+
+async function upsertInstalledLicense(serverId: string, cfg: McpServerConfig, clients: string[]): Promise<void> {
+    if (!cfg.license) return;
+    const index = await readLicenseIndex();
+    index.servers[serverId] = {
+        serverId,
+        license: cfg.license,
+        source: cfg.source,
+        homepage: cfg.homepage,
+        installedAt: new Date().toISOString(),
+        clients,
+    };
+    await writeLicenseIndex(index);
+}
+
+async function removeInstalledLicense(serverId: string): Promise<void> {
+    const index = await readLicenseIndex();
+    if (index.servers[serverId]) {
+        delete index.servers[serverId];
+        await writeLicenseIndex(index);
+    }
+}
+
 export class ConfigManager {
     private defaultClientPaths: Record<ClientType, string>;
     private userSettingsPath: string;
@@ -620,6 +682,15 @@ export class ConfigManager {
             }
         }
 
+        // Phase 6：安装成功后聚合许可证（仅当传入 license；失败不阻塞安装结果）
+        try {
+            if (success.length > 0) {
+                await upsertInstalledLicense(serverId, serverConfig, success);
+            }
+        } catch (e) {
+            console.warn('[ConfigManager] 许可证聚合失败（已忽略）:', e);
+        }
+
         return {success, failed};
     }
 
@@ -645,6 +716,15 @@ export class ConfigManager {
                 console.error(`Failed to uninstall from ${client}:`, error);
                 failed.push(client);
             }
+        }
+
+        // Phase 6：卸载成功后从许可证汇总中移除该 server（失败不阻塞卸载结果）
+        try {
+            if (success.length > 0) {
+                await removeInstalledLicense(serverId);
+            }
+        } catch (e) {
+            console.warn('[ConfigManager] 许可证移除失败（已忽略）:', e);
         }
 
         // 若目标含云端存储：暂存区已删除该 server。远端推送统一由渲染层

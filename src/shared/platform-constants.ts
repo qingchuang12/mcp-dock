@@ -28,12 +28,13 @@ export type PlatformType =
   | 'skillsmp'
   | 'custom'
   // MCP 源平台类型：内置抓取实现，非通用 baseUrl 探测
-  | 'official'
   | 'smithery'
   // Skill 源内置来源（GitHub Registry），由 fetchSkillsList 直连，不通过平台搜索 API
   | 'github'
   // ClawHub：公开 API 直连，无凭证即可查询 skill 趋势榜单
-  | 'clawhub';
+  | 'clawhub'
+  // npm Registry：MCP 服务器发现源（平台直连，匿名公开）
+  | 'npm';
 
 export const PLATFORM_META: Record<PlatformType, { label: string; defaultBaseUrl: string }> = {
   modelscope: { label: 'ModelScope', defaultBaseUrl: 'https://www.modelscope.cn' },
@@ -41,17 +42,17 @@ export const PLATFORM_META: Record<PlatformType, { label: string; defaultBaseUrl
   skillhub: { label: 'SkillHub', defaultBaseUrl: 'https://skillhub.cn' },
   skillsmp: { label: 'SkillsMP', defaultBaseUrl: 'https://skillsmp.com' },
   custom: { label: '自定义', defaultBaseUrl: '' },
-  official: { label: 'Official Registry', defaultBaseUrl: 'https://api.github.com' },
   smithery: { label: 'Smithery', defaultBaseUrl: 'https://registry.smithery.ai' },
   github: { label: 'GitHub Registry', defaultBaseUrl: 'https://api.github.com' },
   clawhub: { label: 'ClawHub', defaultBaseUrl: 'https://clawhub.ai' },
+  npm: { label: 'npm Registry', defaultBaseUrl: 'https://registry.npmjs.org' },
 };
 
 /** 连接归属的资源类型：mcp 源 / skill 源 */
 export type ConnectionKind = 'mcp' | 'skill';
 
-/** MCP 源可选的平台类型（内置两种 + 平台直连 + 自定义） */
-export const MCP_PLATFORM_TYPES: PlatformType[] = ['official', 'smithery', 'modelscope', 'custom'];
+/** MCP 源可选的平台类型（内置源 + 平台直连 + 自定义） */
+export const MCP_PLATFORM_TYPES: PlatformType[] = ['smithery', 'modelscope', 'custom', 'npm'];
 
 /** Skill 源可选的平台类型 */
 export const SKILL_PLATFORM_TYPES: PlatformType[] = [
@@ -65,8 +66,8 @@ export const SKILL_PLATFORM_TYPES: PlatformType[] = [
 
 /** 内置 MCP 源的固定 id，用于 seed 与内置抓取逻辑分发 */
 export const BUILTIN_MCP_SOURCE_IDS = {
-  official: 'mcpsrc_official',
   smithery: 'mcpsrc_smithery',
+  npm: 'mcpsrc_npm',
 } as const;
 
 /** 内置 Skill 源的固定 id（GitHub Registry），用于 seed 与商店下拉内置抓取分发 */
@@ -121,12 +122,13 @@ export const PLATFORM_HEALTH_PATHS: Record<PlatformType, string[]> = {
   // 自定义连接由用户填写完整 baseUrl，直接探该地址
   custom: ['/'],
   // MCP 内置源：探测各自真实的 registry 端点
-  official: ['/repos/modelcontextprotocol/servers/contents/src', '/'],
   smithery: ['/servers?page=1&pageSize=1', '/'],
   // Skill 内置来源：GitHub Registry 探活指向官方 servers 仓库内容端点
   github: ['/repos/modelcontextprotocol/servers/contents/src', '/'],
   // ClawHub：公开趋势榜单接口，无凭证即可 200
   clawhub: ['/api/v1/trending?kind=skills&limit=1', '/'],
+  // npm Registry：探测搜索端点是否可达，回退首页
+  npm: ['/-/v1/search?text=keywords:mcp&size=1', '/'],
 };
 
 /**

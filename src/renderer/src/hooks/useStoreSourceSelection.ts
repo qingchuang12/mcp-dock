@@ -1,7 +1,7 @@
 import {useEffect, useState} from 'react';
 import {useStore} from '../store/useStore';
-import {useElectronAPI} from '../lib/electron';
 import type {ApiConnection} from '../lib/electron';
+import {useElectronAPI} from '../lib/electron';
 import type {DataSource} from '../api/registry';
 import {BUILTIN_SKILL_SOURCE_IDS} from '../../../shared/platform-constants';
 
@@ -10,9 +10,9 @@ export interface StoreSourceSelection {
     mcpSources: ApiConnection[];
     /** Skill 源管理里已启用的连接（下拉用） */
     connections: ApiConnection[];
-    /** 当前选中的 MCP 平台连接 ID；为 null 时走内置源（official/smithery） */
+    /** 当前选中的 MCP 平台连接 ID；为 null 时走内置源（smithery） */
     mcpConnId: string | null;
-    /** 当前内置 MCP 源类型（official/smithery） */
+    /** 当前内置 MCP 源类型（smithery） */
     dataSource: DataSource;
     /** 当前选中的 Skill 源 ID（可能为内置 github 或某直连源） */
     selectedSkillSourceId: string | null;
@@ -92,7 +92,7 @@ export function useStoreSourceSelection(): StoreSourceSelection {
         const byDataSource = mcpSources.find(c => c.platformType === dataSource);
         const fallback = def || byDataSource || mcpSources[0];
         if (!fallback) return;
-        if (fallback.platformType === 'official' || fallback.platformType === 'smithery') {
+        if (fallback.platformType === 'smithery') {
             setDataSource(fallback.platformType);
             setMcpConnId(null);
         } else {

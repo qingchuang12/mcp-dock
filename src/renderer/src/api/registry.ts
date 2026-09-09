@@ -5,15 +5,14 @@ import {getElectronAPI} from '../lib/electron';
  *
  * 社区版原本的 fetch 全部硬编码返回空数组（需自建后端）。
  * 本版本在不依赖自建后端的前提下，接入以下**公开、无需密钥**的数据源，
- * 让 Official / Smithery / Skills 列表立即有真实数据：
- *   - Official MCP : GitHub 公共仓库 modelcontextprotocol/servers（src 下各 reference server）
+ * 让 Smithery / Skills 列表立即有真实数据：
  *   - Smithery     : 公开 registry API registry.smithery.ai/servers
- *   - Skills       : GitHub 公共 skills 索引（modelcontextprotocol/servers 的 src 目录 + README）
+ *   - Skills       : GitHub 公共 skills 索引（anthropics/skills 的 skills/ 目录）
  *
  * 若用户自建了数据后端，可继续设置 VITE_REGISTRY_API_URL 覆盖默认行为。
  */
 
-export type DataSource = 'official' | 'smithery';
+export type DataSource = 'smithery';
 export type ResourceType = 'mcp' | 'skills';
 
 // Smithery 配置 Schema（与 components/ConfigForm 的 ConfigSchema 结构对齐）
@@ -27,61 +26,6 @@ export interface McpConfigSchema {
   type: string;
   properties: Record<string, McpConfigSchemaProperty>;
   required: string[];
-}
-
-// Official 配置项（环境变量 / 参数定义，供 OfficialConfigForm 渲染）
-export interface PackageEnvVar {
-  name: string;
-  description?: string;
-  required?: boolean;
-  isRequired?: boolean;
-  default?: string;
-  isSecret?: boolean;
-  choices?: string[];
-  type?: string;
-}
-
-export interface PackageArg {
-  name: string;
-  description?: string;
-  required?: boolean;
-  isRequired?: boolean;
-  default?: string;
-  type?: string;
-}
-
-// Official 数据源配置表单用类型（与 OfficialConfigForm 配合使用）
-export interface OfficialPackage {
-  id: string;
-  name: string;
-  description?: string;
-  version?: string;
-  command?: string;
-  args?: string[];
-  env?: { name: string; description?: string; required?: boolean }[];
-  registryType: 'npm' | 'pypi' | 'oci' | 'mcpb';
-  identifier: string;
-  runtimeHint?: 'node' | 'python' | 'docker';
-  environmentVariables?: PackageEnvVar[];
-  packageArguments?: PackageArg[];
-}
-
-export interface OfficialRemoteHeader {
-  name: string;
-  description?: string;
-  required?: boolean;
-  isRequired?: boolean;
-  default?: string;
-  isSecret?: boolean;
-}
-
-export interface OfficialRemote {
-  id: string;
-  name: string;
-  url: string;
-  description?: string;
-  type?: string;
-  headers?: OfficialRemoteHeader[];
 }
 
 // Base server list item - minimal fields for UI rendering
@@ -135,7 +79,7 @@ export interface ServerDetail {
   displayName: string;
   description: string;
   iconUrl: string | null;
-  source?: 'official' | 'smithery';
+  source?: 'smithery';
   qualifiedName?: string;
   connection?: SmitheryConnection;
   capabilities?: SmitheryCapability[];
@@ -152,8 +96,6 @@ export interface ServerDetail {
   author?: string;
   version?: string;
   readme?: string;
-  packages?: OfficialPackage[];
-  remotes?: OfficialRemote[];
   topics?: string[];
   websiteUrl?: string;
   repository?: { url: string; source?: string; subfolder?: string };
@@ -170,19 +112,6 @@ export interface SmitheryDetail extends ServerDetail {
   verified?: boolean;
   createdAt?: string;
   homepage?: string;
-}
-
-export interface OfficialDetail extends ServerDetail {
-  source: 'official';
-  packages?: OfficialPackage[];
-  remotes?: OfficialRemote[];
-  topics?: string[];
-  websiteUrl?: string;
-  repository?: { url: string; source?: string; subfolder?: string };
-  license?: string;
-  version?: string;
-  author?: string;
-  readme?: string;
 }
 
 // Skill list item
@@ -244,16 +173,8 @@ export function isSmitheryListItem(item: ServerListItem): boolean {
   return item.source === 'smithery';
 }
 
-export function isOfficialListItem(item: ServerListItem): boolean {
-  return item.source === 'official';
-}
-
 export function isSmitheryDetail(detail: ServerDetail): detail is SmitheryDetail {
   return detail.source === 'smithery';
-}
-
-export function isOfficialDetail(detail: ServerDetail): detail is OfficialDetail {
-  return detail.source === 'official';
 }
 
 // ---------------------------------------------------------------------------
@@ -313,33 +234,13 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
-// Official MCP (GitHub modelcontextprotocol/servers)
+// GitHub contents API 通用响应条目（Skills 索引使用）
 // ---------------------------------------------------------------------------
-const OFFICIAL_REPO = 'modelcontextprotocol/servers';
-const OFFICIAL_API = `https://api.github.com/repos/${OFFICIAL_REPO}`;
-
 interface GithubContentEntry {
   name: string;
   type: string;
   path: string;
   html_url: string;
-}
-
-async function fetchOfficialServers(signal?: AbortSignal): Promise<ServerListItem[]> {
-  // 列出 src 下的所有目录（每个目录是一个 reference server）
-  // 注意：直接使用目录名作为展示与描述，不再逐个抓取 README 首行，
-  // 以免目录数 N 触发 N 次 raw.githubusercontent 请求拖慢启动。
-  const entries = await getJson<GithubContentEntry[]>(`${OFFICIAL_API}/contents/src`, signal);
-  const dirs = entries.filter(e => e.type === 'dir');
-  return dirs.map((dir): ServerListItem => ({
-    id: `official-${dir.name}`,
-    displayName: dir.name,
-    description: `Official MCP server: ${dir.name}`,
-    iconUrl: null,
-    source: 'official',
-    repository: { url: dir.html_url },
-    homepage: dir.html_url,
-  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -504,7 +405,7 @@ export async function fetchServerList(
     return getJson<ServerListItem[]>(`${custom}/servers?source=${source}`, signal);
   }
 
-  const diskKey = source === 'official' ? 'official-index' : 'smithery-index';
+  const diskKey = 'smithery-index';
   const api = getElectronAPI();
 
   // SWR：优先返回落盘缓存，首屏秒开；后台静默刷新（noCache 时跳过缓存，直走网络）。
@@ -529,9 +430,7 @@ async function revalidateServerList(
   noCache = false,
 ): Promise<ServerListItem[]> {
   try {
-    const data = source === 'official'
-      ? await fetchOfficialServers(signal)
-      : await fetchSmitheryServers(signal);
+    const data = await fetchSmitheryServers(signal);
     const api = getElectronAPI();
     // noCache 模式下不回写磁盘/内存缓存，保证商店数据始终最新
     if (api && !noCache) await api.cache.set(diskKey, data);
@@ -550,7 +449,7 @@ async function revalidateServerList(
 
 export async function forceRefreshServerList(source: DataSource, signal?: AbortSignal): Promise<ServerListItem[]> {
   clearCached(`servers:${source}`);
-  const diskKey = source === 'official' ? 'official-index' : 'smithery-index';
+  const diskKey = 'smithery-index';
   const api = getElectronAPI();
   if (api) await api.cache.delete(diskKey).catch(() => {});
   return revalidateServerList(source, diskKey, signal);
@@ -562,9 +461,7 @@ export async function fetchServerDetail(source: DataSource, id: string, signal?:
     // 自建后端模式：直接代理单条详情
     return getJson<ServerDetail>(`${custom}/servers/${id}?source=${source}`, signal);
   }
-  return source === 'official'
-    ? await fetchOfficialServerDetail(id, signal)
-    : await fetchSmitheryServerDetail(id, signal);
+  return await fetchSmitheryServerDetail(id, signal);
 }
 
 // ---------------------------------------------------------------------------
@@ -618,99 +515,6 @@ async function fetchSmitheryServerDetail(id: string, signal?: AbortSignal): Prom
       registry: `https://smithery.ai/server/${qualifiedName}`,
       homepage: res.homepage,
     },
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Official 详情（GitHub modelcontextprotocol/servers 的 src/<name>）
-// ---------------------------------------------------------------------------
-async function fetchOfficialServerDetail(id: string, signal?: AbortSignal): Promise<OfficialDetail> {
-  const name = id.replace(/^official-/, '');
-  const basePath = `src/${name}`;
-  const repository: { url: string; source: string; subfolder: string } = {
-    url: `https://github.com/${OFFICIAL_REPO}/tree/main/${basePath}`,
-    source: OFFICIAL_REPO,
-    subfolder: basePath,
-  };
-
-  const packages: OfficialPackage[] = [];
-  const remotes: OfficialRemote[] = [];
-
-  // 1) 尝试 Node 包：src/<name>/package.json
-  const pkgUrl = `https://raw.githubusercontent.com/${OFFICIAL_REPO}/main/${basePath}/package.json`;
-  let npmLicense: string | undefined;
-  let npmVersion: string | undefined;
-  try {
-    const pkg = await getJson<{ name: string; version?: string; license?: unknown; bin?: unknown }>(pkgUrl, signal);
-    packages.push({
-      id: name,
-      name,
-      registryType: 'npm',
-      identifier: pkg.name,
-      version: pkg.version,
-      runtimeHint: 'node',
-      description: `${pkg.name} (npm)`,
-    });
-    if (pkg.license != null) npmLicense = String(pkg.license);
-    if (pkg.version) npmVersion = pkg.version;
-  } catch {
-    // 2) 尝试 Python 包：src/<name>/pyproject.toml
-    const tomlUrl = `https://raw.githubusercontent.com/${OFFICIAL_REPO}/main/${basePath}/pyproject.toml`;
-    try {
-      const res = await fetch(tomlUrl, { headers: { 'Accept': 'text/plain' }, signal });
-      if (res.ok) {
-        const toml = await res.text();
-        const m = toml.match(/\[project\][^[]*?name\s*=\s*["']([^"']+)["']/s)
-          || toml.match(/name\s*=\s*["']([^"']+)["']/);
-        const v = toml.match(/version\s*=\s*["']([^"']+)["']/);
-        packages.push({
-          id: name,
-          name,
-          registryType: 'pypi',
-          identifier: m ? m[1] : name,
-          version: v ? v[1] : undefined,
-          runtimeHint: 'python',
-          description: `${m ? m[1] : name} (PyPI)`,
-        });
-      }
-    } catch {
-      // 无包可解析，降级为仅展示
-    }
-  }
-
-  // 3) 尝试 remote 类型：src/<name>/mcp.json 含 transport.url
-  const mcpJsonUrl = `https://raw.githubusercontent.com/${OFFICIAL_REPO}/main/${basePath}/mcp.json`;
-  try {
-    const mcpJson = await getJson<{ servers?: Record<string, { name?: string; transport?: { type?: string; url?: string }; url?: string }> }>(mcpJsonUrl, signal);
-    if (mcpJson.servers) {
-      for (const [key, srv] of Object.entries(mcpJson.servers)) {
-        const url = srv.transport?.url || srv.url;
-        if (url) {
-          remotes.push({
-            id: key,
-            name: srv.name || key,
-            url,
-            description: `${key} (remote)`,
-          });
-        }
-      }
-    }
-  } catch {
-    // 无 remote 配置
-  }
-
-  return {
-    id,
-    source: 'official',
-    displayName: name,
-    description: `${name} (Official MCP server)`,
-    iconUrl: null,
-    repository,
-    author: 'modelcontextprotocol',
-    license: npmLicense,
-    version: npmVersion,
-    packages,
-    remotes,
   };
 }
 

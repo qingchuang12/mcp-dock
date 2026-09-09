@@ -1,0 +1,141 @@
+{
+  "generatedAt": "2026-09-09T07:39:56.637Z",
+  "source": "https://registry.npmjs.org",
+  "count": 13,
+  "servers": {
+    "@modelcontextprotocol/server-filesystem": {
+      "name": "@modelcontextprotocol/server-filesystem",
+      "version": "2026.8.31",
+      "description": "MCP server for filesystem access",
+      "license": "SEE LICENSE IN LICENSE",
+      "bin": "dist/index.js",
+      "engines": null,
+      "repository": "git+https://github.com/modelcontextprotocol/servers.git",
+      "publisher": "jspahrsummers"
+    },
+    "@modelcontextprotocol/server-github": {
+      "name": "@modelcontextprotocol/server-github",
+      "version": "2025.4.8",
+      "description": "MCP server for using the GitHub API",
+      "license": "MIT",
+      "bin": "dist/index.js",
+      "engines": null,
+      "repository": null,
+      "publisher": "jspahrsummers"
+    },
+    "@modelcontextprotocol/server-gitlab": {
+      "name": "@modelcontextprotocol/server-gitlab",
+      "version": "2025.4.25",
+      "description": "MCP server for using the GitLab API",
+      "license": "MIT",
+      "bin": "dist/index.js",
+      "engines": null,
+      "repository": null,
+      "publisher": "jspahrsummers"
+    },
+    "@modelcontextprotocol/server-memory": {
+      "name": "@modelcontextprotocol/server-memory",
+      "version": "2026.8.31",
+      "description": "MCP server for enabling memory for Claude through a knowledge graph",
+      "license": "SEE LICENSE IN LICENSE",
+      "bin": "dist/index.js",
+      "engines": null,
+      "repository": "git+https://github.com/modelcontextprotocol/servers.git",
+      "publisher": "jspahrsummers"
+    },
+    "@modelcontextprotocol/server-postgres": {
+      "name": "@modelcontextprotocol/server-postgres",
+      "version": "0.6.2",
+      "description": "MCP server for interacting with PostgreSQL databases",
+      "license": "MIT",
+      "bin": "dist/index.js",
+      "engines": null,
+      "repository": null,
+      "publisher": "jspahrsummers"
+    },
+    "@modelcontextprotocol/server-slack": {
+      "name": "@modelcontextprotocol/server-slack",
+      "version": "2025.4.25",
+      "description": "MCP server for interacting with Slack",
+      "license": "MIT",
+      "bin": "dist/index.js",
+      "engines": null,
+      "repository": null,
+      "publisher": "jspahrsummers"
+    },
+    "@modelcontextprotocol/server-puppeteer": {
+      "name": "@modelcontextprotocol/server-puppeteer",
+      "version": "2025.5.12",
+      "description": "MCP server for browser automation using Puppeteer",
+      "license": "MIT",
+      "bin": "dist/index.js",
+      "engines": null,
+      "repository": null,
+      "publisher": "jspahrsummers"
+    },
+    "@modelcontextprotocol/server-everything": {
+      "name": "@modelcontextprotocol/server-everything",
+      "version": "2026.8.31",
+      "description": "MCP server that exercises all the features of the MCP protocol",
+      "license": "SEE LICENSE IN LICENSE",
+      "bin": "dist/index.js",
+      "engines": null,
+      "repository": "git+https://github.com/modelcontextprotocol/servers.git",
+      "publisher": "jspahrsummers"
+    },
+    "@modelcontextprotocol/server-brave-search": {
+      "name": "@modelcontextprotocol/server-brave-search",
+      "version": "0.6.2",
+      "description": "MCP server for Brave Search API integration",
+      "license": "MIT",
+      "bin": "dist/index.js",
+      "engines": null,
+      "repository": null,
+      "publisher": "jspahrsummers"
+    },
+    "mcp-server-qdrant": {
+      "name": "mcp-server-qdrant",
+      "version": "0.0.1",
+      "description": "MCP server for qdrant integration",
+      "license": "MIT",
+      "bin": null,
+      "engines": null,
+      "repository": "git+https://github.com/hlos-ai/mcp-servers.git",
+      "publisher": "container-store"
+    },
+    "mcp-server-sqlite": {
+      "name": "mcp-server-sqlite",
+      "version": "0.0.2",
+      "description": "Model Context Protocol (MCP) server for SQLite database operations",
+      "license": "MIT",
+      "bin": "dist/cli.js",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "repository": "git+https://github.com/madnh/mcp-server-sqlite.git",
+      "publisher": "madnh"
+    },
+    "exa-mcp-server": {
+      "name": "exa-mcp-server",
+      "version": "3.4.1",
+      "description": "Connect AI agents to Exa for web search, content fetching, and multi-step research.",
+      "license": null,
+      "bin": "dist/stdio.cjs",
+      "engines": {
+        "node": ">=20.0.0"
+      },
+      "repository": "git+https://github.com/exa-labs/exa-mcp-server.git",
+      "publisher": "kesku"
+    },
+    "playwright-mcp": {
+      "name": "playwright-mcp",
+      "version": "0.0.19",
+      "description": "Playwright integration for ModelContext",
+      "license": null,
+      "bin": "dist/server.js",
+      "engines": null,
+      "repository": "git+https://github.com/Ashish-Bansal/playwright-mcp.git",
+      "publisher": "ashishbansal"
+    }
+  }
+}

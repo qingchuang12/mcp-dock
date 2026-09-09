@@ -1,6 +1,6 @@
 {
   "name": "ai-tools",
-  "version": "1.2.2",
+  "version": "1.2.4",
   "description": "AI-Tools - A beautiful desktop app for managing MCP servers and AI agent skills",
   "author": {
     "name": "AI-Tools Team",
@@ -18,6 +18,8 @@
     "build:main": "tsc -p tsconfig.main.json && node scripts/copy-platform-data.mjs",
     "build:renderer": "cross-env CONTINUOUS_INTEGRATION=1 vite build",
     "typecheck": "npx tsc -p tsconfig.main.json --noEmit && npx tsc -p tsconfig.json --noEmit",
+    "aggregate:registry": "node scripts/aggregate-mcp-registry.mjs",
+    "precache:npm-servers": "node scripts/precache-npm-servers.mjs",
     "start": "electron .",
     "electron:dev": "pnpm run build:main && concurrently -k \"pnpm run dev:main\" \"pnpm run dev:renderer\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "package": "pnpm run build && pnpm run link:deps && electron-builder",
@@ -81,7 +83,8 @@
       "LICENSE"
     ],
     "extraResources": [
-      "LICENSE"
+      "LICENSE",
+      "THIRD_PARTY_LICENSES.md"
     ],
     "mac": {
       "icon": "assets/icon.png",

@@ -721,6 +721,13 @@ export default function Settings() {
                         <p className="text-[12px] text-[var(--color-muted)] mt-1.5 leading-relaxed break-all">
                             {t('settings.aboutLicense')}
                         </p>
+                        <button
+                            type="button"
+                            onClick={() => { void api.system.openThirdPartyLicense(); }}
+                            className="mt-2 block text-left text-[12px] text-[var(--color-accent)] hover:underline"
+                        >
+                            {t('settings.aboutThirdPartyLicense')}
+                        </button>
                     </div>
                     <p className="text-[12px] text-[var(--color-muted)] mt-4 leading-relaxed whitespace-pre-line">
                         {t('settings.aboutCopyright')}

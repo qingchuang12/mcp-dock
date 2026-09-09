@@ -10,6 +10,7 @@ import {clawhubAdapter} from './clawhub';
 import {skillsmpAdapter} from './skillsmp';
 import {bailianAdapter} from './bailian';
 import {modelscopeAdapter} from './modelscope';
+import {npmAdapter} from './npm';
 
 const adapters: Record<Exclude<SupportedPlatform, 'unknown'>, PlatformAdapter> = {
     modelscope: modelscopeAdapter,
@@ -19,6 +20,8 @@ const adapters: Record<Exclude<SupportedPlatform, 'unknown'>, PlatformAdapter> =
     bailian: bailianAdapter,
     // safeskill 暂无独立 adapter，暂复用 skillhub 形态（前向兼容占位）
     safeskill: skillhubAdapter,
+    // npm Registry：MCP 服务器发现源（独立 adapter，完全不影响 modelscope 逻辑）
+    npm: npmAdapter,
 };
 
 export function getAdapter(platform: SupportedPlatform): PlatformAdapter | null {

@@ -15,12 +15,7 @@ import type {
     ResolvePlatformResult,
     SupportedPlatform,
 } from './types';
-import {
-    DIRECT_SEARCH_PAGE_SIZE,
-    DIRECT_UA,
-    MODELSCOPE_QUOTA_PRODUCT,
-    PLATFORM_NAMES,
-} from './types';
+import {DIRECT_SEARCH_PAGE_SIZE, DIRECT_UA, MODELSCOPE_QUOTA_PRODUCT, PLATFORM_NAMES,} from './types';
 import {
     buildUrl,
     emptyPageInfo,
@@ -32,7 +27,7 @@ import {
 } from './pagination';
 import {extractRepoPaths, resolvePlatformSkillUrl} from './url-detect';
 import {isZipDownloadUrl, resolveSkillsShSkill, resolveZipSkill, SKILLS_SH_URL_RE} from './install-zip';
-import {SKILLHUB_API_BASE, searchSkillhubPaged} from './skillhub';
+import {searchSkillhubPaged, SKILLHUB_API_BASE} from './skillhub';
 import {CLAWHUB_TRENDING_URL, searchClawhubPaged} from './clawhub';
 
 /**
@@ -76,6 +71,8 @@ const PLATFORM_SEARCH_ENDPOINTS: Record<Exclude<SupportedPlatform, 'unknown'>, s
         // 百炼离线索引，不走搜索端点
         '/api/v1/skills?search={q}&page={page}',
     ],
+    // npm Registry：MCP 服务器走统一 PlatformAdapter 通道（npmAdapter.searchServers），不走此 legacy 直连搜索分发
+    npm: [],
 };
 
 /** 最近一次直连搜索的诊断信息（按平台缓存，供 IPC 查询） */

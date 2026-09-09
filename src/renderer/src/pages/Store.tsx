@@ -57,7 +57,7 @@ export default function StorePage() {
   const selectedMcpConn = source.mcpSources.find(c => c.id === source.mcpConnId) || null;
 
   // S1-13: 平台源（如 ModelScope）受「页码 × 每页条数 ≤ 100」配额限制，100 条/页翻到第 2 页必触发配额空态；
-  // 平台源上限 50 条/页，内置源（official/smithery）才放开到 100。
+  // 平台源上限 50 条/页，内置源（smithery）才放开到 100。
   const isPlatformSource = !!source.mcpConnId || source.isDirectSkillSource;
   const pageSizeOptions = isPlatformSource ? [10, 20, 50] : [10, 20, 50, 100];
 
@@ -164,7 +164,6 @@ export default function StorePage() {
 
   const attributionText = useStoreAttribution({
     resourceType,
-    dataSource: source.dataSource,
     selectedMcpConn,
     selectedConn: source.selectedConn,
   });
@@ -172,7 +171,7 @@ export default function StorePage() {
   const handleMcpSourceChange = useCallback((sourceId: string) => {
     const src = source.mcpSources.find(c => c.id === sourceId);
     if (!src) return;
-    if (src.platformType === 'official' || src.platformType === 'smithery') {
+    if (src.platformType === 'smithery') {
       source.setDataSource(src.platformType);
       source.setMcpConnId(null);
     } else {

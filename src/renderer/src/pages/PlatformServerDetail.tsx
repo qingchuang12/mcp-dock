@@ -158,6 +158,7 @@ export default function PlatformServerDetail({connId, serverId, seedItem}: Props
     };
 
     const envSchemaObj = (detail?.envSchema ?? {}) as {properties?: Record<string, unknown>; required?: string[]};
+    const license = typeof detail?.extra?.license === 'string' ? detail.extra.license : null;
     const envProps = (envSchemaObj.properties ?? {}) as Record<string, {
         description?: string;
         [k: string]: unknown
@@ -198,6 +199,10 @@ export default function PlatformServerDetail({connId, serverId, seedItem}: Props
                 command,
                 args: detail.install.args,
                 ...(Object.keys(env).length > 0 ? {env} : {}),
+                // Phase 6：把 npm 来源的许可证/来源随安装配置透传，供主进程聚合汇总
+                ...(detail.extra?.license ? {license: String(detail.extra.license)} : {}),
+                ...(detail.source ? {source: detail.source} : {}),
+                ...(detail.sourceUrl ? {homepage: detail.sourceUrl} : {}),
             };
             const result = await api.config.installServer(serverId, config, targets);
             if (result.success.length > 0) {
@@ -350,6 +355,12 @@ export default function PlatformServerDetail({connId, serverId, seedItem}: Props
                                 )}
                                 {detail.author && (
                                     <span>by @{detail.author}</span>
+                                )}
+                                {license && (
+                                    <span className="flex items-center gap-1">
+                                        <span className="opacity-70">⚖</span>
+                                        {license}
+                                    </span>
                                 )}
                             </div>
 

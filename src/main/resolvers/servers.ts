@@ -13,6 +13,7 @@ import type {
 } from './types';
 import {DIRECT_SEARCH_PAGE_SIZE, DIRECT_UA, MODELSCOPE_QUOTA_PRODUCT} from './types';
 import {buildUrl, emptyPageInfo, extractPageInfo} from './pagination';
+import {getAdapter} from '../platforms/registry';
 
 /**
  * 各平台 MCP server 搜索端点定义。
@@ -288,6 +289,15 @@ export async function fetchPlatformServerDetail(
     serverId: string
 ): Promise<PlatformServerDetail> {
     const sp = platform as Exclude<SupportedPlatform, 'unknown'>;
+
+    // npm Registry：独立适配器，委托 npmAdapter.fetchServerDetail 完成详情解析。
+    // 此分支为「只增不减」的早返回，modelscope 旧分支字节级不变。
+    if (sp === 'npm') {
+        const a = getAdapter('npm');
+        if (!a?.fetchServerDetail) throw new Error('npm 适配器未实现 fetchServerDetail');
+        return a.fetchServerDetail({query: '', page: 1, pageSize: 20, baseUrl, secret}, serverId);
+    }
+
     const log = (..._args: unknown[]) => {
         if (process.env.NODE_ENV !== 'production') console.debug('[resolver]', ..._args);
     };

@@ -1,7 +1,7 @@
 /**
  * MCP Server 详情页面 - 参考 Skill 详情页风格
- * 支持多数据源 (Official / Smithery)
- * 布局：左侧信息 + README + 右侧操作区
+ * 支持数据源 (Smithery)
+ * 布局：左侧信息 + 右侧操作区
  */
 
 import {useEffect, useState} from 'react';
@@ -10,12 +10,8 @@ import {useQuery} from '@tanstack/react-query';
 import {useTranslation} from 'react-i18next';
 import {
     type DataSource,
-    fetchReadmeFromGitHub,
     fetchServerDetail,
-    isOfficialDetail,
     isSmitheryDetail,
-    type OfficialPackage,
-    type OfficialRemote,
     type ServerListItem,
     type SmitheryDetail,
 } from '../api/registry';
@@ -24,7 +20,6 @@ import {useIsMac} from '../lib/useIsMac';
 import {useStore} from '../store/useStore';
 import Modal from '../components/Modal';
 import ConfigForm from '../components/ConfigForm';
-import OfficialConfigForm from '../components/OfficialConfigForm';
 import ClientIcon from '../components/ClientIcon';
 import ClientMultiSelect from '../components/ClientMultiSelect';
 import PlatformServerDetail from './PlatformServerDetail';
@@ -103,12 +98,9 @@ export default function Detail() {
     const [selectedClients, setSelectedClients] = useState<AnyClientId[]>([]);
     const [installedClients, setInstalledClients] = useState<AnyClientId[]>([]);
     const [installError, setInstallError] = useState<string | null>(null);
-    const [selectedPackage, setSelectedPackage] = useState<OfficialPackage | null>(null);
-    const [readme, setReadme] = useState<string | null>(null);
-    const [isLoadingReadme, setIsLoadingReadme] = useState(false);
     const [iconError, setIconError] = useState(false);
 
-    const dataSource = (source || 'official') as DataSource;
+    const dataSource = (source || 'smithery') as DataSource;
     const decodedId = id ? decodeURIComponent(id) : '';
     // 平台源（如 ModelScope）走独立详情页
     const isPlatform = source === 'platform';
@@ -153,34 +145,11 @@ export default function Detail() {
         if (server) {
             if (isSmitheryDetail(server) && server.connection?.runtime) {
                 api.env.checkRuntime(server.connection.runtime as 'node' | 'python').then(setRuntimeInfo);
-            } else if (isOfficialDetail(server) && server.packages && server.packages.length > 0) {
-                const pkg = server.packages[0];
-                const runtime = pkg.runtimeHint === 'python' ? 'python' : 'node';
-                api.env.checkRuntime(runtime).then(setRuntimeInfo);
-                setSelectedPackage(pkg);
             } else {
                 api.env.checkRuntime('node').then(setRuntimeInfo);
             }
         }
     }, [server, api]);
-
-    // 使用存储的 README（不再实时获取）
-    useEffect(() => {
-        if (server && isOfficialDetail(server)) {
-            // 优先使用存储的 README
-            if (server.readme) {
-                setReadme(server.readme);
-                setIsLoadingReadme(false);
-            } else if (server.repository) {
-                // 回退：如果没有存储的 README，尝试实时获取
-                setIsLoadingReadme(true);
-                fetchReadmeFromGitHub(server.repository)
-                    .then(content => setReadme(content))
-                    .catch(() => setReadme(null))
-                    .finally(() => setIsLoadingReadme(false));
-            }
-        }
-    }, [server]);
 
     // 检查此服务器安装在哪些客户端
     const refreshInstalledClients = async () => {
@@ -271,133 +240,6 @@ export default function Detail() {
         }
     };
 
-    // Official 安装
-    const handleOfficialInstall = async (envValues: Record<string, string>, argValues: Record<string, string>) => {
-        const clientsToInstall = selectedClients.filter(c => !installedClients.includes(c));
-
-        if (clientsToInstall.length === 0) {
-            setInstallError('Please select at least one client.');
-            return;
-        }
-
-        if (!selectedPackage) {
-            setInstallError('Please select a package to install.');
-            return;
-        }
-
-        setIsInstalling(true);
-        setInstallError(null);
-
-        try {
-            const npxPath = await api.env.getNpxPath();
-            const uvxPath = await api.env.getUvxPath();
-
-            let config: { command: string; args: string[]; env?: Record<string, string> };
-
-            if (selectedPackage.registryType === 'npm') {
-                const args = ['-y', selectedPackage.identifier];
-                Object.entries(argValues).forEach(([key, value]) => {
-                    if (value) {
-                        args.push(key, value);
-                    }
-                });
-                config = {
-                    command: npxPath,
-                    args,
-                    env: Object.keys(envValues).length > 0 ? envValues : undefined,
-                };
-            } else if (selectedPackage.registryType === 'pypi') {
-                const args = [selectedPackage.identifier];
-                Object.entries(argValues).forEach(([key, value]) => {
-                    if (value) {
-                        args.push(key, value);
-                    }
-                });
-                config = {
-                    command: uvxPath,
-                    args,
-                    env: Object.keys(envValues).length > 0 ? envValues : undefined,
-                };
-            } else if (selectedPackage.registryType === 'oci') {
-                const args = ['run', '-i', '--rm'];
-                Object.entries(envValues).forEach(([key, value]) => {
-                    if (value) {
-                        args.push('-e', `${key}=${value}`);
-                    }
-                });
-                args.push(selectedPackage.identifier);
-                config = {
-                    command: 'docker',
-                    args,
-                };
-            } else if (selectedPackage.registryType === 'mcpb') {
-                throw new Error(
-                    'MCP Bundle (.mcpb) 格式暂不支持自动安装。\n' +
-                    '请手动下载并配置：\n' +
-                    `下载地址: ${selectedPackage.identifier}\n\n` +
-                    '或者在 mcp.json 中手动添加配置。'
-                );
-            } else {
-                throw new Error(`Unsupported registry type: ${selectedPackage.registryType}`);
-            }
-
-            const result = await api.config.installServer(decodedId, config, clientsToInstall);
-
-            if (result.success.length > 0) {
-                addInstalledServerId(decodedId);
-                await refreshInstalledClients();
-                setShowConfigModal(false);
-            }
-
-            if (result.failed.length > 0) {
-                setInstallError(`Failed to install to: ${result.failed.join(', ')}`);
-            }
-        } catch (error) {
-            console.error('Install failed:', error);
-            setInstallError(String(error));
-        } finally {
-            setIsInstalling(false);
-        }
-    };
-
-    // Official 远程服务器安装
-    const handleRemoteInstall = async (remote: OfficialRemote, headerValues: Record<string, string>) => {
-        const clientsToInstall = selectedClients.filter(c => !installedClients.includes(c));
-
-        if (clientsToInstall.length === 0) {
-            setInstallError('Please select at least one client.');
-            return;
-        }
-
-        setIsInstalling(true);
-        setInstallError(null);
-
-        try {
-            const config = {
-                url: remote.url,
-                transport: remote.type,
-                headers: Object.keys(headerValues).length > 0 ? headerValues : undefined,
-            } as any;
-
-            const result = await api.config.installServer(decodedId, config, clientsToInstall);
-
-            if (result.success.length > 0) {
-                addInstalledServerId(decodedId);
-                await refreshInstalledClients();
-                setShowConfigModal(false);
-            }
-
-            if (result.failed.length > 0) {
-                setInstallError(`Failed to install to: ${result.failed.join(', ')}`);
-            }
-        } catch (error) {
-            console.error('Install failed:', error);
-            setInstallError(String(error));
-        } finally {
-            setIsInstalling(false);
-        }
-    };
-
     // 卸载服务器
     const handleUninstall = async (clientsToRemove?: AnyClientId[]) => {
         const targets = clientsToRemove || installedClients;
@@ -437,20 +279,13 @@ export default function Detail() {
     const getRuntime = () => {
         if (isSmitheryDetail(server!)) {
             return server!.connection?.runtime || 'node';
-        } else if (isOfficialDetail(server!)) {
-            if (selectedPackage?.runtimeHint === 'python') return 'python';
-            if (selectedPackage?.runtimeHint === 'docker') return 'docker';
-            return 'node';
         }
         return 'node';
     };
 
-    // 获取仓库 URL
+    // 获取仓库 URL（github.com 地址用于头像回退；smithery 首页等非 GitHub 地址自然返回 null）
     const getRepoUrl = () => {
-        if (isOfficialDetail(server!)) {
-            return server!.repository?.url || null;
-        }
-        return null;
+        return server!.repository?.url || null;
     };
 
     const runtimeAvailable = runtimeInfo?.available ?? false;
@@ -495,7 +330,7 @@ export default function Detail() {
                 <span className="no-drag hover:text-[var(--color-text)] cursor-pointer" onClick={() => navigate('/store')}>Store</span>
                 <span>/</span>
                 <span
-                    className="no-drag hover:text-[var(--color-text)] cursor-pointer">{dataSource === 'official' ? 'Official' : 'Smithery'}</span>
+                    className="no-drag hover:text-[var(--color-text)] cursor-pointer">Smithery</span>
                 <span>/</span>
                 <span className="text-[var(--color-text)]">{server.displayName}</span>
                 <WindowControls />
@@ -554,53 +389,7 @@ export default function Detail() {
                                         )}
                                     </>
                                 )}
-                                {isOfficialDetail(server) && (
-                                    <>
-                                        {/* Stars */}
-                                        {(server.stars || 0) > 0 && (
-                                            <span className="flex items-center gap-1">
-                        <svg className="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                          <path
-                              d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
-                        </svg>
-                                                {formatNumber(server.stars || 0)} Stars
-                      </span>
-                                        )}
-                                        {/* Forks */}
-                                        {(server.forks || 0) > 0 && (
-                                            <span className="flex items-center gap-1">
-                        <svg className="w-4 h-4 text-[var(--color-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                             strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round"
-                                d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"/>
-                        </svg>
-                                                {formatNumber(server.forks || 0)} Forks
-                      </span>
-                                        )}
-                                        {/* Last Commit */}
-                                        {server.lastCommitAt && (
-                                            <span className="flex items-center gap-1">
-                        <ClockIcon className="w-4 h-4 text-[var(--color-muted)]"/>
-                        Updated {formatDate(server.lastCommitAt)}
-                      </span>
-                                        )}
-                                    </>
-                                )}
                             </div>
-
-                            {/* Topics 标签 (Official) */}
-                            {isOfficialDetail(server) && server.topics && server.topics.length > 0 && (
-                                <div className="flex flex-wrap gap-1.5 mt-3">
-                                    {server.topics.map((topic) => (
-                                        <span
-                                            key={topic}
-                                            className="px-2 py-0.5 rounded-full text-[12px] bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20"
-                                        >
-                      {topic}
-                    </span>
-                                    ))}
-                                </div>
-                            )}
                         </div>
 
                         {/* 运行时警告 */}
@@ -671,31 +460,6 @@ export default function Detail() {
                             </div>
                         )}
 
-                        {/* README 内容 (Official) - 与 Skill 详情页一致的展示风格，展示源码不渲染 */}
-                        {isOfficialDetail(server) && server.repository && (
-                            <>
-                                {/* README.md 标题 - 直接在页面背景上 */}
-                                <h2 className="text-[15px] font-semibold text-[var(--color-text)] mb-4">README.md</h2>
-
-                                {/* README 内容 - 纯净展示源码，与 SKILL.md 展示风格一致 */}
-                                <div className="card p-4 mb-6 overflow-x-auto">
-                                    {isLoadingReadme ? (
-                                        <div className="flex items-center justify-center py-8">
-                                            <div
-                                                className="w-6 h-6 border-2 border-[var(--color-border)] border-t-[#0a84ff] rounded-full animate-spin"/>
-                                        </div>
-                                    ) : readme ? (
-                                        <pre
-                                            className="text-[12px] text-[var(--color-text)] font-mono leading-relaxed whitespace-pre-wrap">
-                      <code>{readme}</code>
-                    </pre>
-                                    ) : (
-                                        <p className="text-[14px] text-[#8b949e] text-center py-4">{t('detail.noReadme')}</p>
-                                    )}
-                                </div>
-                            </>
-                        )}
-
                         {/* 功能列表 (Smithery 数据源) */}
                         {isSmitheryDetail(server) && server.capabilities && server.capabilities.length > 0 && (
                             <div className="card overflow-hidden mb-6">
@@ -717,41 +481,6 @@ export default function Detail() {
                         )}
 
 
-                        {/* 远程服务器列表 */}
-                        {isOfficialDetail(server) && server.remotes && server.remotes.length > 0 && (
-                            <div className="card overflow-hidden">
-                                <div className="px-4 py-3 border-b border-[var(--color-border)]">
-                                    <h2 className="text-[13px] font-semibold text-[var(--color-text)]">
-                                        {t('detail.remotes')} ({server.remotes.length})
-                                    </h2>
-                                </div>
-                                {server.remotes.map((remote, index) => (
-                                    <div
-                                        key={index}
-                                        className={`px-4 py-3 ${index !== server.remotes!.length - 1 ? 'border-b border-[var(--color-border)]' : ''}`}
-                                    >
-                                        <div className="flex items-center gap-2 mb-1">
-                      <span className="px-1.5 py-0.5 rounded text-[12px] font-medium bg-[#34c759]/15 text-[#34c759]">
-                        {remote.type}
-                      </span>
-                                            <span className="text-[12px] text-[var(--color-muted)]">
-                        {t('detail.remoteServer')}
-                      </span>
-                                        </div>
-                                        <a
-                                            href="#"
-                                            onClick={(e) => {
-                                                e.preventDefault();
-                                                api.system.openExternal(remote.url);
-                                            }}
-                                            className="text-[12px] font-mono text-[var(--color-accent)] hover:underline break-all"
-                                        >
-                                            {remote.url}
-                                        </a>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
                     </div>
                 </div>
 
@@ -774,40 +503,6 @@ export default function Detail() {
                                 className="w-full btn btn-danger text-[13px]"
                             >
                                 {isUninstalling ? t('common.loading') : t('detail.uninstallAll')}
-                            </button>
-                        )}
-                        {/* Inspect 按钮 */}
-                        {runtimeAvailable && selectedPackage && (
-                            <button
-                                onClick={() => {
-                                    const pkg = selectedPackage;
-                                    let config: {
-                                        command: string;
-                                        args?: string[];
-                                        env?: Record<string, string>
-                                    } | null = null;
-
-                                    if (pkg.registryType === 'npm') {
-                                        config = {command: 'npx', args: ['-y', pkg.identifier]};
-                                    } else if (pkg.registryType === 'pypi') {
-                                        config = {command: 'uvx', args: [pkg.identifier]};
-                                    } else if (pkg.registryType === 'oci') {
-                                        config = {command: 'docker', args: ['run', '-i', '--rm', pkg.identifier]};
-                                    }
-
-                                    if (config) {
-                                        const configStr = encodeURIComponent(JSON.stringify(config));
-                                        navigate(`/inspector?config=${configStr}`);
-                                    }
-                                }}
-                                className="w-full btn btn-secondary text-[13px] flex items-center justify-center gap-1.5"
-                            >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                                     strokeWidth={1.5}>
-                                    <path strokeLinecap="round" strokeLinejoin="round"
-                                          d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z"/>
-                                </svg>
-                                {t('detail.inspect') || 'Inspect'}
                             </button>
                         )}
                     </div>
@@ -836,23 +531,6 @@ export default function Detail() {
                     {/* Source 卡片 */}
                     <div className="card p-4 space-y-3 mb-4">
                         <h3 className="text-[13px] font-semibold text-[var(--color-text)]">Source</h3>
-
-                        {isOfficialDetail(server) && server.repository?.url && (
-                            <a
-                                href="#"
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    api.system.openExternal(server.repository!.url);
-                                }}
-                                className="flex items-center justify-between text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-accent)] transition-colors"
-                            >
-                <span className="flex items-center gap-2">
-                  <GitHubIcon className="w-4 h-4"/>
-                  GitHub Repository
-                </span>
-                                <ExternalLinkIcon className="w-3.5 h-3.5"/>
-                            </a>
-                        )}
 
                         {isSmitheryDetail(server) && server.links?.registry && (
                             <a
@@ -887,23 +565,6 @@ export default function Detail() {
                                 <ExternalLinkIcon className="w-3.5 h-3.5"/>
                             </a>
                         )}
-
-                        {isOfficialDetail(server) && server.websiteUrl && (
-                            <a
-                                href="#"
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    api.system.openExternal(server.websiteUrl!);
-                                }}
-                                className="flex items-center justify-between text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-accent)] transition-colors"
-                            >
-                <span className="flex items-center gap-2">
-                  <ExternalLinkIcon className="w-4 h-4"/>
-                  Website
-                </span>
-                                <ExternalLinkIcon className="w-3.5 h-3.5"/>
-                            </a>
-                        )}
                     </div>
 
                     {/* Details 卡片 */}
@@ -919,33 +580,6 @@ export default function Detail() {
                                 </div>
                             </div>
 
-                            {isOfficialDetail(server) && (
-                                <>
-                                    <div className="flex justify-between">
-                                        <span className="text-[var(--color-muted)]">Version</span>
-                                        <span className="text-[var(--color-text)] font-mono">v{server.version}</span>
-                                    </div>
-                                    {server.defaultBranch && (
-                                        <div className="flex justify-between">
-                                            <span className="text-[var(--color-muted)]">Branch</span>
-                                            <span className="text-[var(--color-text)]">{server.defaultBranch}</span>
-                                        </div>
-                                    )}
-                                    {server.license && (
-                                        <div className="flex justify-between">
-                                            <span className="text-[var(--color-muted)]">License</span>
-                                            <span className="text-[var(--color-text)]">{server.license}</span>
-                                        </div>
-                                    )}
-                                    {server.author && (
-                                        <div className="flex justify-between">
-                                            <span className="text-[var(--color-muted)]">Author</span>
-                                            <span className="text-[var(--color-text)]">@{server.author}</span>
-                                        </div>
-                                    )}
-                                </>
-                            )}
-
                             {isSmitheryDetail(server) && (
                                 <>
                                     <div className="flex justify-between">
@@ -960,43 +594,6 @@ export default function Detail() {
                             )}
                         </div>
                     </div>
-
-                    {/* 安装包列表 (Official 数据源) - 移到右侧边栏 */}
-                    {isOfficialDetail(server) && server.packages && server.packages.length > 0 && (
-                        <div className="card p-4">
-                            <h3 className="text-[13px] font-semibold text-[var(--color-text)] mb-3">
-                                Packages ({server.packages?.length ?? 0})
-                            </h3>
-                            <div className="space-y-2">
-                                {(server.packages ?? []).map((pkg, index) => (
-                                    <div
-                                        key={index}
-                                        className={`p-2 rounded-md bg-[var(--color-surface-hover)]/30 ${index !== (server.packages ?? []).length - 1 ? '' : ''}`}
-                                    >
-                                        <div className="flex items-center gap-2 mb-1">
-                      <span className={`
-                        px-1.5 py-0.5 rounded text-[12px] font-medium
-                        ${pkg.registryType === 'npm' ? 'bg-[#cb3837]/15 text-[#cb3837]' :
-                          pkg.registryType === 'pypi' ? 'bg-[#3776ab]/15 text-[#3776ab]' :
-                              'bg-[#2496ed]/15 text-[#2496ed]'}
-                      `}>
-                        {pkg.registryType}
-                      </span>
-                                            {pkg.runtimeHint && (
-                                                <span className="text-[12px] text-[var(--color-muted)]">
-                          via {pkg.runtimeHint}
-                        </span>
-                                            )}
-                                        </div>
-                                        <p className="text-[12px] font-mono text-[var(--color-accent)] break-all">{pkg.identifier}</p>
-                                        {pkg.version && (
-                                            <p className="text-[12px] text-[var(--color-muted)]">v{pkg.version}</p>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
                 </div>
             </div>
 
@@ -1081,23 +678,6 @@ export default function Detail() {
                                         required: []
                                     }}
                                     onSubmit={handleSmitheryInstall}
-                                    onCancel={() => {
-                                        setShowConfigModal(false);
-                                        setInstallError(null);
-                                    }}
-                                    isLoading={isInstalling}
-                                />
-                            )}
-
-                            {/* Official 配置表单 */}
-                            {isOfficialDetail(server) && (
-                                <OfficialConfigForm
-                                    packages={server.packages || []}
-                                    remotes={server.remotes || []}
-                                    selectedPackage={selectedPackage}
-                                    onPackageSelect={setSelectedPackage}
-                                    onSubmit={handleOfficialInstall}
-                                    onRemoteSubmit={handleRemoteInstall}
                                     onCancel={() => {
                                         setShowConfigModal(false);
                                         setInstallError(null);

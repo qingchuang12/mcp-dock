@@ -25,6 +25,12 @@ export interface McpServerConfig {
     command: string;
     args?: string[];
     env?: Record<string, string>;
+    /** 第三方 server 许可证标识（npm 来源）。Phase 6 合规汇总用。 */
+    license?: string;
+    /** 来源平台标识（如 'npm'）。 */
+    source?: string;
+    /** 来源主页 URL。 */
+    homepage?: string;
 }
 
 export interface RuntimeInfo {
@@ -178,10 +184,8 @@ export interface AllServersResult {
 
 // 缓存相关类型
 export type CacheKey =
-    | 'official-index'
     | 'smithery-index'
     | 'skills-index'
-    | `official-detail-${string}`
     | `smithery-detail-${string}`
     | `skills-detail-${string}`;
 
@@ -297,6 +301,8 @@ const api = {
             ipcRenderer.invoke('system:get-version'),
         openExternal: (url: string): Promise<void> =>
             ipcRenderer.invoke('system:open-external', url),
+        openThirdPartyLicense: (): Promise<string> =>
+            ipcRenderer.invoke('system:open-third-party-license'),
         getConfigPath: (client?: AnyClientId): Promise<string> =>
             ipcRenderer.invoke('system:get-config-path', client),
         openConfigDirectory: (client: AnyClientId): Promise<string> =>
@@ -567,7 +573,7 @@ const api = {
             ipcRenderer.invoke('cache:delete', key),
         clear: (): Promise<void> =>
             ipcRenderer.invoke('cache:clear'),
-        clearByPrefix: (prefix: 'official' | 'smithery' | 'skills'): Promise<void> =>
+        clearByPrefix: (prefix: 'smithery' | 'skills'): Promise<void> =>
             ipcRenderer.invoke('cache:clear-by-prefix', prefix),
         getStats: (): Promise<CacheStats> =>
             ipcRenderer.invoke('cache:get-stats'),
