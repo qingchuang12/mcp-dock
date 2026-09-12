@@ -27,9 +27,18 @@ export const DIRECT_SEARCH_PAGE_SIZE = 20;
 
 /**
  * ModelScope MCP 广场配额硬上限：page_number × page_size 不得超过 100
- * （见 source.md 错误码 QuotaLimitExceed）。
+ * （见 source.md 错误码 QuotaLimitExceed）。仅适用于 MCP 端点。
  */
 export const MODELSCOPE_QUOTA_PRODUCT = 100;
+
+/**
+ * ModelScope Skill 端点配额硬上限：page_number × page_size 不得超过 2400
+ * （实测：120×20=2400 正常，121×20=2420 报 403）。
+ *
+ * 与 MCP 端点是两套独立窗口，**不可混用** MODELSCOPE_QUOTA_PRODUCT（100）：
+ * 用 100 去卡 Skill 分页会把第 6 页起全部误判为越界，导致 Skill 列表翻不到后面的数据。
+ */
+export const MODELSCOPE_SKILL_QUOTA_PRODUCT = 2400;
 
 export const DIRECT_UA = UA;
 

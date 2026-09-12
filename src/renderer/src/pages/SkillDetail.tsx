@@ -3,7 +3,7 @@
  * 支持两种数据源：远程 Registry 和本地已安装 Skill
  */
 
-import {useEffect, useMemo, useState} from 'react';
+import {useCallback, useEffect, useMemo, useState} from 'react';
 import {useNavigate, useParams, useSearchParams} from 'react-router-dom';
 import {useQuery} from '@tanstack/react-query';
 import {useTranslation} from 'react-i18next';
@@ -21,9 +21,13 @@ import ClientIcon from '../components/ClientIcon';
 import ClientMultiSelect from '../components/ClientMultiSelect';
 import Modal from '../components/Modal';
 import {toast} from '../components/Toast';
+import {PLATFORM_SKILL_DOWNLOAD, type PlatformType} from '../../../shared/platform-constants';
 import {ClockIcon, DownloadIcon, EyeIcon, ForkIcon, StarIcon} from '../components/Icons';
 import WindowControls from '../components/WindowControls';
 import {localizeKey} from '../lib/format';
+import {useStore} from '../store/useStore';
+import {buildInstalledSkillKeys, isSkillInstalled, skillItemKeys} from '../lib/skillIdentity';
+import {deriveSkillMdRawUrl} from '../lib/skillMdUrl';
 
 function formatNumber(count: number): string {
     if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
@@ -79,6 +83,8 @@ interface SkillView {
     author: string;
     categoryId?: string;
     category?: string;
+    /** 完整分类标签（透传源多分类，如虾评）；缺省时详情仅展示主分类 */
+    categories?: string[];
     stars?: number;
     forks?: number;
     /** 浏览量（ModelScope 列表字段 view_count） */
@@ -106,6 +112,8 @@ interface SkillMeta {
     author?: string;
     categoryId?: string;
     category?: string;
+    /** 完整分类标签（透传源多分类，如虾评） */
+    categories?: string[];
     stars?: number;
     /** 浏览量（ModelScope view_count） */
     viewCount?: number | null;
@@ -121,6 +129,15 @@ export default function SkillDetail() {
     const [searchParams] = useSearchParams();
     const api = useElectronAPI();
     const isMac = useIsMac();
+    const setInstalledSkillIds = useStore(s => s.setInstalledSkillIds);
+
+    // 安装/卸载成功后立即同步全局已安装集合：商店卡片的「已安装」徽章直接读它，
+    // 仅靠「返回商店时组件重新挂载才拉取」会受路由挂载时机影响。
+    const syncInstalledSkillIds = useCallback(() => {
+        api.skills.getAllInstalled()
+            .then(({skills}) => setInstalledSkillIds(Object.keys(skills)))
+            .catch(() => {});
+    }, [api, setInstalledSkillIds]);
 
     // 来自 API 直连来源的技能：conn=连接ID & src=源URL，走 resolveSkill 安装链路
     const connId = searchParams.get('conn');
@@ -146,6 +163,8 @@ export default function SkillDetail() {
     const [isLoadingLocal, setIsLoadingLocal] = useState(false);
     // 直连解析得到的 DiscoveredSkill（用于 installFromDiscovered）
     const [resolvedSkill, setResolvedSkill] = useState<DiscoveredSkill | null>(null);
+    /** 当前连接（connId）所属的平台类型，决定该源是否具备下载安装通道 */
+    const [connPlatform, setConnPlatform] = useState<PlatformType | null>(null);
 
     const decodedId = id ? decodeURIComponent(id) : '';
 
@@ -263,7 +282,9 @@ export default function SkillDetail() {
                 branch: local.source?.source?.branch,
                 skillPath: local.source?.source?.skillPath,
                 skillMdContent: local.skillMdContent,
-                skillMdRawUrl: local.source ? `${local.source.source.rawBaseUrl}/SKILL.md` : undefined,
+                // 仅当 rawBaseUrl 非空时才给出外链：zip/平台压缩包通道的 skill 其 rawBaseUrl 恒为空串，
+                // 直接拼接会产出 '/SKILL.md' 死链。派生逻辑收口在 deriveSkillMdRawUrl（可单测）。
+                skillMdRawUrl: deriveSkillMdRawUrl(local.source?.source?.rawBaseUrl),
                 files: local.files.map(f => ({name: f})),
                 installedClients: local.clients,
             });
@@ -290,6 +311,7 @@ export default function SkillDetail() {
             author: meta.author || '',
             categoryId: meta.categoryId,
             category: meta.category ?? meta.categoryId,
+            categories: meta.categories,
             stars: meta.stars,
             forks: undefined,
             viewCount: meta.viewCount ?? null,
@@ -317,20 +339,43 @@ export default function SkillDetail() {
         });
     }, [api]);
 
+    // 平台源：查出连接所属平台，判断它是否实现下载通道（决定安装按钮可用性）
+    useEffect(() => {
+        if (!connId) {
+            setConnPlatform(null);
+            return;
+        }
+        api.apiConnections.list().then(list => {
+            setConnPlatform((list.find(c => c.id === connId)?.platformType as PlatformType) ?? null);
+        }).catch(() => setConnPlatform(null));
+    }, [api, connId]);
+
     // 检查已安装状态（registry skill）
     useEffect(() => {
         if (skillView?.type !== 'registry') return;
-        const skillName = decodedId.split('/').pop() || skillView.name;
+        // 平台源的展示名（display_name）与落盘目录名不是同一个字符串，
+        // 必须走与商店卡片一致的别名口径，否则详情页会一直显示「未安装」。
+        const itemKeys = skillItemKeys({
+            id: decodedId,
+            name: skillView.name,
+            sourceUrl: skillView.repositoryUrl,
+        });
         api.skills.getAllInstalled().then(({byClient}) => {
             const installedIn: SkillClientType[] = [];
             for (const [client, skills] of Object.entries(byClient)) {
-                if (skills.some(s => s.name === skillName)) {
+                const clientKeys = buildInstalledSkillKeys(skills.map(s => s.name));
+                if (isSkillInstalled(clientKeys, itemKeys)) {
                     installedIn.push(client as SkillClientType);
                 }
             }
             setInstalledInClients(installedIn);
         });
     }, [api, skillView, decodedId]);
+
+    // 平台源是否提供下载安装通道（如虾评）。唯一事实源是适配器是否实现 fetchSkillDownload，
+    // 渲染层无法直接 import 主进程适配器，故用 shared 常量镜像（由单测守卫同步）。
+    const canInstallFromPlatform =
+        !!connId && !!connPlatform && PLATFORM_SKILL_DOWNLOAD.includes(connPlatform);
 
     const handleInstall = async () => {
         if (!skillView) {
@@ -343,7 +388,22 @@ export default function SkillDetail() {
         }
         setIsInstalling(true);
         try {
-            if (resolvedSkill) {
+            if (canInstallFromPlatform) {
+                // 平台源（如虾评）：用连接绑定的令牌换下载直链，主进程走 zip 安装通道
+                const result = await api.skills.installPlatformSkill(
+                    connId!, decodedId, skillView.name, selectedClients
+                );
+                if (result && result.success === false) {
+                    console.error('[SkillDetail] installPlatformSkill failed:', {
+                        skillName: skillView.name,
+                        connectionId: connId,
+                        platform: connPlatform,
+                        skillId: decodedId,
+                        error: result.error,
+                    });
+                    throw new Error(result.error || (t('skill.installFailed') || 'Installation failed'));
+                }
+            } else if (resolvedSkill) {
                 // 直连平台来源（带 connId）与 GitHub Registry 来源（resolvedSkill 已解析成功）
                 // 统一走 resolveSkill → installFromDiscovered 通道
                 const result = await api.skills.installFromDiscovered(resolvedSkill, selectedClients);
@@ -361,22 +421,29 @@ export default function SkillDetail() {
                 }
             } else {
                 // 无已解析 Skill（直连源解析落空或 GitHub 源远程详情缺失）：尽力尝试远程详情回退，
-                // 再按预览态元数据发起安装；主进程 installSkill 对空文件清单会显式失败（防空壳目录）。
+                // 再按预览态元数据发起安装。预览态的文件清单为空，主进程会直接判失败，
+                // 故此处必须校验返回值——install 失败是返回 { success: false } 而非抛异常。
                 if (!connId && decodedId) {
+                    // 只把「远程详情获取」包进 try：安装结果若也在这里，其失败会被 catch 吞掉
+                    // 而继续走下方预览态兜底，用户看到的是「文件清单为空」而非真实安装错误。
+                    let remote: DiscoveredSkill | null = null;
                     try {
                         const res = await api.skills.getRemoteDetail(decodedId);
-                        if (res && res.success && res.skill) {
-                            const result = await api.skills.installFromDiscovered(res.skill as DiscoveredSkill, selectedClients);
-                            if (result && result.success === false) {
-                                throw new Error(result.error || (t('skill.installFailed') || 'Installation failed'));
-                            }
-                            setShowInstallModal(false);
-                            setInstalledInClients(prev => [...new Set([...prev, ...selectedClients])]);
-                            toast.success(t('skill.installSuccess') || 'Skill installed successfully');
-                            return;
-                        }
+                        if (res && res.success && res.skill) remote = res.skill as DiscoveredSkill;
                     } catch {
-                        // 远程详情回退失败，继续走下方预览态安装路径
+                        remote = null; // 远程详情获取失败 → 继续走下方预览态安装路径
+                    }
+
+                    if (remote) {
+                        const result = await api.skills.installFromDiscovered(remote, selectedClients);
+                        if (result && result.success === false) {
+                            throw new Error(result.error || (t('skill.installFailed') || 'Installation failed'));
+                        }
+                        setShowInstallModal(false);
+                        setInstalledInClients(prev => [...new Set([...prev, ...selectedClients])]);
+                        syncInstalledSkillIds();
+                        toast.success(t('skill.installSuccess') || 'Skill installed successfully');
+                        return;
                     }
                 }
 
@@ -395,10 +462,22 @@ export default function SkillDetail() {
                     source: {repositoryUrl: repoUrl, branch, skillPath, rawBaseUrl},
                     files: fileNames,
                 };
-                await api.skills.install(decodedId, sourceInfo, selectedClients);
+                const installResult = await api.skills.install(decodedId, sourceInfo, selectedClients);
+                if (installResult && installResult.success === false) {
+                    const detail = {
+                        skillName: decodedId,
+                        repositoryUrl: repoUrl,
+                        rawBaseUrl,
+                        fileCount: fileNames.length,
+                        error: installResult.error,
+                    };
+                    console.error('[SkillDetail] install failed:', detail);
+                    throw new Error(installResult.error || (t('skill.installFailed') || 'Installation failed'));
+                }
             }
             setShowInstallModal(false);
             setInstalledInClients(prev => [...new Set([...prev, ...selectedClients])]);
+            syncInstalledSkillIds();
             toast.success(t('skill.installSuccess') || 'Skill installed successfully');
         } catch (error) {
             console.error('[SkillDetail] install skill failed:', {
@@ -428,6 +507,7 @@ export default function SkillDetail() {
         try {
             await api.skills.uninstall(skillView.name, targets);
             setInstalledInClients([]);
+            syncInstalledSkillIds();
             // 卸载目标含云端存储：本地暂存区已删除，需在后台把 skills 范围的变更推送到远端，
             // 否则云端仍残留该 Skill 目录（补齐此前卸载未触发云端同步的缺口）。
             if (targets.includes('cloud')) {
@@ -472,6 +552,10 @@ export default function SkillDetail() {
     );
 
     const isLoading = isLoadingRegistry || isLoadingLocal || isResolving;
+    // 无可用安装通道：既不是可下载的平台源，也没解析出可安装的 Skill（即预览态）。
+    // 此前该场景仍允许点击安装，会写出只含 .source.json 的空壳目录却提示成功（假成功）。
+    // 加载完成前不判定，避免解析尚未返回就把按钮误置灰。
+    const installBlocked = !isLoading && !canInstallFromPlatform && !resolvedSkill;
 
     if (isLoading && !skillView) {
         return (
@@ -501,7 +585,6 @@ export default function SkillDetail() {
 
     const isInstalled = installedInClients.length > 0;
     const hasCategory = !!skillView.categoryId;
-    const {bg, text, border} = hasCategory ? getCategoryColor(skillView.categoryId!) : {bg: '', text: '', border: ''};
     // 分类展示名：优先用 locale 中 slug 的翻译（registry 源），否则回退到列表/详情提供的友好名（如 ModelScope 的中文名），最后回退原 slug。
     // 注意：不能用 `t('skillCategory.' + id) || fallback`，因为 i18next 在 key 缺失时返回 key 本身（truthy），兜底永远不生效。
     const catLabel = hasCategory
@@ -572,10 +655,17 @@ export default function SkillDetail() {
                             </p>
 
                             {hasCategory && (
-                                <span
-                                    className={`inline-block px-2 py-1 rounded-md text-[12px] font-medium border ${bg} ${text} ${border}`}>
-                  {catLabel}
-                </span>
+                                <div className="flex flex-wrap gap-2">
+                                    {(skillView.categories?.length ? skillView.categories : [catLabel]).map((c) => {
+                                        const cc = getCategoryColor(c);
+                                        return (
+                                            <span key={c}
+                                                  className={`inline-block px-2 py-1 rounded-md text-[12px] font-medium border ${cc.bg} ${cc.text} ${cc.border}`}>
+                                                {localizeKey(t, i18n, `skillCategory.${c}`, c)}
+                                            </span>
+                                        );
+                                    })}
+                                </div>
                             )}
 
                             {(skillView.stars != null || skillView.forks != null || skillView.updatedAt || skillView.viewCount != null || skillView.downloads != null) && (
@@ -637,14 +727,19 @@ export default function SkillDetail() {
                                 {t('detail.uninstallAll')}
                             </button>
                         ) : (
-                            <button onClick={openInstallModal} className="w-full btn btn-primary text-[13px]">
+                            <button
+                                onClick={openInstallModal}
+                                disabled={installBlocked}
+                                title={installBlocked ? (t('skill.installUnavailable') || '该来源不支持安装') : undefined}
+                                className="w-full btn btn-primary text-[13px] disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
                                 {t('detail.install')}
                             </button>
                         )}
 
-                        {/* 预览提示：来源无法解析为可安装通道（如 SkillHub/ClawHub 等 SPA 站点）时，
-                仅作信息提示，不禁用安装按钮（所有来源的 skill 均保持可安装）。 */}
-                        {!resolvedSkill && !isInstalled && (
+                        {/* 不可安装提示：既无下载通道也未解析出可安装 Skill（如 SkillHub/ClawHub 等 SPA 站点）。
+                此前这类来源仍保持按钮可点，安装会产出只含 .source.json 的空壳目录并提示成功，故改为禁用。 */}
+                        {installBlocked && !isInstalled && (
                             <div className="mt-2 space-y-2">
                                 <p className="text-[12px] leading-relaxed text-[var(--color-muted2)] bg-[var(--color-surface)] rounded-md px-2.5 py-2">
                                     {t('skill.previewOnlyHint') || '该来源暂未提供可安装的 Skill 内容（无 SKILL.md 下载通道），仅支持预览。'}

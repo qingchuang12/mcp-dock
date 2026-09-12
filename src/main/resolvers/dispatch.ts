@@ -4,7 +4,7 @@
  * 以及 resolveDirectSkill 的源归一化分发。详见原文件注释。
  */
 
-import type {PlatformType} from '../../shared/platform-constants';
+import type {ConnectionKind, PlatformType} from '../../shared/platform-constants';
 import {SkillsManager} from '../skills-manager';
 import type {
     DirectSearchAttempt,
@@ -15,7 +15,13 @@ import type {
     ResolvePlatformResult,
     SupportedPlatform,
 } from './types';
-import {DIRECT_SEARCH_PAGE_SIZE, DIRECT_UA, MODELSCOPE_QUOTA_PRODUCT, PLATFORM_NAMES,} from './types';
+import {
+    DIRECT_SEARCH_PAGE_SIZE,
+    DIRECT_UA,
+    MODELSCOPE_QUOTA_PRODUCT,
+    MODELSCOPE_SKILL_QUOTA_PRODUCT,
+    PLATFORM_NAMES,
+} from './types';
 import {
     buildUrl,
     emptyPageInfo,
@@ -61,9 +67,11 @@ const PLATFORM_SEARCH_ENDPOINTS: Record<Exclude<SupportedPlatform, 'unknown'>, s
         '/api/v1/trending?kind=skills&limit=20',
     ],
     skillsmp: [
-        // 扁平搜索端点：实测 /api/skills?search={q} 对「空 q」也返回 40 条（total≈1200），
-        // 而 v1 的 /api/v1/skills/search?q= 在空 q 时返回 MISSING_QUERY，会导致 Store 默认（空）搜索整条失败。
-        // 故优先用扁平端点；其 {skills,pagination} 结构与 githubUrl/stars/updatedAt 字段已被 locateSkillArray/extractPageInfo/toListItem 兼容。
+        // 扁平搜索端点：实测 /api/skills?search={q}&page=&limit= 可用（{skills,pagination,filters}），
+        // 但对「空 q」（search=）返回 400 INVALID_QUERY —— 调用方必须保证 q 非空，否则整条搜索失败
+        // （v1 的 /api/v1/skills/search?q= 空 q 时同样返回 MISSING_QUERY）。
+        // 故优先用扁平端点；其 {skills,pagination} 结构与 githubUrl/stars/updatedAt 字段已被
+        // locateSkillArray/extractPageInfo/toListItem 兼容。
         '/api/skills?search={q}&page={page}&limit={size}',
         '/api/skills?search={q}&page={page}',
     ],
@@ -73,6 +81,8 @@ const PLATFORM_SEARCH_ENDPOINTS: Record<Exclude<SupportedPlatform, 'unknown'>, s
     ],
     // npm Registry：MCP 服务器走统一 PlatformAdapter 通道（npmAdapter.searchServers），不走此 legacy 直连搜索分发
     npm: [],
+    // 虾评（Coze）：skill 列表走统一 PlatformAdapter 通道（cozeAdapter.searchSkills），不走此 legacy 分发
+    coze: [],
 };
 
 /** 最近一次直连搜索的诊断信息（按平台缓存，供 IPC 查询） */
@@ -80,6 +90,15 @@ const lastDiagnostics = new Map<string, DirectSearchDiagnostics>();
 
 export function getLastDirectSearchDiagnostics(platform: string): DirectSearchDiagnostics | null {
     return lastDiagnostics.get(platform) || null;
+}
+
+/**
+ * ModelScope 的配额窗口按资源类型拆成两套：Skill 端点 2400、MCP 端点 100。
+ * 二者是上游两个独立的窗口，混用会把 Skill 第 6 页起（6×20=120 > 100）全部误判为越界。
+ * @param kind 连接归属的资源类型（由调用方从 conn.kind 显式传入，不靠猜）。
+ */
+function modelscopeQuotaProduct(kind: ConnectionKind): number {
+    return kind === 'mcp' ? MODELSCOPE_QUOTA_PRODUCT : MODELSCOPE_SKILL_QUOTA_PRODUCT;
 }
 
 /**
@@ -95,9 +114,10 @@ export async function searchPlatformDirect(
     query: string,
     page = 1,
     pageSize = DIRECT_SEARCH_PAGE_SIZE,
-    category = ''
+    category = '',
+    kind: ConnectionKind = 'skill'
 ): Promise<PlatformSkillListItem[]> {
-    const {items} = await searchPlatformDirectPaged(platform, baseUrl, secret, query, page, pageSize, category);
+    const {items} = await searchPlatformDirectPaged(platform, baseUrl, secret, query, page, pageSize, category, kind);
     return items;
 }
 
@@ -112,7 +132,8 @@ export async function searchPlatformDirectPaged(
     query: string,
     page = 1,
     pageSize = DIRECT_SEARCH_PAGE_SIZE,
-    category = ''
+    category = '',
+    kind: ConnectionKind = 'skill'
 ): Promise<PlatformSearchPage> {
     const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
     const safeSize = Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : DIRECT_SEARCH_PAGE_SIZE;
@@ -123,20 +144,23 @@ export async function searchPlatformDirectPaged(
     const sp = platform as Exclude<SupportedPlatform, 'unknown'>;
     const startedAll = Date.now();
 
-    // ModelScope 配额硬限制：page_number × page_size ≤ 100（见 source.md 错误码 QuotaLimitExceed）。
-    // skills 与 mcp 同源，同样受此配额约束。按规则直接预判，越界时无需发起请求即可返回友好提示。
-    if (sp === 'modelscope' && safePage * safeSize > MODELSCOPE_QUOTA_PRODUCT) {
-        const maxPages = Math.max(1, Math.floor(MODELSCOPE_QUOTA_PRODUCT / safeSize));
+    // ModelScope 配额硬限制：page_number × page_size 不得超过该资源类型的窗口
+    // （Skill 2400 / MCP 100，见 MODELSCOPE_{SKILL_,}QUOTA_PRODUCT）。
+    // 按规则直接预判，越界时无需发起请求即可返回友好提示。窗口由 kind 显式决定，避免误用。
+    const quotaProduct = modelscopeQuotaProduct(kind);
+    if (sp === 'modelscope' && safePage * safeSize > quotaProduct) {
+        const maxPages = Math.max(1, Math.floor(quotaProduct / safeSize));
         return {
             items: [],
-            pageInfo: {page: safePage, pageSize: safeSize, total: MODELSCOPE_QUOTA_PRODUCT, totalPages: maxPages, hasMore: false},
+            pageInfo: {page: safePage, pageSize: safeSize, total: quotaProduct, totalPages: maxPages, hasMore: false},
             message: '__QUOTA_LIMIT_EXCEED__',
         };
     }
 
-    // SkillHub：站点为 Next.js SPA，无任何公开 JSON 列表接口（所有候选端点均返回
-    // HTML 壳），直接改用其开源清单仓库 iflytek/skillhub 的 builtin-skills 目录。
-    // 提前返回可跳过必然失败的端点探测，避免每次搜索白等数秒。
+    // SkillHub：站点为 Next.js SPA，但官方提供公开 JSON 列表接口，直连即可
+    // （实测 2026-09-10：GET https://api.skillhub.cn/api/skills?page=1&pageSize=1 → 200 真实数据，
+    // 旧注释称「所有端点均返回 HTML 壳、改用 iflytek/skillhub 仓库目录」与实现不符，已更正）。
+    // 提前分发可跳过对候选端点的逐个探测，避免每次搜索白等数秒。
     if (sp === 'skillhub') {
         try {
             const res = await searchSkillhubPaged(query, safePage, safeSize, category);
@@ -323,11 +347,12 @@ export async function searchPlatformDirectPaged(
 
                 const pageInfo = extractPageInfo(json, safePage, safeSize, liked.length);
 
-                // ModelScope 配额：单次最多可检索 page × size ≤ 100 条，超出边界的页上游必拒。
-                // 把可翻页数钳制在配额内（与 Smithery/MCP 的 totalPages 一样作为分页控件唯一真相），
-                // 避免 UI 跳到必然失败的空白页；当 catalog 实际量大于可检索上限时，在末页提示关键字。
+                // ModelScope 配额：单次最多可检索 page × size ≤ 配额窗口（Skill 2400 / MCP 100），
+                // 超出边界的页上游必拒。把可翻页数钳制在配额内（与 Smithery/MCP 的 totalPages 一样
+                // 作为分页控件唯一真相），避免 UI 跳到必然失败的空白页；当 catalog 实际量大于可检索
+                // 上限时，在末页提示关键字。
                 if (sp === 'modelscope') {
-                    const maxPages = Math.max(1, Math.floor(MODELSCOPE_QUOTA_PRODUCT / safeSize));
+                    const maxPages = Math.max(1, Math.floor(quotaProduct / safeSize));
                     const maxTotal = maxPages * safeSize;
                     const rawTotal = json?.data?.total_count ?? json?.data?.total;
                     const rawTotalNum = typeof rawTotal === 'number' && Number.isFinite(rawTotal) ? rawTotal : null;

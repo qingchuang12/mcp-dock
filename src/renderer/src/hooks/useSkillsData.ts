@@ -1,6 +1,5 @@
-import {useMemo, useRef} from 'react';
 import {keepPreviousData, useQuery} from '@tanstack/react-query';
-import {fetchSkillsList, inferSkillCategoryId, type SkillListItem,} from '../api/registry';
+import {inferSkillCategoryId, type SkillListItem,} from '../api/registry';
 import type {ApiConnection, PlatformSkillListItem} from '../lib/electron';
 import {useElectronAPI} from '../lib/electron';
 import type {StoreData, StoreResourceType} from './storeTypes';
@@ -31,9 +30,9 @@ function mapPlatformSkill(item: PlatformSkillListItem): SkillListItem {
 
 interface UseSkillsDataParams {
     resourceType: StoreResourceType;
-    /** 当前选中的 Skill 源连接（含 github 内置）；为 null 时视为内置源 */
+    /** 当前选中的 Skill 源连接；为 null 时视为未选择来源 */
     selectedConn: ApiConnection | null;
-    /** 是否为平台直连 Skill 源（非 GitHub Registry 内置） */
+    /** 是否为平台直连 Skill 源（非内置） */
     isDirectSkillSource: boolean;
     selectedSkillSourceId: string | null;
     page: number;
@@ -47,7 +46,6 @@ interface UseSkillsDataParams {
 
 /**
  * Skills 数据查询（统一收口）：
- * - 内置源（GitHub Registry）：一次性全量拉取 + 前端搜索/切片。
  * - 平台直连源（ModelScope / SkillHub / ClawHub 等）：服务端分页，按页查询；
  *   total 一律取自 pageInfo.total（各平台源均有真实总数），不存在"无总数的源"。
  *
@@ -56,27 +54,9 @@ interface UseSkillsDataParams {
  * 仍会强制绕过缓存重新请求。
  */
 export function useSkillsData(params: UseSkillsDataParams): StoreData<SkillListItem> {
-    const {resourceType, selectedConn, isDirectSkillSource, page, pageSize, debouncedSearch, category, sort, forceRefresh} = params;
+    const {resourceType, selectedConn, isDirectSkillSource, page, pageSize, debouncedSearch, category, sort} = params;
     const api = useElectronAPI();
     const enabled = resourceType === 'skills';
-
-    // S0-4: 强制刷新时绕过磁盘缓存拉取最新。ref 在每次渲染同步更新，保证 refetch 时 queryFn 读到最新开关
-    const noCacheRef = useRef<boolean>(forceRefresh ?? false);
-    noCacheRef.current = forceRefresh ?? false;
-
-    const github = useQuery({
-        queryKey: ['skillsGithub'],
-        queryFn: async () => {
-            // 复用磁盘缓存 SWR：首屏命中缓存秒开，仅缓存过期（>10min）或手动刷新（noCacheRef）才打 GitHub。
-            // S0-4 修复：原先写死 noCache=false，导致「刷新」按钮只转圈不拉新数据。
-            return fetchSkillsList(undefined, noCacheRef.current);
-        },
-        // 数据缓存 10 分钟：卸载后保留缓存，重新进入直接命中；过期才重新拉取
-        staleTime: STORE_QUERY_STALE_MS,
-        gcTime: STORE_QUERY_STALE_MS,
-        refetchOnMount: true,
-        enabled: enabled && !isDirectSkillSource,
-    });
 
     const platform = useQuery({
         // S0-2: 补 pageSize —— 否则改每页条数只命中旧缓存、页码与数据不符
@@ -98,40 +78,6 @@ export function useSkillsData(params: UseSkillsDataParams): StoreData<SkillListI
         refetchOnMount: true,
         enabled: enabled && isDirectSkillSource,
     });
-
-    // S1-10: 内置源全量列表原先每次渲染同步重算过滤/排序/分页。包一层 useMemo 仅在数据或筛选条件变化时重算。
-    // 必须放在所有条件分支之前，保证每次渲染调用相同数量的 hooks，否则 React 会抛出 "Should have a queue"。
-    const builtinPaginated = useMemo(() => {
-        const list = github.data ?? [];
-        if (list.length === 0) return { items: [] as SkillListItem[], total: 0, totalPages: 0, startIndex: 0, endIndex: 0 };
-        const filtered = list.filter(skill => {
-            const matchQ = !debouncedSearch ||
-                skill.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-                (skill.description || '').toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-                skill.author.toLowerCase().includes(debouncedSearch.toLowerCase());
-            const matchCat = !category || category === 'all' || skill.categoryId === category;
-            return matchQ && matchCat;
-        });
-        const sorted = [...filtered];
-        if (sort && sort !== 'relevance') {
-            if (sort === 'stars') {
-                sorted.sort((a, b) => (b.stars || 0) - (a.stars || 0));
-            } else if (sort === 'updated') {
-                sorted.sort((a, b) => {
-                    const da = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-                    const db = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-                    return db - da;
-                });
-            }
-        }
-        const totalItems = sorted.length;
-        const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(totalItems / pageSize)) : 0;
-        const startIdx = (page - 1) * pageSize;
-        const items = sorted.slice(startIdx, startIdx + pageSize);
-        const startIndex = totalItems > 0 ? startIdx : 0;
-        const endIndex = Math.min(startIdx + pageSize, totalItems);
-        return { items, total: totalItems, totalPages, startIndex, endIndex };
-    }, [github.data, debouncedSearch, category, sort, page, pageSize]);
 
     if (isDirectSkillSource && selectedConn) {
         const res = platform.data ?? null;
@@ -166,18 +112,18 @@ export function useSkillsData(params: UseSkillsDataParams): StoreData<SkillListI
     }
 
     return {
-        items: builtinPaginated.items,
-        total: builtinPaginated.total,
-        totalItems: builtinPaginated.total,
-        totalPages: builtinPaginated.totalPages,
-        startIndex: builtinPaginated.startIndex,
-        endIndex: builtinPaginated.endIndex,
-        pagingMode: 'client',
+        items: [],
+        total: 0,
+        totalItems: 0,
+        totalPages: 1,
+        startIndex: 0,
+        endIndex: 0,
+        pagingMode: 'server',
         hasMore: false,
         isUnsupported: false,
-        isLoading: github.isLoading,
-        isFetching: github.isFetching,
-        error: github.error as Error | null,
-        refetch: github.refetch,
+        isLoading: platform.isLoading,
+        isFetching: platform.isFetching,
+        error: platform.error as Error | null,
+        refetch: platform.refetch,
     };
 }

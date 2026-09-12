@@ -13,9 +13,22 @@ import type {
     PlatformServerDetail,
     PlatformServerListItem,
     PlatformServerSearchPage,
+    PlatformSkillDownload,
+    PlatformSkillDownloadParams,
     PlatformSkillListItem,
 } from './types';
-import {buildHint, extractPageInfo, fetchJson, locateArray, probeEndpoints, setDiagnostics,} from './shared';
+import {
+    buildHint,
+    extractPageInfo,
+    fetchJson,
+    locateArray,
+    MODELSCOPE_RETRY_DELAYS_MS,
+    MODELSCOPE_ZIP_BASE,
+    modelscopeSkillZipUrl,
+    probeEndpoints,
+    setDiagnostics,
+    UA,
+} from './shared';
 
 const MS_BASE = 'https://modelscope.cn';
 
@@ -203,6 +216,8 @@ interface RawMS {
     owner?: string;
     license?: string;
     source_url?: string;
+    /** 服务端直接给出的下载直链（存在则优先使用）。 */
+    download_url?: string;
     view_count?: number;
     downloads?: number;
     logo_url?: string;
@@ -214,13 +229,25 @@ interface RawMS {
 export function mapSkill(raw: RawMS): PlatformSkillListItem {
     const id = raw.id || raw._id || '';
     const repoUrl = raw.source_url || `${MS_BASE}/${id}`;
+    // downloadUrl 与 resolvers/pagination.ts 的 toListItem 同逻辑：
+    //  1) 服务端返回 download_url 则优先；
+    //  2) 否则对 ModelScope 非 GitHub 源，按 /skills/<owner>/<slug>/archive/zip/master 合成 zip 直链。
+    // 这里**不能**把 downloadUrl 回退成 repoUrl（平台页面地址）：大量技能的 source_url 就是空串、
+    // 只有平台页地址，它们恰恰只能靠 zip 直链安装，旧实现回退成页面地址导致安装必然失败。
+    const isGithubSource = /(^|\.)github\.com\//.test(repoUrl);
+    let downloadUrl: string | undefined;
+    if (raw.download_url) {
+        downloadUrl = String(raw.download_url);
+    } else if (!isGithubSource) {
+        downloadUrl = modelscopeSkillZipUrl(id) ?? undefined;
+    }
     return {
         id,
         name: raw.display_name || id,
         description: raw.description || '',
         source: 'modelscope',
         sourceUrl: repoUrl,
-        downloadUrl: repoUrl,
+        downloadUrl,
         // 浏览量 / 下载量（商店卡片与详情展示用，不再误当成 stars）
         viewCount: raw.view_count,
         downloads: raw.downloads,
@@ -308,7 +335,11 @@ async function msSearchImpl(params: PlatformSearchParams): Promise<PlatformSearc
         query,
         safePage,
         pageSize,
-        effectiveCategory
+        effectiveCategory,
+        '',
+        undefined,
+        '',
+        MODELSCOPE_RETRY_DELAYS_MS
     );
 
     setDiagnostics('modelscope', {
@@ -395,7 +426,7 @@ async function msServerSearchImpl(params: PlatformSearchParams): Promise<Platfor
         (body.filter as Record<string, unknown>).category = category;
     }
 
-    const result = await fetchJson(url, body);
+    const result = await fetchJson(url, body, 20000, {}, MODELSCOPE_RETRY_DELAYS_MS);
 
     setDiagnostics('modelscope', {
         platform: 'modelscope',
@@ -452,20 +483,133 @@ export const modelscopeAdapter: PlatformAdapter = {
         return msServerSearchImpl(params);
     },
 
-    async fetchServerDetail(_params: PlatformSearchParams, serverId: string): Promise<PlatformServerDetail> {
+    /**
+     * 获取 ModelScope MCP server 详情（含安装配置 / README）。
+     *
+     * 与 resolvers/servers.ts 的 fetchPlatformServerDetail 对齐，契约：
+     *   GET {baseUrl}/openapi/v1/mcp/servers/{id}
+     *   - server_config[].mcpServers[name] = { command, args, env? }  ← 安装所需配置（真实包名）
+     *   - readme：顶层或 locales.{zh,en}.readme
+     *   - source_url / categories / view_count / is_hosted / is_verified / tags 等元信息
+     *
+     * 旧实现硬编码 `npx -y @modelscope/mcp-server --repo <id>`（该包名不存在，安装必 404），
+     * 现改为读取平台返回的真实 server_config，不再编造安装命令。
+     */
+    async fetchServerDetail(params: PlatformSearchParams, serverId: string): Promise<PlatformServerDetail> {
+        const base = params.baseUrl || MS_BASE;
         const id = serverId;
-        const repoUrl = `https://modelscope.cn/${id}`;
-        return {
-            id,
-            name: id.split('/').pop() || id,
-            displayName: id.split('/').pop() || id,
-            description: '',
-            sourceUrl: repoUrl,
-            tags: [],
-            source: 'modelscope',
-            install: {command: 'npx', args: ['-y', '@modelscope/mcp-server', '--repo', id], env: {}},
-            extra: {repoUrl},
+        const url = `${base.replace(/\/+$/, '')}/openapi/v1/mcp/servers/${encodeURIComponent(id)}`;
+
+        const headers: Record<string, string> = {
+            'User-Agent': UA,
+            'Accept': 'application/json',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         };
+        // 详情接口无需令牌即可访问；有令牌才附带 Bearer（与列表端点一致）
+        if (params.secret) headers['Authorization'] = `Bearer ${params.secret}`;
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 20000);
+        try {
+            const res = await fetch(url, {headers, redirect: 'follow', signal: controller.signal});
+            const text = await res.text();
+            if (!res.ok) throw new Error(`获取详情失败（HTTP ${res.status}）`);
+            if (!text.trimStart().startsWith('{')) throw new Error('详情接口返回了非 JSON 内容');
+
+            let json: any;
+            try {
+                json = JSON.parse(text);
+            } catch {
+                throw new Error('详情接口返回无法解析的 JSON');
+            }
+
+            const d = json?.data;
+            if (!d || typeof d !== 'object') throw new Error('详情接口未返回数据');
+
+            // 安装配置：server_config[].mcpServers[name] = { command, args, env }
+            let install: PlatformServerDetail['install'] = null;
+            const cfgList: unknown[] = Array.isArray(d.server_config) ? d.server_config : [];
+            for (const entry of cfgList) {
+                const mcp = (entry as {mcpServers?: Record<string, any>})?.mcpServers;
+                if (mcp && typeof mcp === 'object') {
+                    const key = Object.keys(mcp)[0];
+                    if (key) {
+                        const c = mcp[key] || {};
+                        install = {
+                            command: String(c.command || ''),
+                            args: Array.isArray(c.args) ? c.args.map(String) : [],
+                            env: c.env && typeof c.env === 'object' ? c.env : undefined,
+                        };
+                        break;
+                    }
+                }
+            }
+
+            const readme: string = d.locales?.zh?.readme || d.locales?.en?.readme || d.readme || '';
+
+            const categories = Array.isArray(d.categories)
+                ? (d.categories as unknown[]).map(String)
+                : typeof d.category === 'string' && d.category
+                    ? [d.category]
+                    : [];
+
+            const stars =
+                typeof d.view_count === 'number'
+                    ? d.view_count
+                    : typeof d.github_stars === 'number'
+                        ? d.github_stars
+                        : undefined;
+
+            const repoUrl = typeof d.source_url === 'string' && d.source_url ? d.source_url : `${MS_BASE}/${id}`;
+
+            return {
+                id: String(d.id || id),
+                name: String(d.name || id),
+                displayName: String(d.chinese_name || d.name || d.id || id),
+                description: String(d.description || ''),
+                iconUrl: typeof d.logo_url === 'string' && d.logo_url ? d.logo_url : undefined,
+                categories,
+                categoryNames: categories.map(c => MS_SERVER_CAT_NAME.get(c) ?? c),
+                stars,
+                sourceUrl: repoUrl,
+                author: typeof d.author === 'string' && d.author ? d.author : undefined,
+                publisher: typeof d.publisher === 'string' && d.publisher ? d.publisher : undefined,
+                isHosted: typeof d.is_hosted === 'boolean' ? d.is_hosted : undefined,
+                isVerified: typeof d.is_verified === 'boolean' ? d.is_verified : undefined,
+                tags: Array.isArray(d.tags) ? (d.tags as unknown[]).map(String) : [],
+                readme,
+                install,
+                envSchema: d.env_schema,
+                source: 'modelscope',
+                extra: d,
+            };
+        } catch (e) {
+            const err = e as Error & {name?: string};
+            if (err.name === 'AbortError') throw new Error('获取详情超时，请检查网络或连接配置');
+            throw e;
+        } finally {
+            clearTimeout(timer);
+        }
+    },
+
+    /**
+     * 取 ModelScope 原生 Skill 的 zip 下载直链（匿名、无需凭证）。
+     *
+     * 实测契约：`https://www.modelscope.cn/skills/<owner>/<slug>/archive/zip/master`
+     * 返回 application/zip；`source_url` 为空的技能只有这一条安装通道。
+     * skillId 为空（或缺 owner/slug 结构）时明确报错，避免产出下载 404 的无效链接。
+     */
+    async fetchSkillDownload({baseUrl, skillId}: PlatformSkillDownloadParams): Promise<PlatformSkillDownload> {
+        const id = (skillId || '').trim();
+        if (!id) {
+            throw new Error('缺少技能 ID，无法生成 ModelScope 下载直链。');
+        }
+        const base = (baseUrl || '').trim() || MODELSCOPE_ZIP_BASE;
+        const downloadUrl = modelscopeSkillZipUrl(id, base);
+        if (!downloadUrl) {
+            throw new Error('缺少技能 ID，无法生成 ModelScope 下载直链。');
+        }
+        return {downloadUrl};
     },
 
     getFacets(resourceType?: 'mcp' | 'skills') {
@@ -486,6 +630,7 @@ export const modelscopeAdapter: PlatformAdapter = {
 
 /**
  * Skill 详情：GET /api/v1/skills/<id>（注意非 /openapi/v1/，后者仅用于列表）。
- * 安装 SKILL.md 走 source_url → GitHub raw；source_url 为空时由调用方兜底。
- * 复用现有 skills:get-remote-detail（GitHub 解析）通道消费 sourceUrl。
+ * 安装通道有两条：
+ *  - source_url 指向 GitHub 时，走 skills:get-remote-detail（GitHub 解析）消费 sourceUrl；
+ *  - source_url 为空（或非 GitHub）时，靠 mapSkill/fetchSkillDownload 合成的 zip 直链下载安装。
  */

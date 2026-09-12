@@ -25,9 +25,10 @@ function ServerCard({ server, dataSource, isInstalled, platformConnId }: ServerC
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
 
+  // safeskill 已于 2026-09-12 下线（无 adapter、上游无公开接口），永不会产出条目，故不在本清单内
   const isPlatformSource =
     server.source === 'platform' ||
-    ['modelscope', 'safeskill', 'skillhub', 'skillsmp', 'clawhub', 'bailian', 'npm'].includes(server.source ?? '');
+    ['modelscope', 'skillhub', 'skillsmp', 'clawhub', 'bailian', 'npm'].includes(server.source ?? '');
 
   const handleClick = () => {
     // 平台源（如 ModelScope）走独立的详情页路由，附带连接 ID；同时透传列表项以便详情页展示分类/浏览量

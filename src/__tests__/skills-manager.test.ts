@@ -237,7 +237,7 @@ describe('installSkill', () => {
     expect(parsed.files).toEqual(['SKILL.md', 'extra.md']);
   });
 
-  it('应在 files 为空时成功（只创建 .source.json）', async () => {
+  it('应在 files 为空时返回失败且不创建空壳目录', async () => {
     const sourceInfo: SkillSourceMeta = {
       id: 'test/empty-skill',
       installedAt: new Date().toISOString(),
@@ -252,10 +252,12 @@ describe('installSkill', () => {
     };
 
     const result = await manager.installSkill('test/empty-skill', sourceInfo, ['cursor']);
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('文件清单为空');
 
-    const sourceJson = await fs.readFile(path.join(testDir, 'empty-skill', '.source.json'), 'utf-8');
-    expect(JSON.parse(sourceJson).id).toBe('test/empty-skill');
+    // 不得留下只含 .source.json 的空壳目录
+    const dirExists = await fs.access(path.join(testDir, 'empty-skill')).then(() => true).catch(() => false);
+    expect(dirExists).toBe(false);
   });
 });
 
@@ -385,6 +387,36 @@ describe('updateSkill', () => {
     const result = await manager.updateSkill('no-source', 'cursor');
     expect(result.updated).toBe(false);
     expect(result.error).toBeDefined();
+  });
+
+  it('zip 通道安装（rawBaseUrl 为空）应在 fetch 之前早退，如实说明无法回源更新（G2）', async () => {
+    const skillDir = path.join(testDir, 'zip-update');
+    await fs.mkdir(skillDir, { recursive: true });
+
+    // zip 通道：files 为真实清单、rawBaseUrl 恒为空串（预签名直链不持久化）
+    const source: SkillSourceMeta = {
+      id: 'demo',
+      installedAt: '2025-01-01T00:00:00.000Z',
+      updatedAt: '2025-01-01T00:00:00.000Z',
+      source: {
+        repositoryUrl: 'https://platform.example.com/skills/demo',
+        branch: '',
+        skillPath: '',
+        rawBaseUrl: '',
+      },
+      files: ['SKILL.md', 'ref/a.md'],
+    };
+    await fs.writeFile(path.join(skillDir, '.source.json'), JSON.stringify(source), 'utf-8');
+
+    // 若走到 fetch 会打真实网络——用会抛错的 mock 断言新分支在 fetch 之前返回
+    const fetchSpy = vi.fn().mockRejectedValue(new Error('should not be called'));
+    (manager as any).fetchWithRetry = fetchSpy;
+
+    const result = await manager.updateSkill('zip-update', 'cursor');
+    expect(result.updated).toBe(false);
+    expect(result.error).toContain('压缩包通道');
+    expect(result.error ?? '').not.toContain('network');
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('应在所有文件下载失败时返回失败', async () => {

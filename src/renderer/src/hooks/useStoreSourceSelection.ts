@@ -3,7 +3,6 @@ import {useStore} from '../store/useStore';
 import type {ApiConnection} from '../lib/electron';
 import {useElectronAPI} from '../lib/electron';
 import type {DataSource} from '../api/registry';
-import {BUILTIN_SKILL_SOURCE_IDS} from '../../../shared/platform-constants';
 
 export interface StoreSourceSelection {
     /** MCP 源管理里已启用的连接（下拉用） */
@@ -14,11 +13,11 @@ export interface StoreSourceSelection {
     mcpConnId: string | null;
     /** 当前内置 MCP 源类型（smithery） */
     dataSource: DataSource;
-    /** 当前选中的 Skill 源 ID（可能为内置 github 或某直连源） */
+    /** 当前选中的 Skill 源 ID（某直连源） */
     selectedSkillSourceId: string | null;
-    /** 由 selectedSkillSourceId 解析出的实际连接（含 github 内置） */
+    /** 由 selectedSkillSourceId 解析出的实际连接 */
     selectedConn: ApiConnection | null;
-    /** 是否为平台直连 Skill 源（非 GitHub Registry 内置） */
+    /** 是否为平台直连 Skill 源（非内置） */
     isDirectSkillSource: boolean;
     /** 下拉当前高亮值：保证「下拉显示 = 实际加载的数据」 */
     selectedMcpSourceId: string;
@@ -65,7 +64,7 @@ export function useStoreSourceSelection(): StoreSourceSelection {
     }, [api]);
 
     // 默认来源选择：用户已显式选择时保持不变；未选择时优先用「设为默认」的源，
-    // 回退内置 GitHub Registry，再回退到列表第一条。
+    // 再回退到列表第一条。
     // 必须等 connections 列表加载完成（length>0）后再判断，否则来源列表刷新/详情页返回瞬间
     // connections 为空会把用户已选的源误判为失效，从而被覆盖成默认源，导致"返回后数据源变化"。
     useEffect(() => {
@@ -73,8 +72,7 @@ export function useStoreSourceSelection(): StoreSourceSelection {
         const stillValid = selectedSkillSourceId && connections.some(c => c.id === selectedSkillSourceId);
         if (!stillValid) {
             const def = connections.find(c => c.isDefault && (c.kind ?? 'skill') === 'skill');
-            const gh = connections.find(c => c.id === BUILTIN_SKILL_SOURCE_IDS.github);
-            const fallback = (def || gh || connections[0])?.id ?? null;
+            const fallback = (def || connections[0])?.id ?? null;
             setSelectedSkillSourceId(fallback);
         }
     }, [connections, selectedSkillSourceId, setSelectedSkillSourceId]);
@@ -101,7 +99,7 @@ export function useStoreSourceSelection(): StoreSourceSelection {
     }, [mcpSources, mcpConnId, dataSource, setDataSource, setMcpConnId]);
 
     const selectedConn = connections.find(c => c.id === selectedSkillSourceId) || null;
-    const isDirectSkillSource = !!selectedConn && selectedConn.platformType !== 'github';
+    const isDirectSkillSource = !!selectedConn;
 
     // 下拉当前值：以「实际生效的来源」为准，保证下拉显示 = 实际加载的数据。
     // 优先级：用户已选平台连接(mcpConnId) → dataSource 对应的内置源 → 列表首条。

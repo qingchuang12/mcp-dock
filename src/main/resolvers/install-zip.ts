@@ -3,16 +3,15 @@
  * 负责把「非 GitHub 源」的 skill（平台 zip 直链、skills.sh 详情页）解析为可安装 Skill。
  */
 
-import {execFile} from 'child_process';
 import os from 'os';
 import path from 'path';
 import {Dirent, promises as fsp} from 'fs';
 import {DiscoveredSkill, SkillsManager} from '../skills-manager';
+import {extractZipToDir} from '../archive';
 import {parseFrontmatter} from '../../shared/frontmatter';
 import type {ResolvePlatformResult, SupportedPlatform} from './types';
 import {UA} from './types';
-import {CLAWHUB_DOWNLOAD_BASE} from './clawhub';
-import {SKILLHUB_DOWNLOAD_BASE} from './skillhub';
+import {CLAWHUB_DOWNLOAD_BASE, SKILLHUB_DOWNLOAD_BASE} from '../../shared/platform-constants';
 
 /** 已知的平台 zip 下载直链形态（这些 URL 直接返回 application/zip，无需再抓 HTML） */
 function isZipDownloadUrl(url: string): boolean {
@@ -116,7 +115,6 @@ async function resolveZipSkill(
 ): Promise<ResolvePlatformResult> {
     const tmpRoot = path.join(os.tmpdir(), 'mcp-dock-ms-zip');
     const token = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    const zipPath = path.join(tmpRoot, `${token}.zip`);
     const extractDir = path.join(tmpRoot, token);
     try {
         await fsp.mkdir(tmpRoot, {recursive: true});
@@ -180,32 +178,29 @@ async function resolveZipSkill(
         } finally {
             clearTimeout(dlTimeout);
         }
-        await fsp.writeFile(zipPath, buf);
-        // 2) 解压（优先系统 tar，回退 PowerShell Expand-Archive）
+        // 2) 解压：改用项目自带的纯 Node 解包器 extractZipToDir（archive.ts）——零第三方依赖、跨平台。
+        //    不再 shell out 外部 `tar` / `powershell Expand-Archive`：前者依赖 PATH 中的 tar（GNU tar 读不了 ZIP），
+        //    后者依赖 Windows 独有的 PowerShell（Linux 必失败），且外部进程在并行调用时受争用会偶发失败。
         await fsp.mkdir(extractDir, {recursive: true});
-        let extracted = false;
+        let writtenCount: number;
         try {
-            await execFileAsync('tar', ['-xf', zipPath, '-C', extractDir]);
-            extracted = true;
-        } catch {
-            try {
-                await execFileAsync('powershell', [
-                    '-NoProfile',
-                    '-Command',
-                    `Expand-Archive -Force -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${extractDir.replace(/'/g, "''")}'`,
-                ]);
-                extracted = true;
-            } catch (e) {
-                extracted = false;
-            }
-        }
-        if (!extracted) {
+            writtenCount = await extractZipToDir(buf, extractDir);
+        } catch (e) {
             return {
                 success: false,
                 skills: [],
                 platform,
                 resolvedVia: 'zip',
-                error: '解压 Skill 压缩包失败：系统缺少 tar 或 PowerShell Expand-Archive 支持。',
+                error: `解压 Skill 压缩包失败：${(e as Error).message}`,
+            };
+        }
+        if (writtenCount === 0) {
+            return {
+                success: false,
+                skills: [],
+                platform,
+                resolvedVia: 'zip',
+                error: '压缩包内没有可解压的文件。',
             };
         }
         // 3) 定位 SKILL.md（zip 可能带顶层目录，递归查找）
@@ -232,7 +227,9 @@ async function resolveZipSkill(
             files: [],
             repository: {
                 url: zipUrl,
-                branch: 'master',
+                // zip 通道没有 Git 语义：不臆造 'master'，留空。否则会顺着 installFromDiscovered
+                // 当成真实分支写进 .source.json，抵销 installSkillFromZip 的「不臆造分支」承诺。
+                branch: '',
                 owner: (platform === 'clawhub' || platform === 'skillhub') ? platform : 'modelscope',
                 repo: skillName
             },
@@ -248,8 +245,9 @@ async function resolveZipSkill(
             error: `解析 Skill 压缩包失败：${(e as Error).message}`,
         };
     } finally {
-        // 清理临时文件（解压内容已读入内存，本地临时产物可删）
-        await fsp.rm(tmpRoot, {recursive: true, force: true}).catch(() => {
+        // 只清理本次调用私有的 extractDir，绝不删共享的 tmpRoot：
+        // 并发解析时，先返回的一次若 rm -rf tmpRoot 会连根删掉另一次仍在使用的解压目录（同 B4 缺陷类）。
+        await fsp.rm(extractDir, {recursive: true, force: true}).catch(() => {
         });
     }
 }
@@ -282,13 +280,6 @@ function sanitizeSkillName(raw: string): string {
         .replace(/[^a-z0-9_\-./]+/g, '-')
         .replace(/^[.\-]+|[.\-]+$/g, '');
     return cleaned || 'skill';
-}
-
-/** promisify execFile 简化版（无 stdout 捕获需求时） */
-function execFileAsync(file: string, args: string[]): Promise<void> {
-    return new Promise((resolve, reject) => {
-        execFile(file, args, {windowsHide: true}, (err) => (err ? reject(err) : resolve()));
-    });
 }
 
 export {isZipDownloadUrl, resolveSkillsShSkill, resolveZipSkill, SKILLS_SH_URL_RE};

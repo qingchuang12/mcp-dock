@@ -1,10 +1,13 @@
 /**
  * 商店模块纯函数测试（S2-14）
  * 覆盖：paginateServers / filterServersByCategory / sortServers / buildPageList / formatCompactNumber / formatRelativeTime
+ *       + store-filters（plan-14.0 收敛：排序显示值兜底 / 「未筛选」判定基准）
  */
-import {describe, it, expect, vi} from 'vitest';
-import {paginateServers, filterServersByCategory, sortServers} from '../renderer/src/lib/search';
+import {describe, expect, it, vi} from 'vitest';
+import {filterServersByCategory, paginateServers, sortServers} from '../renderer/src/lib/search';
 import {formatCompactNumber, formatRelativeTime} from '../renderer/src/lib/format';
+import {hasActiveStoreFilters, resolveSortDisplayValue} from '../renderer/src/lib/store-filters';
+import type {SortOption} from '../renderer/src/lib/electron';
 import type {ServerListItem} from '../renderer/src/api/registry';
 import type {TFunction} from 'i18next';
 
@@ -360,5 +363,58 @@ describe('buildPageList', () => {
         expect(pages[pages.length - 1]).toBe(8);
         // 至少有一个省略号
         expect(pages).toContain(-1);
+    });
+});
+
+
+// ============================================================
+// store-filters（plan-14.0 收敛项：「未筛选」基准不再硬编码 'relevance'）
+// ============================================================
+const BAILIAN_SORTS: SortOption[] = [
+    {id: 'calls', name: '调用最多', field: 'callTotalCount', order: 'desc'},
+    {id: 'users', name: '激活用户最多', field: 'activateUserCount', order: 'desc'},
+    {id: 'name', name: '名称', field: 'serverName', order: 'asc'},
+];
+const SMITHERY_SORTS: SortOption[] = [
+    {id: 'relevance', name: '相关度', field: 'relevance', order: 'desc'},
+    {id: 'downloads', name: '下载最多', field: 'downloads', order: 'desc'},
+];
+
+describe('resolveSortDisplayValue', () => {
+    it('sort 在选项集内：原样返回', () => {
+        expect(resolveSortDisplayValue('name', BAILIAN_SORTS)).toBe('name');
+    });
+    it('sort 不在选项集（应用层默认 relevance 落在无此排序的源）：回退首个选项', () => {
+        expect(resolveSortDisplayValue('relevance', BAILIAN_SORTS)).toBe('calls');
+        expect(resolveSortDisplayValue('relevance', SMITHERY_SORTS)).toBe('relevance');
+    });
+    it('空选项集：原样返回 sort（与组件 hasSort=false 行为一致）', () => {
+        expect(resolveSortDisplayValue('relevance', [])).toBe('relevance');
+    });
+});
+
+describe('hasActiveStoreFilters', () => {
+    it('无 relevance 源：选回首选项（= 该源默认序）不算筛选（旧逻辑误判为有筛选）', () => {
+        expect(hasActiveStoreFilters('calls', BAILIAN_SORTS, 'all')).toBe(false);
+        expect(hasActiveStoreFilters('stars', [{id: 'stars', name: 's', field: 'stars', order: 'desc'}], 'all')).toBe(false);
+    });
+    it('无 relevance 源：应用层默认 relevance（显示兜底首选项）不算筛选', () => {
+        expect(hasActiveStoreFilters('relevance', BAILIAN_SORTS, 'all')).toBe(false);
+    });
+    it('无 relevance 源：选非首选项算筛选', () => {
+        expect(hasActiveStoreFilters('name', BAILIAN_SORTS, 'all')).toBe(true);
+        expect(hasActiveStoreFilters('users', BAILIAN_SORTS, 'all')).toBe(true);
+    });
+    it('有 relevance 源：默认与选非默认分别判定（与旧逻辑一致）', () => {
+        expect(hasActiveStoreFilters('relevance', SMITHERY_SORTS, 'all')).toBe(false);
+        expect(hasActiveStoreFilters('downloads', SMITHERY_SORTS, 'all')).toBe(true);
+    });
+    it('来源过滤非「全部」恒算筛选（与排序无关）', () => {
+        expect(hasActiveStoreFilters('relevance', SMITHERY_SORTS, 'ALIYUN')).toBe(true);
+        expect(hasActiveStoreFilters('calls', BAILIAN_SORTS, 'AMAP')).toBe(true);
+    });
+    it('空选项集：退化为仅看 sourceFilter 与 relevance 基准（旧语义）', () => {
+        expect(hasActiveStoreFilters('relevance', [], 'all')).toBe(false);
+        expect(hasActiveStoreFilters('downloads', [], 'all')).toBe(true);
     });
 });

@@ -91,8 +91,14 @@ export function mapServer(raw: RawBailian, _idx?: number): PlatformServerListIte
         name: raw.serverName,
         displayName: raw.serverName,
         description: raw.description || '',
-        iconUrl: raw.icon,
+        // 离线索引里的 icon 字段是占位死链（img.alicdn.com/.../O1CN010.png 实测 HTTP 404），
+        // 向下传递只会让每张卡片都发一次 404 请求并闪现裂图；改为不传，由 UI 回退到首字母头像。
+        iconUrl: undefined,
         categories: raw.classification ? [raw.classification] : [],
+        // 中文展示名：与分类下拉（BAILIAN_CLASSIFICATION）保持一致，否则卡片 tag 显英文 slug
+        categoryNames: raw.classification
+            ? [BAILIAN_CLASSIFICATION[raw.classification] ?? raw.classification]
+            : [],
         stars: typeof raw.callTotalCount === 'number' ? raw.callTotalCount : undefined,
         sourceUrl: `https://bailian.console.aliyun.com/#/mcp/server/${encodeURIComponent(raw.serverName)}`,
         author: raw.sourceName,
@@ -125,8 +131,12 @@ export const bailianAdapter: PlatformAdapter = {
         const q = query.trim().toLowerCase();
 
         let filtered = all.filter(r => {
-            const matchCat = !category || category === 'ALL' || r.classification === category;
-            const matchSource = !source || source === 'ALL' || r.source === source;
+        // 「全部」哨兵值必须是小写 'all'：渲染层 useMcpData 固定传 `category || 'all'` /
+        // `source || 'all'`，下拉框「全部」的 value 也是 'all'（StoreToolbar/StoreFilterBar），
+        // 且 modelscope/npm 的同款判据均为小写。旧实现写 'ALL'（大写）导致渲染层默认值
+        // 永不命中 → 251 条全被过滤 → 商店-MCP-百炼列表恒为空。
+        const matchCat = !category || category === 'all' || r.classification === category;
+        const matchSource = !source || source === 'all' || r.source === source;
             const matchQ =
                 !q ||
                 r.serverName.toLowerCase().includes(q) ||
@@ -134,18 +144,24 @@ export const bailianAdapter: PlatformAdapter = {
             return matchCat && matchSource && matchQ;
         });
 
-        // 客户端排序（服务端不支持）
-        if (sort && sort !== 'calls') {
-            const dir = sort === 'users' ? -1 : 1;
-            filtered.sort((a, b) => {
-                if (sort === 'name') return (a.serverName || '').localeCompare(b.serverName || '') * dir;
-                const av = (a as any)[sort] || 0;
-                const bv = (b as any)[sort] || 0;
-                return (bv - av) * dir;
-            });
-        } else {
-            filtered.sort((a, b) => (b.callTotalCount || 0) - (a.callTotalCount || 0));
-        }
+        // 客户端排序（离线索引无排序能力，全部本地完成）。
+        // 必须用 SortOption 的 field/order 解释排序 id，不能把 id 直接当字段名：
+        // 旧实现 `(a as any)[sort]` 对 sort='users' 取的是 activateUserCount 不存在的键
+        // （取到 undefined → 0），比较器恒返回 0 → 排序静默失效；且方向用
+        // `sort==='users' ? -1 : 1` 硬编码，与 BAILIAN_SORTS 里标注的 order:'desc' 相抵，
+        // 即便取到字段也会反向。改为以 BAILIAN_SORTS 为唯一事实源。
+        const sortDef = sort ? BAILIAN_SORTS.find(s => s.id === sort) : undefined;
+        const field = sortDef?.field ?? 'callTotalCount';
+        const asc = sortDef?.order === 'asc';
+        filtered.sort((a, b) => {
+            if (field === 'serverName') {
+                const c = (a.serverName || '').localeCompare(b.serverName || '');
+                return asc ? c : -c;
+            }
+            const av = field === 'activateUserCount' ? a.activateUserCount || 0 : a.callTotalCount || 0;
+            const bv = field === 'activateUserCount' ? b.activateUserCount || 0 : b.callTotalCount || 0;
+            return asc ? av - bv : bv - av;
+        });
 
         const total = filtered.length;
         const start = (safePage - 1) * pageSize;
@@ -196,10 +212,37 @@ export const bailianAdapter: PlatformAdapter = {
             throw new Error('未找到该百炼服务（离线索引中不存在）');
         }
         const item = mapServer(raw);
+        // 百炼为远程托管 MCP：「安装」= 向客户端 MCP 配置写入 URL 接入点（SSE/Streamable HTTP）
+        // 而非本地命令。slug 由 serverName 生成仅作预填默认值——离线索引的中文名与控制台
+        // 接入 slug 并非同一标识，详情页允许编辑，最终以百炼控制台该服务的「接入地址」为准。
+        const slug = encodeURIComponent(raw.serverName);
+        const readme = [
+            raw.description || '',
+            '',
+            '## 百炼远程托管 MCP 接入说明',
+            '',
+            '- 该服务为阿里云百炼远程托管 MCP，无需本地安装命令，客户端通过 URL 直连。',
+            `- 默认接入地址（SSE）：https://dashscope.aliyuncs.com/api/v1/mcps/${slug}/sse`,
+            '- 鉴权：需配置请求头 Authorization: Bearer <DASHSCOPE_API_KEY>（百炼 API Key，sk- 开头，在百炼控制台 API-KEY 页面获取）。',
+            '- 注意：接入地址中的 slug 可能与服务显示名不同，请以百炼控制台该服务的「接入地址」为准。',
+        ].join('\n');
         return {
             ...item,
-            readme: raw.description,
-            install: null, // 百炼为远程托管服务，客户端无需本地安装命令
+            readme,
+            install: {
+                url: `https://dashscope.aliyuncs.com/api/v1/mcps/${slug}/sse`,
+                type: 'sse' as const,
+                headersTemplate: {Authorization: 'Bearer ${DASHSCOPE_API_KEY}'},
+            },
+            envSchema: {
+                properties: {
+                    DASHSCOPE_API_KEY: {
+                        type: 'string',
+                        description: '阿里云百炼 API Key（sk-…），在百炼控制台 API-KEY 页面获取',
+                    },
+                },
+                required: ['DASHSCOPE_API_KEY'],
+            },
             extra: {...item.extra, mode: 'remote'},
         };
     },

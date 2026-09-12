@@ -49,7 +49,11 @@ function mapClawhubEntry(entry: unknown): PlatformSkillListItem | null {
     let downloadUrl: string | undefined;
     let sourceUrl = '';
     if (kind === 'clawhub') {
-        downloadUrl = `${CLAWHUB_DOWNLOAD_BASE}?slug=${encodeURIComponent(slug || id)}`;
+        // ref 形如 "owner/slug"；歧义 slug 必须带 ownerHandle，否则下载直链 409（与适配器 P0 修复一致）
+        const slash = ref.indexOf('/');
+        const ownerHandle = slash > 0 ? ref.slice(0, slash) : '';
+        const dlSlug = slug || id;
+        downloadUrl = `${CLAWHUB_DOWNLOAD_BASE}?slug=${encodeURIComponent(dlSlug)}${ownerHandle ? `&ownerHandle=${encodeURIComponent(ownerHandle)}` : ''}`;
         sourceUrl = canonical ? `https://clawhub.ai${canonical}` : `https://clawhub.ai/skills/${id}`;
     } else {
         sourceUrl = installSourceUrl || linkSource;

@@ -16,12 +16,29 @@ export default function ConnectionManager({onChanged}: Props) {
             namespace="skillSource"
             kind="skill"
             platformTypes={SKILL_PLATFORM_TYPES}
-            builtinIds={[BUILTIN_SKILL_SOURCE_IDS.github, BUILTIN_SKILL_SOURCE_IDS.clawhub]}
+            builtinIds={[BUILTIN_SKILL_SOURCE_IDS.clawhub]}
             createDefaults={{platformType: 'modelscope', baseUrl: PLATFORM_META.modelscope.defaultBaseUrl}}
             exportNames={{single: 'connection.json', multi: 'connections.json'}}
             unknownPlatformFallback
             noTokenColor="text-[#ff9f0a]"
             badgeOrder="default-builtin"
+            platformKeyHints={{
+                // 虾评列表匿名可读，但下载安装需鉴权；正式版技能下载会扣 2 虾米（重试不重复扣）。
+                coze: (
+                    <>
+                        下载安装需要虾评 API Key（在上方绑定）。获取与安装方式参见{' '}
+                        <a
+                            href="https://xiaping.coze.com/skill.md"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[var(--color-accent)] hover:underline"
+                        >
+                            xiaping.coze.com/skill.md
+                        </a>
+                        ；正式版技能下载会消耗虾米，试用版免费。
+                    </>
+                ),
+            }}
             onChanged={onChanged}
         />
     );

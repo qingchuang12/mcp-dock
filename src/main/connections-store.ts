@@ -16,6 +16,7 @@ import {
     BUILTIN_MCP_SOURCE_IDS,
     BUILTIN_SKILL_SOURCE_IDS,
     type ConnectionKind,
+    OFFLINE_INDEX_PLATFORMS,
     PLATFORM_HEALTH_PATHS,
     PLATFORM_META,
     type PlatformType,
@@ -89,7 +90,7 @@ export class ConnectionsStore {
      * - 老数据没有 kind 字段：按 platformType 推断（smithery/npm 归 mcp，其余归 skill）。
      * - 老数据没有 enabled 字段：一律补 true，保证升级后不会突然全部消失。
      * - Official 源已移除：存量 connections.json 中的 official 内置连接直接清除。
-     * - 内置 smithery（MCP）与 github（Skill / GitHub Registry）源以固定 id 落库，
+     * - 内置 smithery（MCP）与 clawhub（Skill）源以固定 id 落库，
      *   用户可编辑/禁用，删除后可通过各自的「恢复内置源」重新 seed。
      */
     private migrate(): void {
@@ -177,26 +178,26 @@ export class ConnectionsStore {
                 kind: 'mcp',
                 enabled: true,
             },
+            {
+                id: BUILTIN_MCP_SOURCE_IDS.bailian,
+                name: '百炼',
+                platformType: 'bailian',
+                baseUrl: PLATFORM_META.bailian.defaultBaseUrl,
+                customHeaders: {},
+                status: 'unverified',
+                detail: '百炼（阿里云 Model Studio）MCP 服务器（离线索引，免 Cookie/配额）',
+                lastCheckedAt: null,
+                createdAt: now - 3,
+                kind: 'mcp',
+                enabled: true,
+            },
         ];
     }
 
-    /** 内置 Skill 源的种子数据（GitHub Registry，store 下拉默认来源） */
+    /** 内置 Skill 源的种子数据（store 下拉默认来源：ClawHub） */
     private builtinSkillSeeds(): ApiConnection[] {
         const now = Date.now();
         return [
-            {
-                id: BUILTIN_SKILL_SOURCE_IDS.github,
-                name: 'GitHub Registry',
-                platformType: 'github',
-                baseUrl: PLATFORM_META.github.defaultBaseUrl,
-                customHeaders: {},
-                status: 'unverified',
-                detail: 'modelcontextprotocol/servers 官方 GitHub 仓库',
-                lastCheckedAt: null,
-                createdAt: now - 100,
-                kind: 'skill',
-                enabled: true,
-            },
             {
                 id: BUILTIN_SKILL_SOURCE_IDS.clawhub,
                 name: 'ClawHub',
@@ -226,7 +227,7 @@ export class ConnectionsStore {
         return this.list('mcp');
     }
 
-    /** 重新写回缺失的内置 Skill 源（GitHub Registry，用户误删后恢复） */
+    /** 重新写回缺失的内置 Skill 源（ClawHub，用户误删后恢复） */
     restoreBuiltinSkillSources(): ApiConnection[] {
         let changed = false;
         for (const seed of this.builtinSkillSeeds()) {
@@ -361,9 +362,24 @@ export class ConnectionsStore {
             if (secret) headers['Authorization'] = `Bearer ${secret}`;
         }
 
+        // 未配置探活路径的平台**不做网络探测**，如实报告结论。
+        // 旧实现是 `PLATFORM_HEALTH_PATHS[t] || ['/']`：那个 `|| ['/']` 让 paths 恒非空，
+        // 使下面「未配置路径」的分支永远不可达（死代码）——safeskill 于是去探首页拿到 200，
+        // 被标成「连接成功，搜索时将回退页面解析」，正是该分支注释本想避免的假绿。
+        const paths = PLATFORM_HEALTH_PATHS[conn.platformType];
+        if (!paths || paths.length === 0) {
+            const offline = OFFLINE_INDEX_PLATFORMS.includes(conn.platformType);
+            conn.status = offline ? 'active' : 'error';
+            conn.lastCheckedAt = Date.now();
+            conn.lastVerifyMessage = offline
+                ? '该来源使用内置离线索引，无需网络连接即可搜索与浏览'
+                : '该平台未开放可用的公开接口，无法验证连接可用性（该来源暂不支持查询与安装）';
+            this.persist();
+            return conn;
+        }
+
         // 依次尝试该平台的探活端点，任一连通即判定成功。
         // 不直接探 baseUrl：部分站点首页对非浏览器请求超时，但 API 端点正常。
-        const paths = PLATFORM_HEALTH_PATHS[conn.platformType] || ['/'];
         const targets = paths.map(p => this.joinUrl(conn.baseUrl, p));
 
         let lastFailure = '';

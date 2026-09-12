@@ -166,9 +166,19 @@ export default function StoreToolbar({
             className="px-2.5 py-1.5 rounded-lg text-[13px] bg-[var(--color-surface-hover)] text-[var(--color-text)] border border-[var(--color-border)] focus:outline-none focus:ring-1 focus:ring-[#0a84ff] max-w-[180px] truncate"
           >
             <option value="all">{t('store.allCategories')}</option>
-            {categories.map(c => (
-              <option key={c.id} value={c.id}>{c.name}{c.count != null ? ` (${c.count})` : ''}</option>
-            ))}
+            {categories.map(c =>
+              /* 两级分类（如 SkillsMP 的 12 父域 + 63 叶）：父节点只作分组标签，用 <optgroup> 呈现、
+                 自身不可选中 —— 上游只接受叶子 slug，把父域值发出去会 400（plan-13.0 F-d）。 */
+              c.children && c.children.length > 0 ? (
+                <optgroup key={c.id} label={c.name}>
+                  {c.children.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}{s.count != null ? ` (${s.count})` : ''}</option>
+                  ))}
+                </optgroup>
+              ) : (
+                <option key={c.id} value={c.id}>{c.name}{c.count != null ? ` (${c.count})` : ''}</option>
+              )
+            )}
           </select>
         )}
 

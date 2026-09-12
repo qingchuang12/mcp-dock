@@ -9,15 +9,33 @@ import type {
     PlatformAdapter,
     PlatformSearchPage,
     PlatformSearchParams,
+    PlatformSkillDownload,
+    PlatformSkillDownloadParams,
     PlatformSkillListItem,
     SortOption,
 } from './types';
+import {SKILLHUB_DOWNLOAD_BASE} from '../../shared/platform-constants';
 import {buildHint, extractPageInfo, probeEndpoints, setDiagnostics} from './shared';
 
 const SKILLHUB_SEARCH_TPLS = [
     '/api/skills?page={page}&pageSize={size}&sortBy={sort}&order={order}&keyword={q}&category={category}',
 ];
 const SKILLHUB_BASE = 'https://api.skillhub.cn';
+
+/**
+ * 纠正 skillhub 数据接口域名。默认 baseUrl 是站点 https://skillhub.cn（前端展示/打开链接用），
+ * 若直接拿去探测 /api/skills 会命中 SPA 壳 → 误判"未提供公开列表接口"。skillhub 主域一律纠正到
+ * API 子域 api.skillhub.cn；自建镜像/代理（非 skillhub.cn 主域）则保留用户配置。
+ */
+function resolveSkillhubBase(baseUrl?: string): string {
+    if (!baseUrl) return SKILLHUB_BASE;
+    try {
+        if (new URL(baseUrl).hostname.endsWith('skillhub.cn')) return 'https://api.skillhub.cn';
+        return baseUrl;
+    } catch {
+        return SKILLHUB_BASE;
+    }
+}
 
 /** 前端 sort id → SkillHub sortBy 字段。 */
 const SORT_MAP: Record<string, string> = {
@@ -29,105 +47,26 @@ const SORT_MAP: Record<string, string> = {
     updated: 'updated_at',
 };
 
-/** SkillHub 12 大类 + 子类（来自 doc 对接文档）。 */
+/**
+ * SkillHub 官方分类。来源权威端点 GET /api/v1/categories（2026-09-10 实测），
+ * 接口分类为扁平单层（level 1，无子类），按 sortOrder 升序排列。
+ * 注意：接口不接受 category={二级} 之类任意值，只有下列 key 合法，否则返回 400。
+ */
 const SKILLHUB_CATEGORIES: CategoryNode[] = [
-    {
-        id: 'development',
-        name: '开发工具',
-        children: [
-            {id: 'dev-coding', name: '代码生成'},
-            {id: 'dev-review', name: '代码审查'},
-            {id: 'dev-debug', name: '调试排错'},
-            {id: 'dev-doc', name: '文档生成'},
-        ],
-    },
-    {
-        id: 'data',
-        name: '数据科学',
-        children: [
-            {id: 'data-analysis', name: '数据分析'},
-            {id: 'data-viz', name: '数据可视化'},
-            {id: 'data-etl', name: '数据管道'},
-        ],
-    },
-    {
-        id: 'search',
-        name: '搜索检索',
-        children: [
-            {id: 'search-web', name: '网络搜索'},
-            {id: 'search-vector', name: '向量检索'},
-            {id: 'search-rag', name: 'RAG 检索'},
-        ],
-    },
-    {
-        id: 'productivity',
-        name: '效率办公',
-        children: [
-            {id: 'prod-email', name: '邮件处理'},
-            {id: 'prod-calendar', name: '日程管理'},
-            {id: 'prod-note', name: '笔记整理'},
-        ],
-    },
-    {
-        id: 'design',
-        name: '设计创意',
-        children: [
-            {id: 'design-ui', name: 'UI 设计'},
-            {id: 'design-image', name: '图像生成'},
-            {id: 'design-video', name: '视频处理'},
-        ],
-    },
-    {
-        id: 'cloud',
-        name: '云与运维',
-        children: [
-            {id: 'cloud-deploy', name: '部署运维'},
-            {id: 'cloud-monitor', name: '监控告警'},
-            {id: 'cloud-iac', name: '基础设施'},
-        ],
-    },
-    {
-        id: 'writing',
-        name: '写作内容',
-        children: [
-            {id: 'write-article', name: '文章写作'},
-            {id: 'write-translate', name: '翻译'},
-            {id: 'write-summary', name: '摘要总结'},
-        ],
-    },
-    {
-        id: 'education',
-        name: '教育学习',
-        children: [
-            {id: 'edu-tutor', name: '辅导答疑'},
-            {id: 'edu-quiz', name: '测验生成'},
-        ],
-    },
-    {
-        id: 'finance',
-        name: '金融财务',
-        children: [
-            {id: 'fin-report', name: '财报分析'},
-            {id: 'fin-trade', name: '交易辅助'},
-        ],
-    },
-    {
-        id: 'health',
-        name: '健康医疗',
-        children: [
-            {id: 'health-fit', name: '健身计划'},
-            {id: 'health-med', name: '医疗问答'},
-        ],
-    },
-    {
-        id: 'social',
-        name: '社交沟通',
-        children: [
-            {id: 'social-chat', name: '对话助手'},
-            {id: 'social-community', name: '社群运营'},
-        ],
-    },
-    {id: 'other', name: '其他', children: [{id: 'other-misc', name: '未分类'}]},
+    // 官方 nameEn 为 "Pay Skill"（付费技能分类），中文面板统一用中文名，与其它分类一致
+    {id: 'pay-skill', name: '付费技能'},
+    {id: 'office-efficiency', name: '办公效率'},
+    {id: 'content-creation', name: '内容创作'},
+    {id: 'dev-programming', name: '开发编程'},
+    {id: 'data-analysis', name: '数据分析'},
+    {id: 'design-media', name: '设计多媒体'},
+    {id: 'ai-agent', name: 'AI Agent'},
+    {id: 'knowledge-management', name: '知识管理'},
+    {id: 'business-ops', name: '商业运营'},
+    {id: 'education', name: '教育学习'},
+    {id: 'professional', name: '行业专业'},
+    {id: 'it-ops-security', name: 'IT 运维与安全'},
+    {id: 'life-service', name: '生活服务'},
 ];
 
 // 按文档 5 档对齐：score/stars/downloads/installs/updated_at
@@ -156,6 +95,7 @@ interface RawSkillhub {
     installs?: number;
     icon_url?: string;
     upstream_url?: string;
+    labels?: Record<string, unknown>;
     author?: string | {name?: string; username?: string};
     created_at?: string;
     updatedAt?: string;
@@ -166,22 +106,33 @@ export function mapEntry(raw: RawSkillhub): PlatformSkillListItem {
     const desc = raw.description_zh || raw.description || raw.long_description_zh || raw.long_description || '';
     const id = raw.slug;
     const sourceUrl = raw.upstream_url || `https://skillhub.cn/skills/${raw.slug}`;
+    // downloadUrl 对齐 D3 口径：upstream_url 是真 GitHub 仓库时保留（走 GitHub 解析通道），
+    // 否则给站内 zip 直链——不再把详情页地址（SPA 壳，无源可取）当下载地址。
+    const isGithubRepo = typeof raw.upstream_url === 'string' && /^https?:\/\/(?:www\.)?github\.com\//i.test(raw.upstream_url);
+    const downloadUrl = isGithubRepo
+        ? raw.upstream_url!
+        : `${SKILLHUB_DOWNLOAD_BASE}?slug=${encodeURIComponent(id)}`;
     return {
         id,
         name: raw.display_name || raw.name || raw.title || raw.slug,
         description: desc,
         source: 'skillhub',
         sourceUrl,
-        downloadUrl: sourceUrl,
+        downloadUrl,
         stars: typeof raw.stars === 'number' ? raw.stars : undefined,
         updatedAt: raw.updatedAt || raw.created_at,
         category: raw.category || (Array.isArray(raw.tags) ? raw.tags[0] : undefined),
+        // 中文分类显示名：与分类下拉（getFacets 的 SKILLHUB_CATEGORIES）保持一致，
+        // 否则列表项分类 tag 会 fallback 到英文 slug（如 office-efficiency）。
+        categoryName: SKILLHUB_CATEGORIES.find(c => c.id === (raw.category || ''))?.name,
         extra: {
             iconUrl: raw.icon_url,
             downloads: raw.downloads,
             installs: raw.installs,
             upstream_url: raw.upstream_url,
             author: typeof raw.author === 'object' ? raw.author?.name : raw.author,
+            // 接口全局能力标记：labels.requires_api_key=true 表示该技能需要用户自备 API key
+            requiresApiKey: raw.labels?.requires_api_key === true,
         },
     };
 }
@@ -195,7 +146,9 @@ export const skillhubAdapter: PlatformAdapter = {
         const safePage = Math.max(1, page);
         const sortBy = (sort && SORT_MAP[sort]) || 'score';
         const order = sortBy === 'name' ? 'asc' : 'desc';
-        const base = baseUrl || SKILLHUB_BASE;
+        const base = resolveSkillhubBase(baseUrl);
+        // "全部/不选分类"=any → 不传 category：接口只接受合法分类 key，"all" 会 400 导致整个列表为空
+        const normalizedCategory = category && category !== 'all' ? category : '';
         const started = Date.now();
 
         const probe = await probeEndpoints(
@@ -205,7 +158,7 @@ export const skillhubAdapter: PlatformAdapter = {
             query,
             safePage,
             pageSize,
-            category || '',
+            normalizedCategory,
             sortBy,
             null,
             order
@@ -250,11 +203,27 @@ export const skillhubAdapter: PlatformAdapter = {
         };
     },
 
+    /**
+     * 取 SkillHub 技能的 zip 下载直链（匿名、无需凭证）。
+     *
+     * 实测契约：`https://api.skillhub.cn/api/v1/download?slug=<slug>` → 302 → COS 对象存储 zip
+     * （200 / 504b0304，包内含 SKILL.md，plan-9.0 复核）。仅传 slug，带 namespace 参数会 404。
+     * 下载端点只在 API 域名存在——实测站点域名 skillhub.cn 同路径返回 200 但是 HTML（SPA 壳），
+     * 故固定用 SKILLHUB_DOWNLOAD_BASE，不拼用户 baseUrl。
+     */
+    async fetchSkillDownload({skillId}: PlatformSkillDownloadParams): Promise<PlatformSkillDownload> {
+        const slug = (skillId || '').trim();
+        if (!slug) {
+            throw new Error('缺少技能 slug，无法生成 SkillHub 下载直链。');
+        }
+        return {downloadUrl: `${SKILLHUB_DOWNLOAD_BASE}?slug=${encodeURIComponent(slug)}`};
+    },
+
     getFacets() {
         return {
             categories: SKILLHUB_CATEGORIES,
             sortOptions: SKILLHUB_SORTS,
-            supportsSubcategories: true,
+            supportsSubcategories: false,
         };
     },
 };

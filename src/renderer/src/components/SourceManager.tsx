@@ -6,7 +6,7 @@
  * 是否展示 platformHint / 未知平台降级 / noToken 颜色 / 徽章顺序」这 10 项不同。
  * 现抽成通用 SourceManager，由两份薄 wrapper 传入参数，行为保持完全一致。
  */
-import {useEffect, useMemo, useState} from 'react';
+import {type ReactNode, useEffect, useMemo, useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import {type ApiConnection, type PlatformType, type TokenMeta, useElectronAPI} from '../lib/electron';
 import {PLATFORM_META} from '../../../shared/platform-constants';
@@ -44,6 +44,11 @@ export interface SourceManagerProps {
     exportNames: { single: string; multi: string };
     /** 是否展示 platformType 提示段落（仅 mcp 有对应 key） */
     showPlatformHint?: boolean;
+    /**
+     * 按平台给出的「绑定 Token」补充提示（如虾评需 API Key 才能下载安装）。
+     * 放在通用组件里以 prop 注入，避免把平台专属文案硬编码进本文件。
+     */
+    platformKeyHints?: Partial<Record<PlatformType, ReactNode>>;
     /** 未知平台时降级为只读 div（skill 用于 github/clawhub 等内置平台） */
     unknownPlatformFallback?: boolean;
     /** noToken 文案配色 */
@@ -62,6 +67,7 @@ export default function SourceManager({
     createDefaults,
     exportNames,
     showPlatformHint = false,
+    platformKeyHints,
     unknownPlatformFallback = false,
     noTokenColor = 'text-[var(--color-muted2)]',
     badgeOrder = 'builtin-default',
@@ -443,6 +449,11 @@ export default function SourceManager({
                                             disabled={tok.revoked}>{tok.name}{tok.revoked ? `（${tk('revoked')}）` : ''}</option>
                                 ))}
                             </select>
+                            {editing.platformType && platformKeyHints?.[editing.platformType] && (
+                                <p className="text-[12px] leading-relaxed text-[var(--color-muted)] mt-1">
+                                    {platformKeyHints[editing.platformType]}
+                                </p>
+                            )}
                         </div>
                         <div>
                             <label

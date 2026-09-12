@@ -5,22 +5,13 @@
 
 import type {PlatformSearchPage, PlatformSkillListItem, SupportedPlatform} from './types';
 import {fetchText} from './pagination';
+// zip 下载直链常量已上移到 shared/platform-constants.ts（与 CLAWHUB_DOWNLOAD_BASE 同址，
+// 供平台 adapter 的 fetchSkillDownload 复用）。
+import {SKILLHUB_DOWNLOAD_BASE} from '../../shared/platform-constants';
 
 // SkillHub 公开分页接口（无凭证即可查询），真实服务端分页 + 搜索 + 排序。
 // 实测：page/pageSize/sortBy/order/keyword 均生效，响应 data.total 给出上游真实总量。
 const SKILLHUB_API_BASE = 'https://api.skillhub.cn/api/skills';
-
-/**
- * SkillHub 技能包 zip 下载直链（`?slug=<slug>`，无凭证，实测返回 application/zip）。
- *
- * 列表接口的 `upstream_url` 绝大多数为 null，旧实现只能回退到站内详情页
- * `https://skillhub.cn/skills/<slug>`——那是个 Next.js SPA 壳，抓 HTML 提取不到任何源，
- * 导致 SkillHub 源的技能**全部无法安装**。该直链取自官方前端的 getSkillDownloadUrl，
- * zip 内含完整的 SKILL.md + scripts/ + references/。
- *
- * 注意：不要附带 `namespace` 参数——实测带上会 404，仅传 slug 才能命中。
- */
-export const SKILLHUB_DOWNLOAD_BASE = 'https://api.skillhub.cn/api/v1/download';
 
 /** SkillHub 列表单条原始记录（仅取映射所需字段，其余按需扩展） */
 interface SkillhubApiEntry {

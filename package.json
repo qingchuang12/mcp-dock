@@ -20,8 +20,8 @@
     "typecheck": "npx tsc -p tsconfig.main.json --noEmit && npx tsc -p tsconfig.json --noEmit",
     "aggregate:registry": "node scripts/aggregate-mcp-registry.mjs",
     "precache:npm-servers": "node scripts/precache-npm-servers.mjs",
-    "start": "electron .",
-    "electron:dev": "pnpm run build:main && concurrently -k \"pnpm run dev:main\" \"pnpm run dev:renderer\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "start": "node scripts/electron-dev-launch.cjs .",
+    "electron:dev": "pnpm run build:main && concurrently -k \"pnpm run dev:main\" \"pnpm run dev:renderer\" \"wait-on tcp:127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 node scripts/electron-dev-launch.cjs .\"",
     "package": "pnpm run build && pnpm run link:deps && electron-builder",
     "package:mac": "pnpm run build && pnpm run link:deps && electron-builder --mac",
     "package:win": "pnpm run build && pnpm run link:deps && electron-builder --win --x64",
@@ -32,6 +32,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
     "@tanstack/react-query": "^5.17.0",
+    "asn1": "^0.2.6",
     "electron-store": "^8.1.0",
     "fuse.js": "^7.0.0",
     "i18next": "^23.7.0",
@@ -44,7 +45,6 @@
     "smol-toml": "^1.6.1",
     "ssh2": "^1.17.0",
     "ssh2-sftp-client": "^12.1.1",
-    "asn1": "^0.2.6",
     "zustand": "^4.4.0"
   },
   "devDependencies": {
@@ -154,5 +154,6 @@
   "allowScripts": {
     "electron@43.0.0": true,
     "esbuild@0.21.5": true
-  }
+  },
+  "packageManager": "pnpm@11.16.0+sha512.b767e9a98fc87aec0f42daefcd0e84941c2cdb45d73c4e1e68860fb2bdfdbe032ab592105479e5e05c237f740c8a5ffdbbb52385797ddc2296745a1bbb883e8d"
 }

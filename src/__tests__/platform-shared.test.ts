@@ -2,14 +2,16 @@
  * 测试1（第三批）：platforms/shared.ts 纯函数单测。
  * 锁定 extractPageInfo / locateArray 的行为，防止 P2-14 描述的分页静默错位。
  */
-import {describe, it, expect} from 'vitest';
+import {describe, expect, it} from 'vitest';
 import {
-    extractPageInfo,
-    locateArray,
-    pickLike,
-    emptyPageInfo,
     buildUrl,
+    emptyPageInfo,
+    extractPageInfo,
     fillTpl,
+    locateArray,
+    MODELSCOPE_ZIP_BASE,
+    modelscopeSkillZipUrl,
+    pickLike,
 } from '../main/platforms/shared';
 
 describe('locateArray', () => {
@@ -119,5 +121,36 @@ describe('buildUrl / fillTpl', () => {
         expect(url).toContain('q=a%20b');
         expect(url).toContain('page=2');
         expect(url).toContain('size=20');
+    });
+});
+
+describe('modelscopeSkillZipUrl', () => {
+    it('按 /skills/<owner>/<slug>/archive/zip/master 合成', () => {
+        expect(modelscopeSkillZipUrl('o/r')).toBe(
+            'https://www.modelscope.cn/skills/o/r/archive/zip/master'
+        );
+    });
+
+    it('逐段编码但保留路径分隔符 /', () => {
+        expect(modelscopeSkillZipUrl('a b/c d')).toContain('/skills/a%20b/c%20d/archive/zip/master');
+    });
+
+    it('把 %40 还原为 @（owner 可能含 @）', () => {
+        expect(modelscopeSkillZipUrl('team@corp/tool')).toContain('/skills/team@corp/tool/archive/zip/master');
+    });
+
+    it('空 skillId 返回 null', () => {
+        expect(modelscopeSkillZipUrl('')).toBeNull();
+        expect(modelscopeSkillZipUrl('   ')).toBeNull();
+    });
+
+    it('可覆盖 base（忽略尾部斜杠）', () => {
+        expect(modelscopeSkillZipUrl('o/r', 'https://mirror.example.com/')).toBe(
+            'https://mirror.example.com/skills/o/r/archive/zip/master'
+        );
+    });
+
+    it('默认 base 为实测下载主机', () => {
+        expect(MODELSCOPE_ZIP_BASE).toBe('https://www.modelscope.cn');
     });
 });

@@ -124,7 +124,7 @@ function renderNormalEmpty(
     desc = t('store.emptySkillUnsupportedDesc', '{{name}} is an SPA site...', { name: connName || t('store.emptySkillUnsupported') });
   } else if (resourceType === 'skills' && connectionsCount === 0) {
     title = t('store.emptySkillNoConnections', '添加 Skill 源管理以浏览平台 Skills');
-    desc = t('store.emptySkillNoConnectionsDesc', '当前 Skills 来自 GitHub Registry...');
+    desc = t('store.emptySkillNoConnectionsDesc', '当前尚未配置 Skill 源。');
   } else if (resourceType === 'mcp' && mcpConnId) {
     title = t('store.emptyMcpPlatform', '该平台暂无匹配的 MCP Server');
     desc = t('store.emptyMcpPlatformDesc', '来自...', { name: connName || t('store.emptyMcpPlatform') });

@@ -5,6 +5,7 @@
 
 import type {PlatformPageInfo, PlatformSkillListItem, SupportedPlatform} from './types';
 import {DIRECT_UA} from './types';
+import {modelscopeSkillZipUrl} from '../platforms/shared';
 
 /**
  * 从平台响应中提取分页元信息。
@@ -158,21 +159,13 @@ function toListItem(raw: Record<string, unknown>, platform: SupportedPlatform): 
     // 这里**不能**要求 sourceUrl 非空：ModelScope 有大量技能的 source_url 就是空串
     // （如 PantherAng/alipay-payment-integration），旧实现因此既给不出 sourceUrl 也给不出
     // downloadUrl，这些技能在商店里点安装必然失败。它们恰恰只能靠 zip 直链下载。
+    // 合成逻辑收敛在 platforms/shared.ts 的 modelscopeSkillZipUrl，与 adapter 共用同一实现。
     let downloadUrl: string | undefined;
     if (raw.download_url) {
         downloadUrl = String(raw.download_url);
-    } else if (
-        platform === 'modelscope' &&
-        !/(^|\.)github\.com\//.test(sourceUrl)
-    ) {
-        const skillId = String(raw.id || raw.slug || raw._id || '').trim();
-        if (skillId) {
-            const encodedId = skillId
-                .split('/')
-                .map((seg) => encodeURIComponent(seg).replace(/%40/g, '@'))
-                .join('/');
-            downloadUrl = `https://www.modelscope.cn/skills/${encodedId}/archive/zip/master`;
-        }
+    } else if (platform === 'modelscope' && !/(^|\.)github\.com\//.test(sourceUrl)) {
+        const skillId = String(raw.id || raw.slug || raw._id || '');
+        downloadUrl = modelscopeSkillZipUrl(skillId) ?? undefined;
     }
 
     return {

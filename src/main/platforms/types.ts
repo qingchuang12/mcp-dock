@@ -17,6 +17,7 @@ export type SupportedPlatform =
     | 'clawhub'
     | 'bailian'
     | 'npm'
+    | 'coze'
     | 'unknown';
 
 /** 归一化后的 skill 列表项（渲染层直接使用）。 */
@@ -93,6 +94,29 @@ export interface PlatformServerSearchPage {
     message?: string;
 }
 
+/** 本地命令型安装配置（npx / uvx / docker 等，ModelScope / npm 源）。 */
+export interface LocalInstall {
+    command: string;
+    args?: string[];
+    env?: Record<string, unknown>;
+    cwd?: string;
+}
+
+/**
+ * 远程托管型安装配置（如百炼）：向客户端 MCP 配置写入 URL 接入点而非本地命令，
+ * 客户端直连远程服务（SSE / Streamable HTTP），无需本地运行时。
+ */
+export interface RemoteInstall {
+    url: string;
+    type: 'sse' | 'http' | 'streamable-http';
+    /**
+     * 鉴权头模板：值为 `${KEY}` 占位符，安装时由用户在环境变量表单输入的值填充
+     * （如百炼 `{'Authorization': 'Bearer ${DASHSCOPE_API_KEY}'}`）。各远程源自行声明，
+     * 详情页不再硬编码具体键名。占位符未填/填空时对应键值对被剔除。
+     */
+    headersTemplate?: Record<string, string>;
+}
+
 /** MCP server 详情（含安装配置 / README）。 */
 export interface PlatformServerDetail {
     id: string;
@@ -111,7 +135,8 @@ export interface PlatformServerDetail {
     isVerified?: boolean;
     tags?: string[];
     readme?: string;
-    install: {command: string; args: string[]; env?: Record<string, unknown>; cwd?: string} | null;
+    /** 安装配置：本地命令型（LocalInstall）或远程托管型（RemoteInstall），null 表示无可用配置。 */
+    install: LocalInstall | RemoteInstall | null;
     envSchema?: unknown;
     source: SupportedPlatform;
     extra?: Record<string, unknown>;
@@ -220,6 +245,33 @@ export interface PlatformFacets {
  * - 离线优先平台（如 bailian）可依赖内置索引，无需网络/令牌；
  * - 解析通道（resolveSkill / resolveServerDetail）按平台能力可选实现，缺省抛错提示。
  */
+
+/**
+ * 平台侧 Skill 下载请求参数。
+ * secret 为连接绑定的令牌（如虾评的 API Key），由调用方从 secretStore 取出后注入，
+ * 适配器本身不接触凭证存储。
+ */
+export interface PlatformSkillDownloadParams {
+    /** 平台可访问的 baseUrl（用户配置或默认）。 */
+    baseUrl: string;
+    /** skill 在该平台的 id。 */
+    skillId: string;
+    /** 可选 Bearer 令牌；未绑定时为 null。 */
+    secret?: string | null;
+}
+
+/** 平台侧 Skill 下载结果。downloadUrl 指向可直接下载的 zip 包。 */
+export interface PlatformSkillDownload {
+    downloadUrl: string;
+    /** 平台返回的版本号（可选）。 */
+    version?: string;
+    /**
+     * 本次下载在平台侧消耗的积分数（可选）。部分平台下载付费技能会扣费，
+     * 需在 UI 明确提示，且失败时不应自动重试。
+     */
+    coinsSpent?: number;
+}
+
 export interface PlatformAdapter {
     /** 平台标识。 */
     readonly id: Exclude<SupportedPlatform, 'unknown'>;
@@ -240,6 +292,14 @@ export interface PlatformAdapter {
 
     /** 把某平台 skill 的 sourceUrl 解析为可安装 Skill。 */
     resolveSkill?(sm: SkillsManager, sourceUrl: string): Promise<ResolvePlatformResult>;
+
+    /**
+     * 取该平台某个 Skill 的 zip 下载直链（需鉴权的平台如虾评走此通道）。
+     * 是否实现本方法 = 该平台「能否在 mcp-dock 内安装 Skill」的唯一事实源，
+     * 渲染层据此决定安装按钮可用性（见 PLATFORM_SKILL_DOWNLOAD）。
+     * 未实现的平台视为不可安装，UI 应禁用安装并给出原因，而不是让安装静默产出空壳目录。
+     */
+    fetchSkillDownload?(params: PlatformSkillDownloadParams): Promise<PlatformSkillDownload>;
 
     /**
      * 返回该平台的分类/排序/来源/标签等面元数据（Frontend FilterBar 消费）。
@@ -273,6 +333,9 @@ export function platformTypeToSupported(pt: string): SupportedPlatform | null {
         // npm Registry：匿名公开，无 baseUrl 限制，走统一平台适配器通道
         case 'npm':
             return 'npm';
+        // 虾评（Coze）Skill 平台源
+        case 'coze':
+            return 'coze';
         default:
             return null;
     }

@@ -4,6 +4,7 @@
 
 import {memo, useMemo} from "react";
 import type {DataSource, ServerListItem, SkillListItem} from "../../api/registry";
+import {buildInstalledSkillKeys, isSkillInstalled, skillItemKeys} from "../../lib/skillIdentity";
 import ServerCard from "../ServerCard";
 import SkillCard from "../SkillCard";
 
@@ -28,6 +29,13 @@ const StoreGrid = memo(function StoreGrid({
     isDirectSkillSource,
     selectedSkillSourceId,
 }: StoreGridProps) {
+    // 已安装集合存的是物理目录名，列表项给的是平台展示名，两者口径不同，
+    // 统一展开成别名集合再比对（详见 lib/skillIdentity 的说明）
+    const installedSkillKeys = useMemo(
+        () => buildInstalledSkillKeys(installedSkillIds),
+        [installedSkillIds]
+    );
+
     const gridItems = useMemo(() => {
         if (resourceType === "mcp") {
             return (items as ServerListItem[]).map((server) => (
@@ -44,12 +52,15 @@ const StoreGrid = memo(function StoreGrid({
             <SkillCard
                 key={skill.id}
                 skill={skill}
-                isInstalled={installedSkillIds.has(skill.name)}
+                isInstalled={isSkillInstalled(
+                    installedSkillKeys,
+                    skillItemKeys({id: skill.id, name: skill.name, sourceUrl: skill.repository?.url})
+                )}
                 connectionId={isDirectSkillSource ? selectedSkillSourceId ?? undefined : undefined}
                 sourceUrl={isDirectSkillSource ? (skill.repository?.url || skill.authorUrl || undefined) : undefined}
             />
         ));
-    }, [resourceType, items, dataSource, installedServerIds, installedSkillIds, mcpConnId, isDirectSkillSource, selectedSkillSourceId]);
+    }, [resourceType, items, dataSource, installedServerIds, installedSkillKeys, mcpConnId, isDirectSkillSource, selectedSkillSourceId]);
 
     return (
         <div className="p-4">

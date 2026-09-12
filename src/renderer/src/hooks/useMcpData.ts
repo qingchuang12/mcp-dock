@@ -56,9 +56,9 @@ export function useMcpData(params: UseMcpDataParams): StoreData<ServerListItem> 
 
     // 内置源 - smithery：服务端分页，按需按页拉取，进入不再全量加载
     const smitheryPaged = useQuery({
-        queryKey: ['mcpSmithery', page, pageSize, debouncedSearch],
+        queryKey: ['mcpSmithery', page, pageSize, debouncedSearch, category],
         queryFn: async () => {
-            return fetchSmitheryServersPaged(page, pageSize, debouncedSearch);
+            return fetchSmitheryServersPaged(page, pageSize, debouncedSearch, category);
         },
         // S1-11: 翻页时保留上一页数据作为占位，避免整页 Loading 跳动
         placeholderData: keepPreviousData,

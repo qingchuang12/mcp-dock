@@ -213,6 +213,8 @@ declare const api: {
         isInstalled: (skillId: string) => Promise<boolean>;
         parseImportUrl: (url: string) => Promise<ImportParseResult>;
         installFromDiscovered: (skill: DiscoveredSkill, clients: SkillClientType[]) => Promise<SkillInstallResult>;
+        /** 平台源（如虾评）安装：用连接绑定的令牌换下载直链后落盘 */
+        installPlatformSkill: (connectionId: string, skillId: string, skillName: string, clients: SkillClientType[]) => Promise<SkillInstallResult>;
         getRemoteDetail: (githubPath: string) => Promise<{
             success: boolean;
             skill: DiscoveredSkill | null;

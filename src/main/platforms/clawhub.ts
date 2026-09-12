@@ -6,12 +6,16 @@
 import type {
     CategoryNode,
     PlatformAdapter,
+    PlatformPageInfo,
     PlatformSearchPage,
     PlatformSearchParams,
+    PlatformSkillDownload,
+    PlatformSkillDownloadParams,
     PlatformSkillListItem,
     SortOption,
 } from './types';
-import {buildHint, extractPageInfo, setDiagnostics} from './shared';
+import {CLAWHUB_DOWNLOAD_BASE} from '../../shared/platform-constants';
+import {buildHint, setDiagnostics} from './shared';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -55,8 +59,19 @@ interface RawClawhub {
     displayName?: string;
     description?: string;
     summary?: string;
-    native?: {skill?: {summary?: string; categories?: string[]}; categories?: string[]};
-    tags?: string[];
+    // ClawHub/Convex 真实结构中用于消歧义的发布者句柄（P0 修复依赖此字段）
+    ownerHandle?: string;
+    publisher?: {handle?: string};
+    // 站内详情页规范地址，含 owner 路径，优于拼接猜测（P2-2）
+    canonicalUrl?: string;
+    links?: {canonical?: string};
+    native?: {
+        ownerHandle?: string;
+        skill?: {summary?: string; categories?: string[]; stats?: {stars?: number}};
+        categories?: string[];
+    };
+    /** 注意：Convex 真实结构里 tags 是对象 {latest: <versionId>}，不是分类数组，不可当分类用。 */
+    tags?: Record<string, unknown>;
     score?: number;
     stars?: number;
     downloads?: number;
@@ -69,26 +84,64 @@ interface RawClawhub {
     categories?: string[];
 }
 
+/**
+ * 把任意候选值收敛为「非空字符串数组」。
+ * Convex 真实结构里 `tags` 是对象（{latest: versionId}）、部分条目根本没有 categories，
+ * 若直接 `a || b || c` 取值会拿到对象或 undefined，并一路透传到渲染层变成空标签 / 过滤报错。
+ */
+function toCatArray(v: unknown): string[] {
+    if (!Array.isArray(v)) return [];
+    return v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0);
+}
+
+/** 取条目的分类（优先 native.skill.categories，逐级回退；tags 对象不参与）。 */
+function pickCategories(raw: RawClawhub): string[] {
+    return toCatArray(raw.native?.skill?.categories ?? raw.native?.categories ?? raw.categories);
+}
+
 export function mapEntry(raw: RawClawhub): PlatformSkillListItem {
-    const id = raw.slug || raw.id || raw._id || raw.name || '';
+    const slug = raw.slug || raw.id || raw._id || raw.name || '';
+    const ownerHandle = raw.ownerHandle || raw.native?.ownerHandle || raw.publisher?.handle || '';
+    // id 编码为 ownerHandle/slug：ClawHub 上 slug 可被多发布者占用（如 answeroverflow），
+    // 单独 slug 无法唯一定位，安装直链会 409；带上 ownerHandle 才能消解歧义（P0 修复）。
+    const id = ownerHandle ? `${ownerHandle}/${slug}` : slug;
     const desc = raw.summary || raw.native?.skill?.summary || raw.description || '';
-    const cats: string[] = raw.native?.skill?.categories || raw.native?.categories || raw.categories || raw.tags || [];
-    const repo = raw.repoUrl || raw.repo || `https://clawhub.ai/skills/${id}`;
+    const cats: string[] = pickCategories(raw);
+    const repo = raw.repoUrl || raw.repo || `https://clawhub.ai/skills/${slug}`;
+    // downloadUrl 对齐 D3 口径：repo 是真 GitHub 仓库时保留（走 GitHub 解析通道），
+    // 否则给站内 zip 直链——不再把平台详情页地址当下载地址（点开必失败）。
+    // zip 通道只服务 clawhub 原生技能（skills-sh 镜像 slug 实测 404，见 plan-9.0），
+    // 这类条目的 repo 字段指向其 GitHub 仓库，恰好由上面的 GitHub 分支接管。
+    // 歧义 slug 必须带 ownerHandle 才能拿到 zip（否则 409），故 downloadUrl 一并拼上。
+    const isGithubRepo = /^https?:\/\/(?:www\.)?github\.com\//i.test(repo);
+    const downloadUrl = isGithubRepo
+        ? repo
+        : `${CLAWHUB_DOWNLOAD_BASE}?slug=${encodeURIComponent(slug)}${ownerHandle ? `&ownerHandle=${encodeURIComponent(ownerHandle)}` : ''}`;
+    // 详情页地址优先用 canonicalUrl（含 owner 路径，如 /rhyssullivan/skills/answeroverflow）
+    const canonical = raw.canonicalUrl || raw.links?.canonical;
+    const sourceUrl = isGithubRepo ? repo : (canonical ? `https://clawhub.ai${canonical}` : repo);
     return {
         id,
         name: raw.displayName || raw.name || raw.title || id,
         description: desc,
         source: 'clawhub',
-        sourceUrl: repo,
-        downloadUrl: repo,
-        stars: typeof raw.stars === 'number' ? raw.stars : undefined,
+        sourceUrl,
+        downloadUrl,
+        // stars 在 Convex 真实结构里是 native.skill.stats.stars（顶层无 stars 字段），需从这里取（P2-1）
+        stars: typeof raw.native?.skill?.stats?.stars === 'number'
+            ? raw.native.skill.stats.stars
+            : (typeof raw.stars === 'number' ? raw.stars : undefined),
         updatedAt: raw.updatedAt || raw.createdAt,
         category: Array.isArray(cats) && cats.length > 0 ? cats[0] : undefined,
         extra: {
             iconUrl: raw.iconUrl,
-            author: raw.author,
+            // Convex 真实结构顶层**没有** author 字段：原先只传 raw.author，
+            // 渲染层 useSkillsData 取不到便回退成 item.source → 每张卡片都显示 "@clawhub"。
+            // 改用 ownerHandle 兜底（已由上两行算出，是真实发布者，如 rhyssullivan）。
+            author: raw.author || ownerHandle || undefined,
             downloads: raw.downloads,
             score: raw.score,
+            ownerHandle,
             categories: cats,
         },
     };
@@ -220,8 +273,10 @@ export const clawhubAdapter: PlatformAdapter = {
         const {query, page, pageSize, baseUrl, category, sort, cacheDir} = params;
         if (cacheDir) runtimeCacheDir = cacheDir;
         const safePage = Math.max(1, page);
-        // 单一真实 RPC 地址（不走 probeEndpoints，不依赖 baseUrl）
-        const base = baseUrl ? baseUrl.replace(/\/+$/, '') : CLAWHUB_BASE;
+        // 单一真实 RPC 地址（不走 probeEndpoints，不依赖 baseUrl）。
+        // 注意：seed 的 baseUrl 是 clawhub.ai 主站，但搜索走 Convex RPC 域名；
+        // 若用 baseUrl 会 POST 到错误主机导致空结果，故这里固定用 CLAWHUB_BASE（P3-3）。
+        const base = CLAWHUB_BASE;
         const started = Date.now();
 
         // query 永远非空（空串静默返回空数组）；分类浏览传默认 a
@@ -229,7 +284,7 @@ export const clawhubAdapter: PlatformAdapter = {
         // 全分类时省略 categorySlug（传空串恒返回 0 条）
         const args: Record<string, unknown> = {
             query: q,
-            limit: Math.min(pageSize, CLAWHUB_PAGE_LIMIT),
+            limit: CLAWHUB_PAGE_LIMIT,
             highlightedOnly: false,
         };
         if (category && category !== 'all') {
@@ -254,14 +309,15 @@ export const clawhubAdapter: PlatformAdapter = {
             let items = r.json.map(mapEntry);
             // 在线成功：将本次结果累积进运行时缓存，作为后续离线回退索引
             if (cacheDir) saveCache(cacheDir, r.json);
-            // 客户端分类过滤（categorySlug 已带，兜底再筛一遍）
+            // 客户端分类过滤（categorySlug 已带，兜底再筛一遍）；
+            // 用 Array.isArray 兜底：非数组（历史缓存里的对象）会让 .includes 直接抛错
             if (category && category !== 'all') {
                 items = items.filter(i => {
-                    const cats = (i.extra as any)?.categories || [];
-                    return cats.includes(category);
+                    const cats = (i.extra as any)?.categories;
+                    return Array.isArray(cats) && cats.includes(category);
                 });
             }
-            // 客户端排序
+            // 客户端排序（relevance 为默认，无需处理；原 sort==='relevance' 分支不可达，已删除 P3-2）
             if (sort && sort !== 'relevance') {
                 if (sort === 'downloads') {
                     items.sort((a, b) => ((b.extra as any)?.downloads || 0) - ((a.extra as any)?.downloads || 0));
@@ -271,21 +327,23 @@ export const clawhubAdapter: PlatformAdapter = {
                         const db = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
                         return db - da;
                     });
-                } else if (sort === 'relevance') {
-                    items.sort((a, b) => ((b.extra as any)?.score || 0) - ((a.extra as any)?.score || 0));
                 }
             }
-            // 在线 RPC 暂无游标分页：当本页装满（返回条数达到 limit）时推断还有下一页，
-            // 允许翻第二页（否则比离线分支能力更弱，P1-18）。total 未知仍置 null。
-            const limit = Math.min(pageSize, CLAWHUB_PAGE_LIMIT);
-            const rawLen = r.json.length;
-            const pageInfo = extractPageInfo({data: {}}, safePage, pageSize, items.length);
-            pageInfo.total = null;
-            pageInfo.totalPages = null;
-            pageInfo.hasMore = rawLen >= limit;
+            // Convex RPC 无游标分页：已一次性拉取最多 CLAWHUB_PAGE_LIMIT 条（窗口），
+            // 在此按 (page,pageSize) 做客户端切片，保证翻页不重复、total/hasMore 准确（P1 修复）。
+            const total = items.length;
+            const start = (safePage - 1) * pageSize;
+            const paged = items.slice(start, start + pageSize);
+            const pageInfo: PlatformPageInfo = {
+                page: safePage,
+                pageSize,
+                total,
+                totalPages: total > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1,
+                hasMore: start + pageSize < total,
+            };
             setDiagnostics('clawhub', {
                 platform: 'clawhub',
-                baseUrl,
+                baseUrl: CLAWHUB_BASE,
                 query,
                 page: safePage,
                 authorized: false,
@@ -293,7 +351,7 @@ export const clawhubAdapter: PlatformAdapter = {
                 matchedUrl: `${base}/api/action`,
                 totalDurationMs: Date.now() - started,
             });
-            return {items, pageInfo, pagingMode: 'client', complete: false};
+            return {items: paged, pageInfo, pagingMode: 'client', complete: true};
         }
 
         // 联网失败：回退运行时累积的离线索引
@@ -304,9 +362,9 @@ export const clawhubAdapter: PlatformAdapter = {
                 ? offline
                 : offline.filter(
                       s =>
-                          (s.name || '').toLowerCase().includes(ql) ||
+                          (s.name || s.displayName || '').toLowerCase().includes(ql) ||
                           (s.title || '').toLowerCase().includes(ql) ||
-                          (s.description || '').toLowerCase().includes(ql)
+                          (s.description || s.summary || '').toLowerCase().includes(ql)
                   );
             const start = (safePage - 1) * pageSize;
             const slice = filtered.slice(start, start + pageSize);
@@ -324,8 +382,8 @@ export const clawhubAdapter: PlatformAdapter = {
             let offlineItems = slice.map(mapEntry);
                 if (category && category !== 'all') {
                     offlineItems = offlineItems.filter(i => {
-                        const cats = (i.extra as any)?.categories || [];
-                        return cats.includes(category);
+                        const cats = (i.extra as any)?.categories;
+                        return Array.isArray(cats) && cats.includes(category);
                     });
                 }
                 if (sort && sort !== 'relevance') {
@@ -367,6 +425,27 @@ export const clawhubAdapter: PlatformAdapter = {
         return {items: [], pageInfo: {page: safePage, pageSize, total: null, totalPages: null, hasMore: false}};
     },
 
+    /**
+     * 取 ClawHub 技能的 zip 下载直链（匿名、无需凭证）。
+     *
+     * 实测契约：`https://clawhub.ai/api/v1/download?slug=<slug>` 直接返回 zip（包内含 SKILL.md）。
+     * 该端点只服务 clawhub 原生技能——skills-sh 镜像 slug 实测 404（plan-9.0），
+     * 镜像条目的安装走其 GitHub 仓库（mapEntry 的 downloadUrl 已按此分流）。
+     * 下载端点固定在 clawhub.ai 主站，与搜索用的 Convex RPC 域名无关，故不拼用户 baseUrl。
+     */
+    async fetchSkillDownload({skillId}: PlatformSkillDownloadParams): Promise<PlatformSkillDownload> {
+        const raw = (skillId || '').trim();
+        if (!raw) {
+            throw new Error('缺少技能 slug，无法生成 ClawHub 下载直链。');
+        }
+        // id 由 mapEntry 编码为 ownerHandle/slug；歧义 slug 必须拆回 slug + ownerHandle，
+        // 否则直接下载会 409（P0 修复）。无斜杠则视为纯 slug，回退旧行为。
+        const slash = raw.lastIndexOf('/');
+        const slug = slash >= 0 ? raw.slice(slash + 1) : raw;
+        const ownerHandle = slash >= 0 ? raw.slice(0, slash) : '';
+        return {downloadUrl: `${CLAWHUB_DOWNLOAD_BASE}?slug=${encodeURIComponent(slug)}${ownerHandle ? `&ownerHandle=${encodeURIComponent(ownerHandle)}` : ''}`};
+    },
+
     getFacets() {
         // 以文档 14 类为准；若运行时累积的离线索引存在，将其 tags 作为补充合并（避免分类过滤与列表结果不一致）
         try {
@@ -374,7 +453,10 @@ export const clawhubAdapter: PlatformAdapter = {
             const raw = mergeRaw(readCache(seedFile()), file ? readCache(file) : []);
             const tagCount = new Map<string, number>();
             for (const r of raw) {
-                for (const t of r.tags || []) tagCount.set(t, (tagCount.get(t) || 0) + 1);
+                // Convex 真实结构无顶层 tags，分类在 native.skill.categories / native.categories / categories（P2-3）
+                for (const t of pickCategories(r)) {
+                    tagCount.set(t, (tagCount.get(t) || 0) + 1);
+                }
             }
             if (tagCount.size > 0) {
                 const baseMap = new Map(CLAWHUB_CATEGORIES.map(c => [c.id, c]));

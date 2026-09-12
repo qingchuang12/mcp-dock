@@ -10,13 +10,12 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import {execFile} from 'child_process';
 import {SKILL_SUPPORTED_CLIENTS, SkillClientType} from './config-manager';
 import {resolveSkillsPath} from './client-paths';
-import {extractZipEntries} from './archive';
+import {extractZipEntries, extractZipToDir} from './archive';
 import {
     fetchWithTimeout as githubFetchWithTimeout,
-    findSkillDirs,
+    findSkillDirsEx,
     getDefaultBranch,
     githubParseGitHubUrl,
     listDirFiles as githubListDirFiles,
@@ -75,6 +74,35 @@ function normalizeSkillRelPath(relPath: string): string {
         throw new Error(`非法附件路径：${relPath}`);
     }
     return rel;
+}
+
+/**
+ * 递归收集目录内所有文件相对 root 的路径（/ 分隔），供 zip 安装时把「实际装入的文件清单」
+ * 写入 .source.json。旧实现写死 files: []，导致「我的库」详情页看不到任何附属文件。
+ * 默认跳过 .source.json（它是后写的元数据，不属于技能内容）。
+ */
+async function collectRelativeFiles(root: string, skip: string[] = ['.source.json']): Promise<string[]> {
+    const out: string[] = [];
+    const stack: string[] = [root];
+    while (stack.length) {
+        const dir = stack.pop()!;
+        let entries: import('fs').Dirent[];
+        try {
+            entries = await fs.readdir(dir, {withFileTypes: true});
+        } catch {
+            continue;
+        }
+        for (const e of entries) {
+            const full = path.join(dir, e.name);
+            if (e.isDirectory()) {
+                stack.push(full);
+            } else if (e.isFile()) {
+                const rel = path.relative(root, full).split(path.sep).join('/');
+                if (!skip.includes(rel)) out.push(rel);
+            }
+        }
+    }
+    return out.sort();
 }
 
 export class SkillsManager {
@@ -282,6 +310,16 @@ export class SkillsManager {
         const skillName = skillId.split('/').pop() || skillId;
         assertSafeSkillName(skillName);
 
+        // 空文件清单必然写出「只有 .source.json」的空壳目录，客户端扫描不到 SKILL.md，
+        // 等价于没装上。此前该场景被判为成功（假成功），必须前置拦截。
+        // 注：不能依赖下方 `files.length > 0 && downloadedCount === 0` —— files 为空时该判据恒为 false。
+        if (!sourceInfo.files || sourceInfo.files.length === 0) {
+            return {
+                success: false,
+                error: '该 Skill 没有可下载的文件（文件清单为空），无法安装。',
+            };
+        }
+
         for (const client of clients) {
             try {
                 await this.ensureSkillsDir(client);
@@ -317,7 +355,8 @@ export class SkillsManager {
                     }
                 }
 
-                if (sourceInfo.files.length > 0 && downloadedCount === 0) {
+                // 文件清单已在入口保证非空，故此处 downloadedCount === 0 即全部下载失败
+                if (downloadedCount === 0) {
                     await fs.rm(skillPath, {recursive: true, force: true});
                     return {
                         success: false,
@@ -949,6 +988,12 @@ export class SkillsManager {
             const sourceContent = await fs.readFile(sourcePath, 'utf-8');
             const source: SkillSourceMeta = JSON.parse(sourceContent);
 
+            // zip 直链通道安装的 skill 不持久化 rawBaseUrl（预签名直链会过期），
+            // 无法按文件回源更新；此处如实说明来源限制，避免退化成 '/SKILL.md' 后误报成「网络问题」。
+            if (!source.source.rawBaseUrl) {
+                return {updated: false, error: '该技能经平台压缩包通道安装，未记录可回源地址，无法增量更新。请从来源重新安装。'};
+            }
+
             let downloadedCount = 0;
             for (const file of source.files) {
                 const fileUrl = `${source.source.rawBaseUrl}/${file}`;
@@ -1066,8 +1111,18 @@ export class SkillsManager {
             const branch = parsed.branch || await getDefaultBranch(owner, repo);
             const searchPath = parsed.subPath || '';
 
-            const skillDirs = await findSkillDirs(owner, repo, branch, searchPath);
+            const discovery = await findSkillDirsEx(owner, repo, branch, searchPath);
 
+            // 枚举因网络/限流失败时，绝不能谎报「仓库里没有 SKILL.md」（仓库明明有，只是没请求到）
+            if (discovery.enumerationFailed) {
+                return {
+                    success: false,
+                    skills: [],
+                    error: discovery.error || 'GitHub 接口请求失败（网络异常或限流），请稍后重试。',
+                };
+            }
+
+            const skillDirs = discovery.dirs;
             if (skillDirs.length === 0) {
                 return {success: false, skills: [], error: 'No SKILL.md found in this repository'};
             }
@@ -1129,9 +1184,13 @@ export class SkillsManager {
         skill: DiscoveredSkill,
         clients: SkillClientType[]
     ): Promise<SkillInstallResult> {
-        // 非 GitHub 源的 zip 下载直链（如 ModelScope）→ 走 zip 解压安装通道
+        // 非 GitHub 源的 zip 下载直链（如 ModelScope）→ 走 zip 解压安装通道。
+        // 传入可复现的来源地址（skill.repository.url，通常是平台技能页/仓库地址），
+        // 避免安装后用会过期的预签名直链作唯一溯源信息。
         if (skill.downloadUrl) {
-            return this.installSkillFromZip(skill.downloadUrl, skill.name, clients);
+            return this.installSkillFromZip(skill.downloadUrl, skill.name, clients, {
+                repositoryUrl: skill.repository?.url,
+            });
         }
 
         const {owner, repo, branch} = skill.repository;
@@ -1192,19 +1251,27 @@ export class SkillsManager {
      * 安装 Skill：下载 zip → 解压到客户端 skills 目录 → 写 .source.json。
      * 与 GitHub 通道解耦，不影响既有逻辑。
      */
-    private async installSkillFromZip(
+    async installSkillFromZip(
         downloadUrl: string,
         skillName: string,
-        clients: SkillClientType[]
+        clients: SkillClientType[],
+        /**
+         * 可选来源标识：平台源（如虾评）应传平台侧 id、详情页/接口地址与分支，
+         * 否则 .source.json 只能记录会过期的临时直链，无法溯源与更新。
+         */
+        source?: { id?: string; repositoryUrl?: string; branch?: string }
     ): Promise<SkillInstallResult> {
         const name = skillName.split('/').pop() || skillName;
-        const tmpRoot = path.join(os.tmpdir(), 'mcp-dock-ms-install');
+        // 每次安装使用独立工作子目录（父目录固定、子目录用随机 token 区分）。
+        // 旧实现所有安装共用同一 tmpRoot 且 finally 无条件 rm -rf，并发/重试时先结束的一次
+        // 会删掉另一次仍在使用的解压文件，导致安装失败或内容残缺——必须隔离。
+        const installRoot = path.join(os.tmpdir(), 'mcp-dock-ms-install');
         const token = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-        const zipPath = path.join(tmpRoot, `${token}.zip`);
-        const extractDir = path.join(tmpRoot, token);
+        const workDir = path.join(installRoot, token);
+        const extractDir = path.join(workDir, 'extract');
 
         try {
-            await fs.mkdir(tmpRoot, {recursive: true});
+            await fs.mkdir(workDir, {recursive: true});
 
             // 1) 下载 zip
             const res = await fetch(downloadUrl, {
@@ -1217,41 +1284,18 @@ export class SkillsManager {
                 };
             }
             const buf = Buffer.from(await res.arrayBuffer());
-            await fs.writeFile(zipPath, buf);
 
-            // 2) 解压（优先系统 tar，回退 PowerShell Expand-Archive）
+            // 2) 解压：改用项目自带的纯 Node 解包器 extractZipEntries（archive.ts）——零第三方依赖、跨平台。
+            //    不再 shell out 到外部 `tar` / `powershell Expand-Archive`：
+            //    ① 依赖 PATH 中的 tar（本机 /usr/bin/tar 1.35 根本读不了 ZIP，白跑一次再回退，慢且偶发失败）；
+            //    ② 无 PowerShell 的平台（Linux）会必然解压失败，是产品缺陷；
+            //    ③ 外部进程在并行安装时受资源争用，是测试 flaky 的根因。
             await fs.mkdir(extractDir, {recursive: true});
-            let extracted = false;
-            try {
-                await new Promise<void>((resolve, reject) =>
-                    execFile('tar', ['-xf', zipPath, '-C', extractDir], {windowsHide: true}, (err) =>
-                        err ? reject(err) : resolve()
-                    )
-                );
-                extracted = true;
-            } catch {
-                try {
-                    await new Promise<void>((resolve, reject) =>
-                        execFile(
-                            'powershell',
-                            [
-                                '-NoProfile',
-                                '-Command',
-                                `Expand-Archive -Force -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${extractDir.replace(/'/g, "''")}'`,
-                            ],
-                            {windowsHide: true},
-                            (err) => (err ? reject(err) : resolve())
-                        )
-                    );
-                    extracted = true;
-                } catch {
-                    extracted = false;
-                }
-            }
-            if (!extracted) {
+            const writtenCount = await extractZipToDir(buf, extractDir);
+            if (writtenCount === 0) {
                 return {
                     success: false,
-                    error: '解压 Skill 压缩包失败：系统缺少 tar 或 PowerShell Expand-Archive 支持。',
+                    error: '压缩包内没有可解压的文件。',
                 };
             }
 
@@ -1259,6 +1303,21 @@ export class SkillsManager {
             //    或单 <slug>/SKILL.md），需递归找到含 SKILL.md 的目录，否则整体 cp 会把 SKILL.md
             //    放到 skillPath/skills/.../SKILL.md，客户端按 <skillDir>/SKILL.md 扫描会读不到。
             const skillRoot = await findSkillRootDir(extractDir);
+
+            // 3.1) 记录「实际装入的文件清单」（相对 skillRoot，/ 分隔）。
+            //      旧实现写死 files: []，导致「我的库」详情页看不到任何附属文件、也无法据此校验完整性。
+            const installedFiles = await collectRelativeFiles(skillRoot);
+
+            // 3.2) 解析可复现的来源信息：分支不再臆造 'master'，预签名直链不再持久化为 rawBaseUrl。
+            //      仅当来源可解析为 GitHub 仓库时才去取真实默认分支（其它平台无 Git 语义，留空）。
+            const repoUrl = source?.repositoryUrl ?? '';
+            let branch = source?.branch ?? '';
+            if (!branch && repoUrl && /github\.com/i.test(repoUrl)) {
+                const parsedRepo = githubParseGitHubUrl(repoUrl);
+                if (parsedRepo) {
+                    branch = parsedRepo.branch || await getDefaultBranch(parsedRepo.owner, parsedRepo.repo);
+                }
+            }
 
             // 4) 写入各客户端
             for (const client of clients) {
@@ -1288,16 +1347,20 @@ export class SkillsManager {
                     }
 
                     const sourceMeta: SkillSourceMeta = {
-                        id: name,
+                        id: source?.id || name,
                         installedAt: new Date().toISOString(),
                         updatedAt: new Date().toISOString(),
                         source: {
-                            repositoryUrl: downloadUrl,
-                            branch: 'master',
+                            // 记录可复现的平台来源页/接口地址（虾评=平台侧 skill 页）；无则留空，
+                            // 绝不落回会过期的预签名直链。
+                            repositoryUrl: repoUrl,
+                            branch,
                             skillPath: '',
-                            rawBaseUrl: downloadUrl,
+                            // 预签名 zip 直链会过期（实测 sign 参数约 1 小时后失效），不能作为持久化
+                            // rawBaseUrl；zip 通道的文件清单已固化在 files 字段，更新需重新解析来源，故留空。
+                            rawBaseUrl: '',
                         },
-                        files: [],
+                        files: installedFiles,
                     };
                     await fs.writeFile(
                         path.join(skillPath, '.source.json'),
@@ -1314,7 +1377,8 @@ export class SkillsManager {
         } catch (error) {
             return {success: false, error: (error as Error).message};
         } finally {
-            await fs.rm(tmpRoot, {recursive: true, force: true}).catch(() => {
+            // 只删本次安装自己的子目录，避免并发安装互删
+            await fs.rm(workDir, {recursive: true, force: true}).catch(() => {
             });
         }
     }

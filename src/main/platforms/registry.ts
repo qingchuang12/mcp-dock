@@ -11,15 +11,22 @@ import {skillsmpAdapter} from './skillsmp';
 import {bailianAdapter} from './bailian';
 import {modelscopeAdapter} from './modelscope';
 import {npmAdapter} from './npm';
+import {cozeAdapter} from './coze';
 
-const adapters: Record<Exclude<SupportedPlatform, 'unknown'>, PlatformAdapter> = {
+const adapters: Partial<Record<Exclude<SupportedPlatform, 'unknown'>, PlatformAdapter>> = {
     modelscope: modelscopeAdapter,
     skillhub: skillhubAdapter,
     skillsmp: skillsmpAdapter,
     clawhub: clawhubAdapter,
     bailian: bailianAdapter,
-    // safeskill 暂无独立 adapter，暂复用 skillhub 形态（前向兼容占位）
-    safeskill: skillhubAdapter,
+    // 虾评（Coze）Skill 平台源：直连公开分页接口，匿名可读列表
+    coze: cozeAdapter,
+    // safeskill：该站点未开放技能列表接口（官方文档声明的 /v1/search 线上未部署，实测
+    // /v1/search nginx 404、/api/v1/search 应用层 404，2026-09-10），无可用 adapter。
+    // 显式不注册 → getAdapter() 返回 null → 上层如实报「不支持」，
+    // 不再复用 skillhub 数据串出结果（旧占位映射会把别家数据当 SafeSkill 结果返回）。
+    // 2026-09-12：该源已从 SKILL_PLATFORM_TYPES 下线（不再可新建）；此处仍不注册，
+    // 使存量连接的查询走 unsupported 分支如实提示，而非退化成通用错误态。
     // npm Registry：MCP 服务器发现源（独立 adapter，完全不影响 modelscope 逻辑）
     npm: npmAdapter,
 };
@@ -34,6 +41,7 @@ export function listAdapters(): PlatformAdapter[] {
     const out: PlatformAdapter[] = [];
     for (const k of Object.keys(adapters) as Exclude<SupportedPlatform, 'unknown'>[]) {
         const a = adapters[k];
+        if (!a) continue; // Partial 后允许缺键（如 safeskill 显式不注册）
         if (!seen.has(a.id)) {
             seen.add(a.id);
             out.push(a);

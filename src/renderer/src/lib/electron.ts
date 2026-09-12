@@ -19,6 +19,7 @@ import type {ConsistencyItem, ConsistencyReport} from '../../../main/cloud-consi
 import type {CloudSyncConfig, CloudSyncConfigInput, CloudSyncResult} from '../../../shared/cloud-sync-constants';
 import {defaultCloudSyncConfig} from '../../../shared/cloud-sync-constants';
 import type {SyncTask, SyncTaskKind, SyncTaskScope} from '../../../shared/sync-task-types';
+import type {McpServerConfig} from '../../../main/config/types';
 // Skill 导出结果：与本文件共用（data 声明为 Uint8Array 而非 main 侧的 Node Buffer，
 // 避免 renderer 类型图引入 node Buffer 导致 Blob 构造参数类型冲突）
 export interface SkillsExportResult {
@@ -56,20 +57,9 @@ export type {
     SourceFilter,
 } from '../../../main/platforms/types';
 
-export interface McpServerConfig {
-    command?: string;
-    args?: string[];
-    env?: Record<string, string>;
-    url?: string;
-    type?: 'stdio' | 'http' | 'streamable-http' | 'sse';
-    headers?: Record<string, string>;
-    /** 第三方 server 许可证标识（npm 来源）。Phase 6 合规汇总用。 */
-    license?: string;
-    /** 来源平台标识（如 'npm'）。 */
-    source?: string;
-    /** 来源主页 URL。 */
-    homepage?: string;
-}
+// McpServerConfig 统一 re-export 主进程单一事实源（config/types.ts），不再本地重复定义——
+// 本地旧定义缺少 cwd / enable 可选字段，存在类型漂移隐患（与 preload 同款改法）
+export type {McpServerConfig} from '../../../main/config/types';
 
 export interface RuntimeInfo {
     available: boolean;
@@ -346,6 +336,8 @@ interface ElectronAPI {
         parseImportUrl: (url: string) => Promise<ImportParseResult>;
         resolvePlatformUrl: (url: string) => Promise<ImportParseResult>;
         installFromDiscovered: (skill: DiscoveredSkill, clients: SkillClientType[]) => Promise<SkillInstallResult>;
+        /** 平台源（如虾评）安装：用连接绑定的令牌换下载直链后落盘 */
+        installPlatformSkill: (connectionId: string, skillId: string, skillName: string, clients: SkillClientType[]) => Promise<SkillInstallResult>;
         getLocalDetail: (skillId: string) => Promise<LocalSkillDetail | null>;
         /** 创建本地自定义 Skill（无网络） */
         createCustom: (input: CustomSkillInput, clients: SkillClientType[]) => Promise<CreateCustomSkillResult>;
@@ -441,7 +433,7 @@ interface ElectronAPI {
         setEnabled: (id: string, enabled: boolean) => Promise<ApiConnection>;
         /** 恢复被删除的内置 MCP 源（smithery） */
         restoreBuiltinMcp: () => Promise<ApiConnection[]>;
-        /** 恢复被删除的内置 Skill 源（GitHub Registry） */
+        /** 恢复被删除的内置 Skill 源（ClawHub 等） */
         restoreBuiltinSkill: () => Promise<ApiConnection[]>;
     };
     // 统一平台适配器通道（新架构）
@@ -831,6 +823,7 @@ const mockAPI: ElectronAPI = {
         parseImportUrl: async () => ({success: false, skills: [], error: 'Not available in browser'}),
         resolvePlatformUrl: async () => ({success: false, skills: [], error: 'Not available in browser'}),
         installFromDiscovered: async () => ({success: true}),
+        installPlatformSkill: async () => ({success: false, error: 'Not available in browser'}),
         createCustom: async (input) => ({success: true, skillName: input.name}),
         updateCustom: async (originalName) => ({success: true, skillName: originalName}),
         saveWithCloudSync: async () => ({success: false, error: 'Not available in browser'}),

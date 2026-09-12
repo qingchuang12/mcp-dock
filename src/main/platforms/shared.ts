@@ -44,6 +44,14 @@ export async function fetchText(
 }
 
 /**
+ * ModelScope 连接级退避序列（E2）：上游网关对新建连接偶发返回连接超时（UND_ERR_CONNECT_TIMEOUT），
+ * 实测新建连接超时率 33–50%，首次超时可达 ~10s。默认的 400/800ms 退避对这类「连接级」抖动偏短，
+ * 故 ModelScope 走更长的首跳等待（1.5s / 4s），给网关更多恢复时间，降低翻页时整页误报「请求失败」。
+ * 仅由 modelscope 调用方传入；其它平台沿用默认 [400, 800]。
+ */
+export const MODELSCOPE_RETRY_DELAYS_MS = [1500, 4000];
+
+/**
  * PUT 请求并返回 JSON（用于 ModelScope MCP server 端点）。
  *
  * 返回值区分两种失败，供调用方给出准确提示：
@@ -52,14 +60,16 @@ export async function fetchText(
  *
  * 重试：ModelScope 网关对突发/并发连接偶发返回连接超时（UND_ERR_CONNECT_TIMEOUT），
  * 单次裸请求失败率很高，翻页时几乎每页都可能误报「请求失败」。对网络错误/超时/5xx
- * 自动重试 2 次（退避 400/800ms），与 Skill 端点 probeEndpoints 内的 fetchWithRetry 一致。
+ * 自动重试（退避序列见 `retryDelaysMs`，默认 400/800ms，ModelScope 走 MODELSCOPE_RETRY_DELAYS_MS），
+ * 与 Skill 端点 probeEndpoints 内的 fetchWithRetry 一致。
  * 4xx（鉴权/参数错误/配额 403）为终态不重试——403 限流需保持原样让调用方提示用户稍后重试。
  */
 export async function fetchJson(
     url: string,
     body: Record<string, unknown>,
     timeoutMs = 20000,
-    extraHeaders: Record<string, string> = {}
+    extraHeaders: Record<string, string> = {},
+    retryDelaysMs: number[] = [400, 800]
 ): Promise<{json: any; text: string; status: number; ok: boolean} | null> {
     const headers: Record<string, string> = {
         'User-Agent': UA,
@@ -68,7 +78,7 @@ export async function fetchJson(
         ...extraHeaders,
     };
 
-    for (let i = 0; i <= 2; i++) {
+    for (let i = 0; i <= retryDelaysMs.length; i++) {
         const controller = new AbortController();
         const t = setTimeout(() => (controller as any).abort(), timeoutMs);
         try {
@@ -95,7 +105,7 @@ export async function fetchJson(
         } finally {
             clearTimeout(t);
         }
-        if (i < 2) await new Promise(r => setTimeout(r, 400 * Math.pow(2, i)));
+        if (i < retryDelaysMs.length) await new Promise(r => setTimeout(r, retryDelaysMs[i]));
     }
     return null;
 }
@@ -105,6 +115,33 @@ export function buildUrl(base: string, path: string): string {
     const b = base.replace(/\/+$/, '');
     const p = path.startsWith('/') ? path : `/${path}`;
     return b + p;
+}
+
+/**
+ * ModelScope 原生 Skill 的 zip 下载直链基址（实测可用的下载主机，带 www）。
+ *
+ * ModelScope 有大量技能的 `source_url` 为空、只有平台站点页地址，无法走 GitHub 通道；
+ * 这类技能只能靠平台压缩包直链安装，其规律（匿名、无需凭证、实测返回 zip）：
+ *   https://www.modelscope.cn/skills/<owner>/<slug>/archive/zip/master
+ */
+export const MODELSCOPE_ZIP_BASE = 'https://www.modelscope.cn';
+
+/**
+ * 合成 ModelScope 原生 Skill 的 zip 下载直链；skillId 为空时返回 null。
+ *
+ * 对 skillId 逐段 `encodeURIComponent`（保留 '/' 作为路径分隔），并把 `%40` 还原为 '@'
+ * —— owner 名可能含 '@'，编码后服务端反而不认。
+ * 该编码逻辑与 resolvers/pagination.ts 的既有实现同源，此处收敛为单一实现，供
+ * adapter（安装直链）与 resolver（列表 downloadUrl）复用，避免两处漂移。
+ */
+export function modelscopeSkillZipUrl(skillId: string, base: string = MODELSCOPE_ZIP_BASE): string | null {
+    const id = (skillId || '').trim();
+    if (!id) return null;
+    const encodedId = id
+        .split('/')
+        .map((seg) => encodeURIComponent(seg).replace(/%40/g, '@'))
+        .join('/');
+    return `${base.replace(/\/+$/, '')}/skills/${encodedId}/archive/zip/master`;
 }
 
 /** 把模板里的 {q}/{page}/{size}/{category}/{sort}/{order} 占位符替换为转义后的实际值。 */
@@ -231,19 +268,20 @@ export interface ProbeResult {
 }
 
 /**
- * 带超时与指数退避重试的 fetch（P1-15）。
- * - 网络错误（fetch 抛错）/ 5xx 视为可重试，最多重试 2 次，退避 400ms / 800ms；
+ * 带超时与退避重试的 fetch（P1-15）。
+ * - 网络错误（fetch 抛错）/ 5xx 视为可重试，按 `retryDelaysMs` 退避（默认 400ms / 800ms）；
  * - 4xx（鉴权/参数错误）与 2xx 为终态，不重试，直接返回。
  * 每个请求自带 AbortController 超时控制。
+ * `retryDelaysMs` 的长度即重试次数（数组每项对应一次重试前的等待毫秒数）。
  */
 async function fetchWithRetry(
     url: string,
     headers: Record<string, string>,
     timeoutMs: number,
-    maxRetries = 2
+    retryDelaysMs: number[] = [400, 800]
 ): Promise<{res: Response; text: string}> {
     let lastErr: unknown;
-    for (let i = 0; i <= maxRetries; i++) {
+    for (let i = 0; i <= retryDelaysMs.length; i++) {
         const controller = new AbortController();
         const t = setTimeout(() => (controller as any).abort(), timeoutMs);
         try {
@@ -262,8 +300,8 @@ async function fetchWithRetry(
         } finally {
             clearTimeout(t);
         }
-        if (i < maxRetries) {
-            await new Promise(r => setTimeout(r, 400 * Math.pow(2, i)));
+        if (i < retryDelaysMs.length) {
+            await new Promise(r => setTimeout(r, retryDelaysMs[i]));
         }
     }
     throw lastErr;
@@ -279,7 +317,8 @@ export async function probeEndpoints(
     category: string,
     sort = '',
     secret?: string | null,
-    order = ''
+    order = '',
+    retryDelaysMs: number[] = [400, 800]
 ): Promise<ProbeResult> {
     const headers: Record<string, string> = {
         'User-Agent': UA,
@@ -314,7 +353,7 @@ export async function probeEndpoints(
         const attempt: DirectSearchAttempt = {url, ok: false, durationMs: 0};
 
         try {
-            const {res, text} = await fetchWithRetry(url, headers, timeoutMs);
+            const {res, text} = await fetchWithRetry(url, headers, timeoutMs, retryDelaysMs);
             attempt.status = res.status;
             attempt.contentType = res.headers.get('content-type') || '';
 

@@ -55,7 +55,10 @@ type CacheKey =
     | 'smithery-index'
     | 'skills-index'
     | `smithery-detail-${string}`
-    | `skills-detail-${string}`;
+    | `skills-detail-${string}`
+    // 平台直连源（ModelScope / SkillHub / 虾评等）的搜索结果缓存，
+    // 走 indexTTL；key 只含查询条件，不含凭证。
+    | `platform-search-${string}`;
 
 /**
  * 缓存配置
@@ -67,6 +70,10 @@ interface CacheConfig {
     detailTTL: number;
     /** 缓存版本号，用于强制失效 */
     version: string;
+    /** 内存缓存条目上限（D12：platform-search-* 按 查询×页码×分类 组合爆炸，需钳制） */
+    maxMemoryEntries: number;
+    /** 磁盘缓存文件上限（仅统计 cacheDir 根下的 *.enc，不含 details/ 子目录） */
+    maxDiskFiles: number;
 }
 
 // ==================== 默认配置 ====================
@@ -78,6 +85,8 @@ const DEFAULT_CONFIG: CacheConfig = {
     // 旧的 skills-index 缓存里全是无 SKILL.md 的条目（详情页必报“加载 Skill 失败”），
     // 提升版本号以强制失效历史缓存。
     version: '1.1.0',
+    maxMemoryEntries: 200,
+    maxDiskFiles: 500,
 };
 
 // ==================== CacheManager 类 ====================
@@ -321,6 +330,55 @@ export class CacheManager {
             fs.writeFileSync(filePath, encrypted);
         } catch (error) {
             console.error(`Failed to encrypt/write cache for ${key}:`, error);
+        }
+
+        // 容量上限（D12）：内存 Map 与磁盘 .enc 均按 platform-search-* 的
+        // 查询×页码×分类 组合无界增长，写入后统一裁剪。
+        this.evictIfNeeded();
+    }
+
+    /**
+     * 容量裁剪：内存超 maxMemoryEntries 时按 cachedAt 升序淘汰最旧条目；
+     * 磁盘超 maxDiskFiles 时按 mtimeMs 升序删除 cacheDir 根下最旧的 *.enc
+     * （不含 details/ 子目录，避免误删详情缓存）。任何 fs 异常一律吞掉，
+     * 淘汰失败绝不能让缓存写入本身失败。
+     */
+    private evictIfNeeded(): void {
+        try {
+            if (this.memoryCache.size > this.config.maxMemoryEntries) {
+                const entries = [...this.memoryCache.entries()].sort(
+                    (a, b) => a[1].cachedAt - b[1].cachedAt
+                );
+                const excess = this.memoryCache.size - this.config.maxMemoryEntries;
+                for (let i = 0; i < excess; i++) {
+                    this.memoryCache.delete(entries[i][0]);
+                }
+            }
+
+            const files: {path: string; mtimeMs: number}[] = [];
+            for (const file of fs.readdirSync(this.cacheDir)) {
+                if (!file.endsWith('.enc')) continue;
+                const filePath = path.join(this.cacheDir, file);
+                try {
+                    const stat = fs.statSync(filePath);
+                    if (stat.isFile()) files.push({path: filePath, mtimeMs: stat.mtimeMs});
+                } catch {
+                    // 单个文件 stat 失败不影响整体裁剪
+                }
+            }
+            if (files.length > this.config.maxDiskFiles) {
+                files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+                const excess = files.length - this.config.maxDiskFiles;
+                for (let i = 0; i < excess; i++) {
+                    try {
+                        fs.unlinkSync(files[i].path);
+                    } catch {
+                        // 删除失败（占用/权限）跳过，下轮再裁
+                    }
+                }
+            }
+        } catch {
+            // 裁剪失败不影响主流程
         }
     }
 

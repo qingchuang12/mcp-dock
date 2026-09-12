@@ -99,6 +99,8 @@ export default function PlatformServerDetail({connId, serverId, seedItem}: Props
     const [iconError] = useState(false);
     // 环境变量表单（envSchema 有必填项时让用户填写）
     const [envInputs, setEnvInputs] = useState<Record<string, string>>({});
+    // 远程托管型的接入地址（可在安装模态中编辑；打开时由 detail 初始化）
+    const [remoteUrl, setRemoteUrl] = useState('');
 
     const {data: detail, isLoading, error} = useQuery({
         queryKey: ['platformServerDetail', connId, serverId],
@@ -127,6 +129,14 @@ export default function PlatformServerDetail({connId, serverId, seedItem}: Props
     useEffect(() => {
         if (!detail?.install) {
             setRuntimeInfo(null);
+            setRemoteUrl('');
+            return;
+        }
+        // 远程托管型（如百炼）：无本地命令，跳过运行时检测，连接由客户端直连 URL 完成
+        if ('url' in detail.install) {
+            setRuntimeInfo({available: true, version: null, path: 'remote'});
+            setRemoteUrl(detail.install.url);
+            setEnvInputs({});
             return;
         }
         const runtime = commandToRuntime(detail.install.command);
@@ -166,6 +176,19 @@ export default function PlatformServerDetail({connId, serverId, seedItem}: Props
     const requiredEnv = envSchemaObj.required ?? [];
     const hasEnvForm = Object.keys(envProps).length > 0;
 
+    // 远程型鉴权头按 headersTemplate 生成：${KEY} 占位符由用户输入的环境变量填充，
+    // 不硬编码具体键名（各远程源在 install 里自行声明模板）；替换后为空的键值对剔除，
+    // 全空则不写 headers（与「key 未输入时不带鉴权头」的既有行为一致）。
+    const buildRemoteHeaders = (template?: Record<string, string>): Record<string, string> | undefined => {
+        if (!template) return undefined;
+        const headers = Object.fromEntries(
+            Object.entries(template)
+                .map(([k, v]) => [k, v.replace(/\$\{(\w+)\}/g, (_, name: string) => (envInputs[name] ?? '').trim())])
+                .filter(([, v]) => v !== '')
+        );
+        return Object.keys(headers).length > 0 ? headers : undefined;
+    };
+
     const handleInstall = async () => {
         if (!detail?.install) return;
         const targets = selectedClients.filter(c => !installedClients.includes(c));
@@ -180,30 +203,50 @@ export default function PlatformServerDetail({connId, serverId, seedItem}: Props
                 return;
             }
         }
+        // 产品决策：codex-cli（TOML 适配器）只序列化 command/args/env/cwd，远程 URL 型配置
+        // 写入时 url 会被静默丢弃产生坏条目——主进程不设防线，UI 层在安装前明示拦截
+        if ('url' in detail.install && targets.includes('codex-cli')) {
+            setInstallError(t('detail.remoteCodexUnsupported'));
+            return;
+        }
 
         setIsInstalling(true);
         setInstallError(null);
         try {
-            const command = await resolveCommand(
-                detail.install.command,
-                api.env.getNpxPath,
-                api.env.getUvxPath
-            );
-            const env: Record<string, string> = Object.fromEntries(
-                Object.entries(detail.install.env ?? {}).map(([k, v]) => [k, String(v)])
-            );
-            for (const k of Object.keys(envProps)) {
-                if (envInputs[k]) env[k] = envInputs[k];
+            let config: McpServerConfig;
+            if ('url' in detail.install) {
+                // 远程托管型：写入 URL 接入点 + 按模板生成的鉴权头，无需本地命令/运行时
+                // （必填 key 已在上面 requiredEnv 校验兜底；占位符未填时对应头被剔除）
+                const headers = buildRemoteHeaders(detail.install.headersTemplate);
+                config = {
+                    url: remoteUrl.trim() || detail.install.url,
+                    type: detail.install.type,
+                    ...(headers ? {headers} : {}),
+                    ...(detail.source ? {source: detail.source} : {}),
+                    ...(detail.sourceUrl ? {homepage: detail.sourceUrl} : {}),
+                };
+            } else {
+                const command = await resolveCommand(
+                    detail.install.command,
+                    api.env.getNpxPath,
+                    api.env.getUvxPath
+                );
+                const env: Record<string, string> = Object.fromEntries(
+                    Object.entries(detail.install.env ?? {}).map(([k, v]) => [k, String(v)])
+                );
+                for (const k of Object.keys(envProps)) {
+                    if (envInputs[k]) env[k] = envInputs[k];
+                }
+                config = {
+                    command,
+                    args: detail.install.args,
+                    ...(Object.keys(env).length > 0 ? {env} : {}),
+                    // Phase 6：把 npm 来源的许可证/来源随安装配置透传，供主进程聚合汇总
+                    ...(detail.extra?.license ? {license: String(detail.extra.license)} : {}),
+                    ...(detail.source ? {source: detail.source} : {}),
+                    ...(detail.sourceUrl ? {homepage: detail.sourceUrl} : {}),
+                };
             }
-            const config: McpServerConfig = {
-                command,
-                args: detail.install.args,
-                ...(Object.keys(env).length > 0 ? {env} : {}),
-                // Phase 6：把 npm 来源的许可证/来源随安装配置透传，供主进程聚合汇总
-                ...(detail.extra?.license ? {license: String(detail.extra.license)} : {}),
-                ...(detail.source ? {source: detail.source} : {}),
-                ...(detail.sourceUrl ? {homepage: detail.sourceUrl} : {}),
-            };
             const result = await api.config.installServer(serverId, config, targets);
             if (result.success.length > 0) {
                 addInstalledServerId(serverId);
@@ -240,14 +283,25 @@ export default function PlatformServerDetail({connId, serverId, seedItem}: Props
 
     const openInspector = () => {
         if (!detail?.install) return;
-        const config: { command: string; args?: string[]; env?: Record<string, string>; cwd?: string } = {
-            command: detail.install.command,
-            args: detail.install.args,
-            ...(detail.install.env
-                ? {env: Object.fromEntries(Object.entries(detail.install.env).map(([k, v]) => [k, String(v)]))}
-                : {}),
-            ...(detail.install.cwd ? {cwd: detail.install.cwd} : {}),
-        };
+        let config: Record<string, unknown>;
+        if ('url' in detail.install) {
+            // 远程托管型：Inspector 支持 URL 直连；按模板生成鉴权头（key 未输入则不带）
+            const headers = buildRemoteHeaders(detail.install.headersTemplate);
+            config = {
+                url: remoteUrl.trim() || detail.install.url,
+                type: detail.install.type,
+                ...(headers ? {headers} : {}),
+            };
+        } else {
+            config = {
+                command: detail.install.command,
+                args: detail.install.args,
+                ...(detail.install.env
+                    ? {env: Object.fromEntries(Object.entries(detail.install.env).map(([k, v]) => [k, String(v)]))}
+                    : {}),
+                ...(detail.install.cwd ? {cwd: detail.install.cwd} : {}),
+            };
+        }
         const configStr = encodeURIComponent(JSON.stringify(config));
         navigate(`/inspector?config=${configStr}`);
     };
@@ -279,8 +333,13 @@ export default function PlatformServerDetail({connId, serverId, seedItem}: Props
         );
     }
 
-    const runtime = detail.install ? commandToRuntime(detail.install.command) : 'node';
-    const runtimeAvailable = runtimeInfo?.available ?? false;
+    // 仅本地命令型参与运行时判定；远程托管型无本地命令（runtimeInfo 已在 effect 中置为可用）
+    const localInstall = detail.install && 'command' in detail.install ? detail.install : null;
+    const runtime = localInstall ? commandToRuntime(localInstall.command) : 'node';
+    // 远程托管型无本地运行时依赖：渲染期直接视为可用——runtimeInfo 由 effect 异步置位，
+    // 首帧为 null，若等它按钮会晚一帧出现、警告横幅闪现一帧
+    const isRemoteInstall = !!detail.install && 'url' in detail.install;
+    const runtimeAvailable = isRemoteInstall || (runtimeInfo?.available ?? false);
     const canInstall = !!detail.install;
 
     // 分类：优先详情接口的分类友好名，否则用列表项透传的中文名，最后回退原始 slug（slug 仅供过滤）
@@ -490,20 +549,22 @@ export default function PlatformServerDetail({connId, serverId, seedItem}: Props
                                 <ExternalLinkIcon className="w-3.5 h-3.5"/>
                             </a>
                         )}
-                        <a
-                            href="#"
-                            onClick={(e) => {
-                                e.preventDefault();
-                                api.system.openExternal(`https://modelscope.cn/mcp?name=${encodeURIComponent(serverId)}`);
-                            }}
-                            className="flex items-center justify-between text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-accent)] transition-colors"
-                        >
-              <span className="flex items-center gap-2">
-                <ExternalLinkIcon className="w-4 h-4"/>
-                  {t('store.mcpPlatform') || '平台源'}（ModelScope）
-              </span>
-                            <ExternalLinkIcon className="w-3.5 h-3.5"/>
-                        </a>
+                        {detail.source === 'modelscope' && (
+                            <a
+                                href="#"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    api.system.openExternal(`https://modelscope.cn/mcp?name=${encodeURIComponent(serverId)}`);
+                                }}
+                                className="flex items-center justify-between text-[12px] text-[var(--color-muted2)] hover:text-[var(--color-accent)] transition-colors"
+                            >
+                                <span className="flex items-center gap-2">
+                                    <ExternalLinkIcon className="w-4 h-4"/>
+                                    {t('store.mcpPlatform') || '平台源'}（ModelScope）
+                                </span>
+                                <ExternalLinkIcon className="w-3.5 h-3.5"/>
+                            </a>
+                        )}
                     </div>
 
                     {/* Details 卡片 */}
@@ -520,7 +581,10 @@ export default function PlatformServerDetail({connId, serverId, seedItem}: Props
                                     <div className="flex items-center gap-1">
                                         <span
                                             className={`w-2 h-2 rounded-full ${runtimeAvailable || runtime === 'docker' ? 'bg-[#34c759]' : 'bg-[#ff9f0a]'}`}/>
-                                        <span className="text-[var(--color-text)] capitalize">{detail.install.command}</span>
+                                        {/* 远程托管型无本地命令，展示接入类型（sse/http 等） */}
+                                        <span className="text-[var(--color-text)] capitalize">
+                                            {'url' in detail.install ? detail.install.type : detail.install.command}
+                                        </span>
                                     </div>
                                 </div>
                             )}
@@ -567,6 +631,21 @@ export default function PlatformServerDetail({connId, serverId, seedItem}: Props
                             <p className="text-[12px] text-[var(--color-muted)] font-mono break-all">{detail.id}</p>
                         </div>
                     </div>
+
+                    {/* 远程托管型：接入地址（可编辑，slug 以百炼控制台为准） */}
+                    {detail.install && 'url' in detail.install && (
+                        <div>
+                            <label
+                                className="block text-[12px] font-medium text-[var(--color-text)] mb-2">{t('detail.remoteUrlLabel') || 'MCP URL'}</label>
+                            <input
+                                type="text"
+                                value={remoteUrl}
+                                onChange={(e) => setRemoteUrl(e.target.value)}
+                                className="w-full px-2.5 py-1.5 rounded-md bg-[var(--color-surface-hover)] text-[12px] text-[var(--color-text)] font-mono border-none focus:ring-1 focus:ring-[#0a84ff]"
+                            />
+                            <p className="text-[11px] text-[var(--color-muted)] mt-1">{t('detail.remoteUrlHint')}</p>
+                        </div>
+                    )}
 
                     {/* 环境变量表单 */}
                     {hasEnvForm && (

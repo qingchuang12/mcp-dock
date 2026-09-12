@@ -124,23 +124,6 @@ AI-Tools supports two data sources:
 
 Data syncs automatically every 3 days.
 
-## Community Contributions
-
-We welcome community contributions! You can submit your own MCP Server or Skill configurations.
-
-### How to Contribute
-
-1. Fork this repository
-2. Copy the template file:
-   - For MCP Servers: `community-registry/servers/_template.json`
-   - For Skills: `community-registry/skills/_template.json`
-3. Fill in your configuration
-4. Submit a Pull Request
-
-Your PR will be automatically validated against our JSON Schema. Once merged, your contribution will be included in the next data sync.
-
-See [Community Registry README](./community-registry/README.md) for detailed instructions.
-
 ## FAQ
 
 ### Where is data stored?

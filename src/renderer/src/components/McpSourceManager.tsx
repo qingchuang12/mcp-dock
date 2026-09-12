@@ -16,8 +16,9 @@ export default function McpSourceManager({onChanged}: Props) {
             namespace="mcpSource"
             kind="mcp"
             platformTypes={MCP_PLATFORM_TYPES}
-            builtinIds={[BUILTIN_MCP_SOURCE_IDS.smithery]}
-            createDefaults={{platformType: 'custom', baseUrl: ''}}
+            builtinIds={[BUILTIN_MCP_SOURCE_IDS.smithery, BUILTIN_MCP_SOURCE_IDS.bailian]}
+            // 默认用无需 baseUrl 的内置源；自定类型已从新建下拉移除（custom）
+            createDefaults={{platformType: 'smithery', baseUrl: ''}}
             exportNames={{single: 'mcp-source.json', multi: 'mcp-sources.json'}}
             showPlatformHint
             badgeOrder="builtin-default"

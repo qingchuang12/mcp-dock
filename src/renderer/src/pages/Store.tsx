@@ -61,16 +61,18 @@ export default function StorePage() {
   const isPlatformSource = !!source.mcpConnId || source.isDirectSkillSource;
   const pageSizeOptions = isPlatformSource ? [10, 20, 50] : [10, 20, 50, 100];
 
-  // 仅在「切换资源类型 / 切换源」时把筛选项重置为默认；跳过组件挂载那一次。
-  // 原因：/store 与详情页是平级路由，进入详情会卸载本组件、返回时重新挂载；
-  // 而 useEffect 在挂载时必定执行一次，若不在首次挂载跳过，返回时即便筛选值
-  // 已保存在全局 store，也会被这次执行冲成 'all'，表现为「返回后分类变回全部」。
-  const skipResetOnMount = useRef(true);
+  // 仅在「切换资源类型 / 切换源」时把筛选项重置为默认；挂载/返回不重置。
+  // 用「源快照比较」而非单次布尔标志：React.StrictMode 开发模式会双执行 effect，
+  // 单布尔标志首次执行就被置 false，第二次执行不再 return，把分类冲成 'all'，
+  // 表现为「进详情返回后分类变回全部」。快照比较下挂载时 deps===快照，永不触发重置。
+  const prevSource = useRef({resourceType, mcpConnId: source.mcpConnId, selectedSkillSourceId: source.selectedSkillSourceId});
   useEffect(() => {
-    if (skipResetOnMount.current) {
-      skipResetOnMount.current = false;
-      return;
-    }
+    const changed =
+      prevSource.current.resourceType !== resourceType ||
+      prevSource.current.mcpConnId !== source.mcpConnId ||
+      prevSource.current.selectedSkillSourceId !== source.selectedSkillSourceId;
+    prevSource.current = {resourceType, mcpConnId: source.mcpConnId, selectedSkillSourceId: source.selectedSkillSourceId};
+    if (!changed) return;
     setCategory('all');
     setSort('relevance');
     setSourceFilter('all');

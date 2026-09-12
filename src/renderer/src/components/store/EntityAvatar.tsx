@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import {useState} from 'react';
 
 const COLORS = [
   'bg-blue-500',
@@ -38,6 +38,8 @@ export default function EntityAvatar({
       <img
         src={iconUrl}
         alt={name}
+        // 一页最多 50 张封面，懒加载避免进店首屏同时发起全部图片请求拖慢列表
+        loading="lazy"
         className={imgClass}
         onError={() => setImgError(true)}
       />
@@ -49,6 +51,7 @@ export default function EntityAvatar({
       <img
         src={`https://avatars.githubusercontent.com/${githubUsername}`}
         alt={name}
+        loading="lazy"
         className={imgClass}
         onError={() => setAvatarError(true)}
       />

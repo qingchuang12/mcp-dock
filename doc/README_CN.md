@@ -123,23 +123,6 @@ AI-Tools 支持两个数据源：
 
 数据每 3 天自动同步一次。
 
-## 社区贡献
-
-我们欢迎社区贡献！你可以提交自己的 MCP Server 或 Skill 配置。
-
-### 如何贡献
-
-1. Fork 本仓库
-2. 复制模板文件：
-   - MCP Server：`community-registry/servers/_template.json`
-   - Skill：`community-registry/skills/_template.json`
-3. 填写配置信息
-4. 提交 Pull Request
-
-你的 PR 会根据 JSON Schema 自动校验。合并后，下次数据同步时会包含你的贡献。
-
-详细说明请参阅 [社区注册表 README](./community-registry/README_CN.md)。
-
 ## 常见问题
 
 ### 数据存储在哪里？

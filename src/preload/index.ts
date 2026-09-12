@@ -19,19 +19,12 @@ import type {CloudSyncConfig, CloudSyncConfigInput, CloudSyncResult} from '../sh
 import type {ConsistencyReport} from '../main/cloud-consistency';
 import type {SkillsExportResult} from '../main/skills-export';
 import type {SyncTask, SyncTaskKind, SyncTaskScope} from '../shared/sync-task-types';
+import type {McpServerConfig} from '../main/config/types';
 
 // 类型定义
-export interface McpServerConfig {
-    command: string;
-    args?: string[];
-    env?: Record<string, string>;
-    /** 第三方 server 许可证标识（npm 来源）。Phase 6 合规汇总用。 */
-    license?: string;
-    /** 来源平台标识（如 'npm'）。 */
-    source?: string;
-    /** 来源主页 URL。 */
-    homepage?: string;
-}
+// McpServerConfig 统一 re-export 主进程单一事实源（config/types.ts），不再本地重复定义——
+// 本地旧形态（command 必填、缺 url/type/headers）曾与主进程漂移，误导远程型安装的维护判断。
+export type {McpServerConfig} from '../main/config/types';
 
 export interface RuntimeInfo {
     available: boolean;
@@ -340,6 +333,14 @@ const api = {
             ipcRenderer.invoke('skills:resolve-platform-url', url),
         installFromDiscovered: (skill: DiscoveredSkill, clients: SkillClientType[]): Promise<SkillInstallResult> =>
             ipcRenderer.invoke('skills:install-from-discovered', skill, clients),
+        /** 平台源（如虾评）安装：用连接绑定的令牌换下载直链后落盘 */
+        installPlatformSkill: (
+            connectionId: string,
+            skillId: string,
+            skillName: string,
+            clients: SkillClientType[]
+        ): Promise<SkillInstallResult> =>
+            ipcRenderer.invoke('skills:install-platform-skill', connectionId, skillId, skillName, clients),
         exportZip: (names: string[]): Promise<SkillsExportResult> =>
             ipcRenderer.invoke('skills:export-zip', names),
         createCustom: (input: CustomSkillInput, clients: SkillClientType[]): Promise<CreateCustomSkillResult> =>

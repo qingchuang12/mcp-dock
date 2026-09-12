@@ -320,6 +320,12 @@ export default function Detail() {
     const runtime = getRuntime();
     const repoUrl = getRepoUrl();
 
+    // Smithery 服务器若没有任何配置项，ConfigForm 会渲染「无需配置」空态；
+    // 此时上方的「安装前请配置服务器设置」与之语义矛盾，需要一并隐藏。
+    const hideConfigDescription =
+        isSmitheryDetail(server) &&
+        Object.keys(server.connection?.configSchema?.properties || {}).length === 0;
+
     return (
         <div className="flex flex-col h-full bg-[var(--color-bg)]">
             {/* 头部导航 - 参考 SkillDetail 风格 */}
@@ -663,11 +669,13 @@ export default function Detail() {
                     {/* 配置表单 */}
                     {selectedClients.filter(c => !installedClients.includes(c)).length > 0 && (
                         <>
-                            <div className="border-t border-[var(--color-border)] pt-4">
-                                <p className="text-[12px] text-[var(--color-muted2)] mb-4">
-                                    {t('detail.configDescription')}
-                                </p>
-                            </div>
+                            {!hideConfigDescription && (
+                                <div className="border-t border-[var(--color-border)] pt-4">
+                                    <p className="text-[12px] text-[var(--color-muted2)] mb-4">
+                                        {t('detail.configDescription')}
+                                    </p>
+                                </div>
+                            )}
 
                             {/* Smithery 配置表单 */}
                             {isSmitheryDetail(server) && (

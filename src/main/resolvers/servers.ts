@@ -274,7 +274,7 @@ export async function searchPlatformServersPaged(
 /**
  * 获取单个平台 MCP server 的详情（含安装配置 / README）。
  *
- * 当前仅 ModelScope 有稳定公开契约：
+ * ModelScope 使用稳定公开契约；已注册且实现 fetchServerDetail 的平台由其适配器提供详情：
  *   GET {baseUrl}/openapi/v1/mcp/servers/{id}
  * 返回字段（实测 @modelcontextprotocol/fetch）：
  *   - server_config[].mcpServers[name] = { command, args, env? }  ← 即为安装所需配置
@@ -290,23 +290,23 @@ export async function fetchPlatformServerDetail(
 ): Promise<PlatformServerDetail> {
     const sp = platform as Exclude<SupportedPlatform, 'unknown'>;
 
-    // npm Registry：独立适配器，委托 npmAdapter.fetchServerDetail 完成详情解析。
-    // 此分支为「只增不减」的早返回，modelscope 旧分支字节级不变。
-    if (sp === 'npm') {
-        const a = getAdapter('npm');
-        if (!a?.fetchServerDetail) throw new Error('npm 适配器未实现 fetchServerDetail');
-        return a.fetchServerDetail({query: '', page: 1, pageSize: 20, baseUrl, secret}, serverId);
+    // 已注册详情能力的平台统一委派给 adapter。商店详情页仍走此旧入口，
+    // 因此不能只让列表使用 adapter，否则离线索引源（如百炼）会在详情页被错误拒绝。
+    // ModelScope 保留下面的既有公开 API 解析路径，避免改变其详情契约。
+    if (sp !== 'modelscope') {
+        const adapter = getAdapter(sp);
+        if (adapter?.fetchServerDetail) {
+            return adapter.fetchServerDetail({query: '', page: 1, pageSize: 20, baseUrl, secret}, serverId);
+        }
+
+        const msg = `平台 ${sp} 暂不支持 MCP server 详情（无公开契约）`;
+        if (process.env.NODE_ENV !== 'production') console.debug('[resolver]', msg);
+        throw new Error(msg);
     }
 
     const log = (..._args: unknown[]) => {
         if (process.env.NODE_ENV !== 'production') console.debug('[resolver]', ..._args);
     };
-
-    if (sp !== 'modelscope') {
-        const msg = `平台 ${sp} 暂不支持 MCP server 详情（无公开契约）`;
-        log(msg);
-        throw new Error(msg);
-    }
 
     const headers: Record<string, string> = {
         'User-Agent': DIRECT_UA,

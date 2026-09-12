@@ -2,8 +2,8 @@
  * 配置表单组件 - Surge 风格
  */
 
-import { useState, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
+import {useEffect, useState} from 'react';
+import {useTranslation} from 'react-i18next';
 
 interface ConfigSchema {
   type: string;
@@ -83,20 +83,32 @@ export default function ConfigForm({
 
   if (properties.length === 0) {
     return (
-      <div className="text-center py-6">
-        <p className="text-[13px] text-[var(--color-muted2)] mb-4">No configuration required</p>
-        <div className="flex justify-center gap-2">
+      <div className="flex flex-col items-center text-center px-5 py-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)]">
+        {/* 「无需配置」是就绪态而非警告，用绿色对勾徽标传达「不需要任何操作，直接安装即可」 */}
+        <div className="w-11 h-11 rounded-full bg-success/10 flex items-center justify-center mb-3">
+          <svg className="w-6 h-6 text-[var(--color-success)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+               strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round"
+                  d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+          </svg>
+        </div>
+
+        <p className="text-[13px] font-medium text-[var(--color-text)] leading-relaxed">
+          {t('detail.noConfigRequired')}
+        </p>
+
+        <div className="flex justify-center gap-2 mt-5">
           <button
             type="button"
             onClick={onCancel}
-            className="btn btn-secondary"
+            className="btn btn-secondary cursor-pointer"
           >
             {t('detail.cancel')}
           </button>
           <button
             onClick={() => onSubmit({})}
             disabled={isLoading}
-            className="btn btn-primary disabled:opacity-50"
+            className="btn btn-primary cursor-pointer disabled:opacity-50"
           >
             {isLoading ? t('common.loading') : t('detail.save')}
           </button>
@@ -199,14 +211,14 @@ export default function ConfigForm({
         <button
           type="button"
           onClick={onCancel}
-          className="btn btn-secondary"
+          className="btn btn-secondary cursor-pointer"
         >
           {t('detail.cancel')}
         </button>
         <button
           type="submit"
           disabled={isLoading}
-          className="btn btn-primary disabled:opacity-50"
+          className="btn btn-primary cursor-pointer disabled:opacity-50"
         >
           {isLoading ? t('common.loading') : t('detail.save')}
         </button>

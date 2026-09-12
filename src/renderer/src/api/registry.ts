@@ -7,7 +7,7 @@ import {getElectronAPI} from '../lib/electron';
  * 本版本在不依赖自建后端的前提下，接入以下**公开、无需密钥**的数据源，
  * 让 Smithery / Skills 列表立即有真实数据：
  *   - Smithery     : 公开 registry API registry.smithery.ai/servers
- *   - Skills       : GitHub 公共 skills 索引（anthropics/skills 的 skills/ 目录）
+ *   - Skills       : 平台直连源（api.platforms.searchSkills）统一收口
  *
  * 若用户自建了数据后端，可继续设置 VITE_REGISTRY_API_URL 覆盖默认行为。
  */
@@ -234,19 +234,26 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
-// GitHub contents API 通用响应条目（Skills 索引使用）
-// ---------------------------------------------------------------------------
-interface GithubContentEntry {
-  name: string;
-  type: string;
-  path: string;
-  html_url: string;
-}
-
-// ---------------------------------------------------------------------------
 // Smithery (公开 registry API)
 // ---------------------------------------------------------------------------
 const SMITHERY_API = 'https://registry.smithery.ai/servers';
+
+/**
+ * smithery 官方分类 → 官方语义搜索词（取自 smithery.ai/servers 切换分类时实际下发的 ?q= 值；
+ * "All" 不带 q，所以不在表内，由前端默认空 category 表示全量）。
+ * smithery 无分类字段，分类本质是该语义词的语义搜索召回子集。
+ */
+export const SMITHERY_CATEGORY_QUERIES: Record<string, string> = {
+    'web-search': 'search the web for information',
+    'browser-automation': 'automate and control web browsers',
+    'academic-research': 'research papers citations and scholarly',
+    finance: 'financial data stocks and trading',
+    reasoning: 'thinking reasoning and problem solving',
+    'dev-tools': 'software development and coding tools',
+};
+
+/** smithery 官方分类 ID 列表（不含 All） */
+export const SMITHERY_CATEGORY_IDS = Object.keys(SMITHERY_CATEGORY_QUERIES);
 
 interface SmitheryServer {
   qualifiedName: string;
@@ -304,12 +311,17 @@ export async function fetchSmitheryServersPaged(
   page: number,
   pageSize: number,
   query = '',
+  category = '',
   signal?: AbortSignal,
 ): Promise<SmitheryPageResult> {
   const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   const safeSize = Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : 20;
+  // 分类 → 官方语义搜索词，与用户输入合并成同一 q（All/未知分类不带词 → 全量）。
+  // smithery 无分类字段，分类即语义词语义搜索召回子集。
+  const categoryQuery = category ? (SMITHERY_CATEGORY_QUERIES[category] ?? '') : '';
+  const effectiveQuery = [query.trim(), categoryQuery].filter(Boolean).join(' ');
   const qs = [`page=${safePage}`, `pageSize=${safeSize}`];
-  if (query.trim()) qs.push(`q=${encodeURIComponent(query.trim())}`);
+  if (effectiveQuery) qs.push(`q=${encodeURIComponent(effectiveQuery)}`);
   const res = await getJson<SmitheryResponse>(`${SMITHERY_API}?${qs.join('&')}`, signal);
   const items = (res.servers || []).map(s => ({
     id: `smithery-${s.qualifiedName}`,
@@ -329,17 +341,8 @@ export async function fetchSmitheryServersPaged(
 }
 
 // ---------------------------------------------------------------------------
-// Skills (GitHub 索引：anthropics/skills 的 skills/ 目录)
+// Skills 分类推断（被 search.ts / useSkillsData / 测试共享）
 // ---------------------------------------------------------------------------
-// 注意：此处必须指向真正含 SKILL.md 的仓库。
-// 曾错误地用 modelcontextprotocol/servers 的 src/ 目录当技能源，
-// 但那些是 MCP server（全仓库 0 个 SKILL.md），详情页解析必然
-// 返回 “No SKILL.md found” → 每一条都提示“加载 Skill 失败”。
-const SKILLS_REPO = 'anthropics/skills';
-const SKILLS_API = `https://api.github.com/repos/${SKILLS_REPO}`;
-const SKILLS_DIR = 'skills';
-const SKILLS_BRANCH = 'main';
-
 // 根据名称推断 Skill 分类，使 Store 的分类筛选真正可用
 // （目录名本身不含分类信息，这里用关键词做轻量映射，兜底 productivity）
 export function inferSkillCategoryId(name: string): string {
@@ -358,37 +361,6 @@ export function inferSkillCategoryId(name: string): string {
     if (keys.some(k => n.includes(k))) return cat;
   }
   return 'productivity';
-}
-
-async function fetchGithubSkills(signal?: AbortSignal): Promise<SkillListItem[]> {
-  const entries = await getJson<GithubContentEntry[]>(
-    `${SKILLS_API}/contents/${SKILLS_DIR}`,
-    signal
-  );
-  const dirs = entries.filter(e => e.type === 'dir');
-  const skills: SkillListItem[] = dirs.map(dir => {
-    const categoryId = inferSkillCategoryId(dir.name);
-    return {
-      id: `skill-${dir.name}`,
-      name: dir.name,
-      description: `Anthropic official skill: ${dir.name}`,
-      author: 'anthropics',
-      authorUrl: `https://github.com/${SKILLS_REPO}`,
-      category: categoryId,
-      categoryId,
-      stars: 0,
-      forks: 0,
-      updatedAt: new Date().toISOString().slice(0, 10),
-      repository: {
-        // html_url 形如 https://github.com/anthropics/skills/tree/main/skills/<name>，
-        // 正是 parseGitHubUrl 支持的 /tree/<branch>/<subPath> 形态，详情页可直接解析。
-        url: dir.html_url,
-        branch: SKILLS_BRANCH,
-        skillPath: dir.path,
-      },
-    };
-  });
-  return skills;
 }
 
 // ---------------------------------------------------------------------------
@@ -562,63 +534,4 @@ export async function fetchReadmeFromGitHub(repository: {
   }
 
   return null;
-}
-
-export async function fetchSkillsList(signal?: AbortSignal, noCache = false): Promise<SkillListItem[]> {
-  const custom = import.meta.env.VITE_REGISTRY_API_URL as string | undefined;
-  if (custom) {
-    return getJson<SkillListItem[]>(`${custom}/skills`, signal);
-  }
-
-  const diskKey = 'skills-index';
-  const api = getElectronAPI();
-
-  // SWR：优先返回落盘缓存，首屏秒开；后台静默刷新（noCache 时跳过缓存，直走网络）。
-  if (!noCache) {
-    const cachedEntry = api ? await api.cache.get<SkillListItem[]>(diskKey) : null;
-    if (cachedEntry?.data) {
-      const cached = cachedEntry.data;
-      revalidateSkillsList(diskKey, signal).catch(() => {});
-      return cached;
-    }
-  }
-
-  return revalidateSkillsList(diskKey, signal, noCache);
-}
-
-async function revalidateSkillsList(
-  diskKey: string,
-  signal?: AbortSignal,
-  noCache = false,
-): Promise<SkillListItem[]> {
-  try {
-    const data = await fetchGithubSkills(signal);
-    const api = getElectronAPI();
-    // noCache 模式下不回写磁盘/内存缓存，保证商店数据始终最新
-    if (api && !noCache) await api.cache.set(diskKey, data);
-    if (!noCache) setCache('skills:github', data);
-    return data;
-  } catch (err) {
-    // 网络失败时降级到内存缓存，否则继续抛出（让 React Query 走 error 态）。
-    // noCache 模式下不回退任何缓存（哪怕来自其它页面），保证商店数据始终最新。
-    if (!noCache) {
-      const mem = getCached<SkillListItem[]>('skills:github');
-      if (mem) return mem;
-    }
-    throw err;
-  }
-}
-
-export async function forceRefreshSkillsList(signal?: AbortSignal): Promise<SkillListItem[]> {
-  clearCached('skills:github');
-  const diskKey = 'skills-index';
-  const api = getElectronAPI();
-  if (api) await api.cache.delete(diskKey).catch(() => {});
-  return revalidateSkillsList(diskKey, signal);
-}
-
-export async function clearSkillsCache(): Promise<void> {
-  clearCached('skills:github');
-  const api = getElectronAPI();
-  if (api) await api.cache.delete('skills-index').catch(() => {});
 }

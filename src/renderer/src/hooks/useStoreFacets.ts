@@ -3,6 +3,7 @@ import {useTranslation} from 'react-i18next';
 import type {ApiConnection, CategoryNode, PlatformFacets, SortOption} from '../lib/electron';
 import {useElectronAPI} from '../lib/electron';
 import type {DataSource} from '../api/registry';
+import {SMITHERY_CATEGORY_IDS} from '../api/registry';
 import type {StoreResourceType} from './storeTypes';
 import {STORE_QUERY_STALE_MS} from './storeTypes';
 
@@ -19,6 +20,16 @@ const BUILTIN_CATEGORY_IDS = [
 ];
 
 const BUILTIN_SORT_IDS = ['relevance', 'stars', 'updated'] as const;
+
+/** smithery 官方分类中文名（All 由前端默认空 category 表示，故不在列；名称固定、不依赖 i18n） */
+const SMITHERY_CATEGORY_LABELS: Record<string, string> = {
+    'web-search': '网络搜索',
+    'browser-automation': '浏览器自动化',
+    'academic-research': '学术研究',
+    finance: '金融',
+    reasoning: '推理',
+    'dev-tools': '开发工具',
+};
 
 /** 通过 i18n 翻译平台分类树（递归处理子节点） */
 function translateCategoryTree(categories: CategoryNode[], t: (key: string) => string, i18n: {exists: (key: string) => boolean}): CategoryNode[] {
@@ -53,7 +64,7 @@ export interface UseStoreFacetsParams {
 /**
  * 拉取当前数据源的分类/排序/来源面元数据。
  * - 平台直连源：调用 platforms.facets（adapter 提供真实分类树 + 排序 + 来源）
- * - 内置源（GitHub/smithery）：返回 9 类本地推断分类 + 通用排序
+ * - 内置源（smithery 等）：返回 9 类本地推断分类 + 通用排序
  *
  * 返回 null 表示当前数据源无分类（如未选择连接）。
  */
@@ -80,10 +91,14 @@ export function useStoreFacets(params: UseStoreFacetsParams): PlatformFacets | n
                     sortOptions: facets.sortOptions ? translateSortOptions(facets.sortOptions, t, i18n) : [],
                 };
             }
-            // 内置源：本地 9 类 + 通用排序（名称通过 i18n 翻译）
-            // S0-3: smithery 服务端不支持分类/排序参数，抑制 facets，避免用户看到无效筛选控件
+            // 内置源：smithery 用官方 7 分类（All 由默认空 category 表示全量）；内置源用本地 9 类 + 通用排序
+            // S0-3: smithery 服务端不支持排序参数，排序仍抑制（避免无效排序控件），分类走语义搜索词（见 SMITHERY_CATEGORY_QUERIES）
             if (dataSource === 'smithery') {
-                return {categories: [], sortOptions: [], supportsSubcategories: false};
+                return {
+                    categories: SMITHERY_CATEGORY_IDS.map(id => ({id, name: SMITHERY_CATEGORY_LABELS[id] ?? id})),
+                    sortOptions: [],
+                    supportsSubcategories: false,
+                };
             }
             return {
                 categories: BUILTIN_CATEGORY_IDS.map(id => ({id, name: t(`mcpCategory.${id}`)})),

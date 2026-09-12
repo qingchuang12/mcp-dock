@@ -8,7 +8,13 @@ import {existsSync} from 'fs';
 import {ClientType, ConfigManager, SkillClientType} from './config-manager';
 import {EnvManager} from './env-manager';
 import {HistoryManager} from './history-manager';
-import {DiscoveredSkill, SkillCloudConflict, SkillsManager, SkillSourceMeta} from './skills-manager';
+import {
+    DiscoveredSkill,
+    SkillCloudConflict,
+    SkillInstallResult,
+    SkillsManager,
+    SkillSourceMeta
+} from './skills-manager';
 import {exportSkillsToZip, type SkillsExportResult} from './skills-export';
 import type {
     PlatformFacets,
@@ -28,6 +34,7 @@ import {
     searchPlatformServersPaged
 } from './platform-skill-resolver';
 import {getAdapter, getFacets, listAdapters} from './platforms/registry';
+import {buildPlatformSearchKey, withPlatformSearchCache} from './platforms/search-cache';
 import {getCacheManager} from './cache-manager';
 import {getSecretStore, TokenMeta, TokenScope} from './secret-store';
 import {ApiConnection, getConnectionsStore} from './connections-store';
@@ -123,7 +130,8 @@ function createWindow() {
 
     // 开发模式加载 Vite 开发服务器
     if (isDev) {
-        const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
+        // 兜底地址与 vite.config.mts 的 server.host/port 保持一致（显式 IPv4，避免地址族错配）
+        const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://127.0.0.1:5173';
         // 开发模式下移除 HTML 中的 CSP 限制，避免拦截 Vite 的 localhost/ws 模块与 HMR 连接导致黑屏
         session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
             callback({
@@ -614,6 +622,40 @@ ipcMain.handle('skills:install-from-discovered', async (_, skill: DiscoveredSkil
     return result;
 });
 
+/**
+ * 从平台源（如虾评）安装 Skill：用连接绑定的令牌换取 zip 下载直链，再复用既有 zip 安装通道。
+ * 平台未实现 fetchSkillDownload 时明确报错，避免静默回退到「无文件清单」的兜底路径产出空壳目录。
+ */
+ipcMain.handle('skills:install-platform-skill', async (_, connectionId: string, skillId: string, skillName: string, clients: SkillClientType[]): Promise<SkillInstallResult> => {
+    const conn = connectionsStore.get(connectionId);
+    if (!conn) return {success: false, error: '连接不存在'};
+
+    const sp = platformTypeToSupported(conn.platformType);
+    const adapter = sp ? getAdapter(sp) : null;
+    if (!adapter?.fetchSkillDownload) {
+        return {
+            success: false,
+            error: `该平台源不支持在 mcp-dock 内安装（${conn.platformType}）：没有可用的下载通道。`,
+        };
+    }
+
+    const secret = conn.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
+    let download: { downloadUrl: string; version?: string; coinsSpent?: number };
+    try {
+        download = await adapter.fetchSkillDownload({baseUrl: conn.baseUrl, skillId, secret});
+    } catch (error) {
+        // 取直链阶段尚未产生本地写入，直接透出平台原因（key 无效 / 未绑定 / 余额不足等）
+        return {success: false, error: (error as Error).message};
+    }
+
+    const result = await skillsManager.installSkillFromZip(download.downloadUrl, skillName, clients, {
+        id: skillId,
+        repositoryUrl: conn.baseUrl,
+    });
+    if (result.success) await historyManager.backup();
+    return result;
+});
+
 // 创建自定义 Skill（本地，无网络；zip 导入时 input.files 携带附属文件一并落盘）
 ipcMain.handle('skills:create-custom', async (_, input: {
     name: string;
@@ -900,7 +942,8 @@ ipcMain.handle('api-connections:search-platform', async (_, connectionId: string
     const conn = connectionsStore.get(connectionId);
     if (!conn) throw new Error('连接不存在');
     const secret = conn.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
-    return searchPlatformDirect(conn.platformType, conn.baseUrl, secret, query, page, pageSize, category);
+    // 资源类型决定 ModelScope 配额窗口（skill 2400 / mcp 100）；存量连接缺省视为 skill
+    return searchPlatformDirect(conn.platformType, conn.baseUrl, secret, query, page, pageSize, category, conn.kind ?? 'skill');
 });
 
 /**
@@ -911,7 +954,8 @@ ipcMain.handle('api-connections:search-platform-paged', async (_, connectionId: 
     const conn = connectionsStore.get(connectionId);
     if (!conn) throw new Error('连接不存在');
     const secret = conn.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
-    return searchPlatformDirectPaged(conn.platformType, conn.baseUrl, secret, query, page, pageSize, category);
+    // 资源类型决定 ModelScope 配额窗口（skill 2400 / mcp 100）；存量连接缺省视为 skill
+    return searchPlatformDirectPaged(conn.platformType, conn.baseUrl, secret, query, page, pageSize, category, conn.kind ?? 'skill');
 });
 
 /**
@@ -956,13 +1000,28 @@ ipcMain.handle('api-connections:get-server-detail', async (_, connectionId: stri
 // 以上旧通道保留向后兼容；以下通道委托 platforms/registry 统一调度，新增平台无需改动此处。
 ipcMain.handle('platforms:search-skills', async (_, platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string, connectionId?: string): Promise<PlatformSearchPage> => {
     const sp = platformTypeToSupported(platformType);
-    const adapter = sp ? getAdapter(sp) : null;
-    if (!adapter || !adapter.searchSkills) throw new Error(`该平台不支持 skill 搜索：${platformType}`);
+    // 未知平台类型仍抛错：避免把「类型写错」伪装成「平台不支持」。
+    if (!sp) throw new Error(`不支持的平台类型：${platformType}`);
+    const adapter = getAdapter(sp);
+    // 已知平台类型但未注册 adapter、或该 adapter 没有 skill 搜索能力
+    // （如 safeskill：站点未开放公开列表接口，官方文档声明的 /v1/search 实测 404）：
+    // 返回 unsupported 而非抛错，让商店如实展示「该 Skill 源未提供公开列表接口」空态，
+    // 与「有 adapter、但端点全返回 SPA」时置位的 unsupported 语义一致。
+    // 抛错会退化为通用错误态（data.error），把「上游没有这个能力」误导成「加载失败」。
+    if (!adapter || !adapter.searchSkills) {
+        return {
+            items: [],
+            pageInfo: {page, pageSize: pageSize || 20, total: 0, totalPages: 0, hasMore: false},
+            unsupported: true,
+        };
+    }
+    // 提取为局部变量：闭包内 TS 不保留对可选属性的收窄；bind 保证方法内 this 指向 adapter
+    const searchSkills = adapter.searchSkills.bind(adapter);
     // S0-6: 优先按连接 ID 精确取 token/baseUrl；未传则回退「按 platformType 取第一个」以兼容旧调用
     const conn = (connectionId && connectionsStore.get(connectionId)) || connectionsStore.list().find(c => c.platformType === platformType);
     const baseUrl = conn?.baseUrl || '';
     const secret = conn?.tokenId ? secretStore.getSecretToken(conn.tokenId) : null;
-    return adapter.searchSkills({
+    const params = {
         query,
         page,
         pageSize: pageSize || 20,
@@ -972,7 +1031,25 @@ ipcMain.handle('platforms:search-skills', async (_, platformType: string, query:
         secret,
         // 运行时离线缓存目录（ClawHub 累积在线结果作为离线索引，避免写死静态索引）
         cacheDir: path.join(app.getPath('home'), '.ai-tools', 'cache', 'platforms'),
-    });
+    };
+    // 磁盘缓存 + SWR：命中缓存立即返回（过期则后台刷新），让平台源与内置源一样首屏秒开，
+    // 冷启动/重启后不再每次都等一次网络。key 不含 secret，凭证不落盘；
+    // 鉴权态参与 key（D11），避免绑定 Token 后仍命中匿名旧缓存。
+    return withPlatformSearchCache(
+        cacheManager,
+        buildPlatformSearchKey({
+            platformType,
+            connectionId: conn?.id ?? null,
+            baseUrl,
+            query,
+            page,
+            pageSize: params.pageSize,
+            category,
+            sort,
+            authorized: !!secret,
+        }),
+        () => searchSkills(params)
+    );
 });
 
 ipcMain.handle('platforms:search-servers', async (_, platformType: string, query: string, page: number, pageSize?: number, category?: string, sort?: string, source?: string, connectionId?: string): Promise<PlatformServerSearchPage> => {
