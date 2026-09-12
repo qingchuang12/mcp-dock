@@ -1,20 +1,24 @@
 /**
- * Skill「是否已安装」的判定口径。
+ * Skill 标识判定口径（主进程与渲染层共用，单一事实源）。
  *
  * 为什么需要单独收口：商店列表项的 name 是平台给的**展示名**（ModelScope 的 display_name，
  * 如「高德地图综合服务Skill」），而本地已安装集合来自各客户端 skills 目录下的**物理目录名**
- * （如 amap-lbs-skill，由安装时解析出的 skill slug 决定）。内置 GitHub Registry 源两者恰好
+ * （如 amap-lush-skill，由安装时解析出的 skill slug 决定）。内置 GitHub Registry 源两者恰好
  * 同名（列表 name 就是仓库目录名），平台直连源则普遍不同——直接拿 name 比对会让「已安装」
  * 徽章在平台源上永远不亮（库里能看到、商店里不显示）。
  *
- * 统一口径：两侧都展开成 { 全名, 末段 } 的规范化别名集合，任一命中即认定已安装。
+ * 统一口径：两侧都展开成 { 全名, 末段 } 的规范化别名集合，任一命中即认定匹配。
  * 末段是本项目既有的判定方式（SkillDetail 用 decodedId.split('/').pop() 匹配目录），
- * 与平台 id（owner/slug）落到磁盘的目录名一致。
+ * 与 id 形如 owner/slug 的源落到磁盘的目录名一致。
+ *
+ * 2026-09-12（plan-17.0）：本口径从 renderer 下沉到 shared，供主进程 `getLocalSkillDetail`
+ * 反查目录复用——平台源（虾评为 UUID、ClawHub 为 owner/slug）的 `.source.json.id` 与落盘
+ * 目录名不同源，主进程与渲染层必须用同一套别名口径，否则又会各判各的。
  */
 
 /** 参与判定的 Skill 标识；三个来源都不保证存在，故全部可选 */
 export interface SkillIdentity {
-    /** 平台标识（如 ModelScope 的 `@owner/slug`、内置源的 `skill-<dir>`） */
+    /** 平台标识（如 ModelScope 的 `@owner/slug`、内置源的 `skill-<dir>`、虾评的 UUID） */
     id?: string;
     /** 展示名（平台 display_name；内置源即目录名） */
     name?: string;
@@ -62,7 +66,7 @@ export function skillSourceUrlKeys(sourceUrl: string): string[] {
  * 列表项（或详情页当前 Skill）参与判定的全部候选 key。
  * 同时纳入 name、id 与来源地址，才能覆盖三种口径：
  * - 内置 Registry 源：name 就是仓库目录名（id 形如 `skill-<dir>`，反而不匹配）；
- * - 平台直连源（ModelScope / 虾评 / ClawHub 等）：id 的末段才是落盘目录名；
+ * - 平台直连源（ModelScope / 虾评 / ClawHub 等）：id 参与匹配（虾评 UUID 只能靠 id 命中）；
  * - id 与目录名不同源的少数平台条目：靠 source_url 的子路径末段兜底。
  */
 export function skillItemKeys(skill: SkillIdentity): string[] {

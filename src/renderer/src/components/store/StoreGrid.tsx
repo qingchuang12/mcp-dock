@@ -4,7 +4,7 @@
 
 import {memo, useMemo} from "react";
 import type {DataSource, ServerListItem, SkillListItem} from "../../api/registry";
-import {buildInstalledSkillKeys, isSkillInstalled, skillItemKeys} from "../../lib/skillIdentity";
+import {buildInstalledSkillKeys, isSkillInstalled, skillItemKeys} from "../../../../shared/skill-identity";
 import ServerCard from "../ServerCard";
 import SkillCard from "../SkillCard";
 

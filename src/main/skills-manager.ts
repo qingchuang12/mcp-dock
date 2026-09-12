@@ -8,6 +8,7 @@
  */
 
 import fs from 'fs/promises';
+import type {Dirent} from 'fs';
 import path from 'path';
 import os from 'os';
 import {SKILL_SUPPORTED_CLIENTS, SkillClientType} from './config-manager';
@@ -21,6 +22,7 @@ import {
     listDirFiles as githubListDirFiles,
     resolveFilesViaRaw,
 } from './github';
+import {skillMatchKeys} from '../shared/skill-identity';
 
 import {
     DiscoveredSkill,
@@ -1422,6 +1424,60 @@ export class SkillsManager {
     }
 
     /**
+     * 解析本地 Skill 的物理目录名。
+     *
+     * 传入的 skillId 有两种来源，必须都认（plan-17.0）：
+     * 1. 目录名（GitHub / Registry 通道：目录名就是 id 的末段）；
+     * 2. `.source.json` 里记录的**平台来源 id**——zip / 平台通道（coze / modelscope / clawhub /
+     *    skillhub）以展示名建目录、以平台 id 写 .source.json，二者不同源。虾评实测：目录名
+     *    「AI情感咨询与治愈助手」，id 是 UUID e8f2aaea-…。只按目录名查会让这些已安装技能
+     *    从「我的库」点开时永远落空。
+     *
+     * 故先按目录名查，未命中再按来源 id 反查（别名口径复用 shared，与渲染层判定一致）。
+     */
+    private async resolveLocalSkillDirName(
+        skillId: string,
+        installedClients?: SkillClientType[]
+    ): Promise<string | null> {
+        const dirName = skillId.split('/').pop() || skillId;
+        // 同组共享同一物理目录，按组内首个客户端的路径探测一次即可
+        const roots = [...new Set(
+            this.resolveScanGroups(installedClients).map(g => this.getSkillsPath(g.clients[0]))
+        )];
+
+        for (const root of roots) {
+            try {
+                await fs.access(path.join(root, dirName));
+                return dirName;
+            } catch { /* 该目录下没有同名 skill，继续 */ }
+        }
+
+        // 反查：逐个目录读 .source.json 比对来源 id（仅在目录名未命中时触发，目录数有限）
+        const wanted = new Set(skillMatchKeys(skillId));
+        for (const root of roots) {
+            let entries: Dirent[] = [];
+            try {
+                entries = await fs.readdir(root, {withFileTypes: true});
+            } catch {
+                continue;
+            }
+            for (const entry of entries) {
+                if (!entry.isDirectory()) continue;
+                let meta: { id?: unknown } | null = null;
+                try {
+                    meta = JSON.parse(await fs.readFile(path.join(root, entry.name, '.source.json'), 'utf-8'));
+                } catch {
+                    continue;
+                }
+                const id = typeof meta?.id === 'string' ? meta.id : '';
+                if (!id) continue;
+                if (skillMatchKeys(id).some(key => wanted.has(key))) return entry.name;
+            }
+        }
+        return null;
+    }
+
+    /**
      * 获取本地已安装 Skill 的详情（用于详情页 fallback）
      */
     async getLocalSkillDetail(skillId: string, installedClients?: SkillClientType[]): Promise<{
@@ -1434,7 +1490,9 @@ export class SkillsManager {
     } | null> {
         await this.loadSettings();
 
-        const skillName = skillId.split('/').pop() || skillId;
+        const skillName = await this.resolveLocalSkillDirName(skillId, installedClients);
+        if (!skillName) return null;
+
         const foundClients: SkillClientType[] = [];
         let bestSource: SkillSourceMeta | null = null;
         let skillMdContent = '';

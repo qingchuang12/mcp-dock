@@ -999,8 +999,10 @@ export default function Library() {
 
     // 点击 Skill
     const handleSkillClick = (skill: InstalledSkill) => {
-        // 使用 source.id 作为导航 ID
-        const skillId = skill.source?.id || skill.name;
+        // 导航键必须用**物理目录名**（本地权威键，本地详情查询以它为准）。
+        // 不能用 skill.source?.id：那是平台侧标识，zip/平台通道（虾评实测为 UUID、ClawHub 为
+        // owner/slug）与落盘目录名不同源，用它导航会让已安装技能点开即空白（plan-17.0）。
+        const skillId = skill.name;
         // 手动安装的 Skill（无 .source.json）在商店里并不存在，详情页面包屑也指向「我的库」，
         // 故带上 from=library 让侧边栏继续停留在我的库，不跳到商店。
         const from = skill.source ? '' : '?from=library';

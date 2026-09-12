@@ -26,7 +26,7 @@ import {ClockIcon, DownloadIcon, EyeIcon, ForkIcon, StarIcon} from '../component
 import WindowControls from '../components/WindowControls';
 import {localizeKey} from '../lib/format';
 import {useStore} from '../store/useStore';
-import {buildInstalledSkillKeys, isSkillInstalled, skillItemKeys} from '../lib/skillIdentity';
+import {buildInstalledSkillKeys, isSkillInstalled, skillItemKeys} from '../../../shared/skill-identity';
 import {deriveSkillMdRawUrl} from '../lib/skillMdUrl';
 
 function formatNumber(count: number): string {
@@ -273,7 +273,10 @@ export default function SkillDetail() {
 
             if (!local) return;
 
-            const owner = local.source?.id?.split('/')[0] || local.name;
+            // .source.json 的 id 只有形如 owner/slug（GitHub / ClawHub）时才携带发布者；
+            // 平台内部 id（虾评实测为 UUID）不含分隔符，取「首段」会把整串 id 当成作者名（plan-17.0）。
+            const sourceId = local.source?.id ?? '';
+            const owner = sourceId.includes('/') ? sourceId.split('/')[0] : '';
             setSkillView({
                 type: 'local',
                 name: local.name,
@@ -646,7 +649,10 @@ export default function SkillDetail() {
                       </span>
                                         )}
                                     </div>
-                                    <span className="text-[14px] text-[var(--color-muted)]">by @{skillView.author}</span>
+                                    {/* 平台源（如虾评）的本地元数据不含发布者：作者为空时整句隐藏，避免显示 "by @" */}
+                                    {skillView.author && (
+                                        <span className="text-[14px] text-[var(--color-muted)]">by @{skillView.author}</span>
+                                    )}
                                 </div>
                             </div>
 
@@ -946,7 +952,9 @@ export default function SkillDetail() {
                         <SkillAvatar author={skillView.author} size={40}/>
                         <div>
                             <h3 className="text-[14px] font-medium text-[var(--color-text)]">{skillView.name}</h3>
-                            <p className="text-[12px] text-[var(--color-muted)]">by @{skillView.author}</p>
+                            {skillView.author && (
+                                <p className="text-[12px] text-[var(--color-muted)]">by @{skillView.author}</p>
+                            )}
                         </div>
                     </div>
 

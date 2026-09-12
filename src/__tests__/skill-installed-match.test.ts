@@ -11,7 +11,7 @@ import {
     skillItemKeys,
     skillMatchKeys,
     skillSourceUrlKeys,
-} from '../renderer/src/lib/skillIdentity';
+} from '../shared/skill-identity';
 
 describe('skillMatchKeys', () => {
     it('普通目录名只产出全名', () => {
